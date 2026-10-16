@@ -11,7 +11,7 @@
 namespace llbc {
 
 Parser::Parser(Lexer lexer) : m_lexer(std::move(lexer)) {
-    consume(); // Load first token
+    consume();
 }
 
 void Parser::consume() {
@@ -43,7 +43,6 @@ TypeSpec Parser::parseTypeSpec() {
         spec.isVolatile = true;
     }
     
-    // Support nested pointers (e.g., Pointer To Pointer To Byte)
     while (match(TokenType::KwPointer)) {
         expect(TokenType::KwTo, "Expected 'To' after 'Pointer'");
         spec.pointerDepth++;
@@ -69,7 +68,6 @@ std::unique_ptr<ProcedureNode> Parser::parseProcedure() {
     if (match(TokenType::KwPublic)) procNode->isPublic = true;
     else if (match(TokenType::KwPrivate)) procNode->isPublic = false;
 
-    // Check for 'Declare' keyword (safely checking token text)
     if (m_currentToken.text == "Declare" || m_currentToken.text == "declare") {
         consume();
         procNode->isDeclare = true;
@@ -90,7 +88,6 @@ std::unique_ptr<ProcedureNode> Parser::parseProcedure() {
 
     expect(TokenType::LParen, "Expected '(' after procedure name");
     
-    // Parse Parameters
     if (m_currentToken.type != TokenType::RParen) {
         do {
             ParameterNode param;
@@ -113,12 +110,10 @@ std::unique_ptr<ProcedureNode> Parser::parseProcedure() {
         procNode->returnType = parseTypeSpec();
     }
 
-    // External C declarations (Declare Function ...) have no body to parse
     if (procNode->isDeclare) {
         return procNode;
     }
 
-    // Parse Procedure Body
     while (m_currentToken.type != TokenType::Eof) {
         if (m_currentToken.type == TokenType::KwEnd) {
             consume();
@@ -134,24 +129,64 @@ std::unique_ptr<ProcedureNode> Parser::parseProcedure() {
         } else if (m_currentToken.type == TokenType::KwDim) {
             consume();
             procNode->body.push_back(parseDimStatement());
-        } else if (m_currentToken.type == TokenType::Identifier) {
-            // Parse Procedure Call (e.g., puts CPtr(...))
-            auto callNode = std::make_unique<CallExprASTNode>();
-            callNode->funcName = m_currentToken.text;
-            consume(); // Consume function name
-
-            // Consume arguments up to end of line or next statement
-            while (m_currentToken.type != TokenType::Eof && 
-                   m_currentToken.type != TokenType::KwDim && 
-                   m_currentToken.type != TokenType::KwIf && 
-                   m_currentToken.type != TokenType::KwEnd) {
-                
-                if (m_currentToken.type == TokenType::StringLiteral) {
-                    callNode->stringArgs.push_back(m_currentToken.text);
+        } else if (m_currentToken.text == "If" || m_currentToken.text == "if") {
+            // Robust If...End If block skipper
+            int ifDepth = 1;
+            consume(); // consume 'If'
+            while (m_currentToken.type != TokenType::Eof && ifDepth > 0) {
+                std::string txt = m_currentToken.text;
+                if (txt == "If" || txt == "if") {
+                    consume();
+                } else if (txt == "End" || txt == "end") {
+                    consume();
+                    if (m_currentToken.text == "If" || m_currentToken.text == "if") {
+                        ifDepth--;
+                        consume(); // consume 'If'
+                    }
+                } else {
+                    consume();
                 }
+            }
+        } else if (m_currentToken.text == "Exit" || m_currentToken.text == "exit") {
+            consume();
+            if (m_currentToken.text == "Function" || m_currentToken.text == "function" ||
+                m_currentToken.text == "Sub" || m_currentToken.text == "sub") {
                 consume();
             }
-            procNode->body.push_back(std::move(callNode));
+        } else if (m_currentToken.type == TokenType::Identifier) {
+            std::string ident = m_currentToken.text;
+            consume();
+
+            if (m_currentToken.text == "=") {
+                // Assignment statement (e.g. inputPath = argv(1) or Main = 1)
+                consume(); // consume '='
+                while (m_currentToken.type != TokenType::Eof && 
+                       m_currentToken.type != TokenType::KwDim && 
+                       m_currentToken.text != "If" && m_currentToken.text != "if" &&
+                       m_currentToken.text != "End" && m_currentToken.text != "end" &&
+                       m_currentToken.text != "Exit" && m_currentToken.text != "exit") {
+                    consume();
+                }
+            } else {
+                // Function call statement (e.g. puts, printf)
+                auto callNode = std::make_unique<CallExprASTNode>();
+                callNode->funcName = ident;
+
+                while (m_currentToken.type != TokenType::Eof && 
+                       m_currentToken.type != TokenType::KwDim && 
+                       m_currentToken.text != "If" && m_currentToken.text != "if" &&
+                       m_currentToken.text != "End" && m_currentToken.text != "end" &&
+                       m_currentToken.text != "Exit" && m_currentToken.text != "exit") {
+                    
+                    if (m_currentToken.type == TokenType::StringLiteral) {
+                        callNode->stringArgs.push_back(m_currentToken.text);
+                    } else if (m_currentToken.type == TokenType::Identifier) {
+                        callNode->stringArgs.push_back(m_currentToken.text);
+                    }
+                    consume();
+                }
+                procNode->body.push_back(std::move(callNode));
+            }
         } else {
             consume();
         }
@@ -176,10 +211,10 @@ std::unique_ptr<ModuleNode> Parser::parseModule() {
 
     while (m_currentToken.type != TokenType::Eof) {
         if (m_currentToken.type == TokenType::KwEnd) {
-            consume(); // Consume 'End'
+            consume();
             if ((moduleNode->isClass && m_currentToken.type == TokenType::KwClass) ||
                 (!moduleNode->isClass && m_currentToken.type == TokenType::KwModule)) {
-                consume(); // Consume 'Class' or 'Module'
+                consume();
                 break;
             } else {
                 consume();
@@ -192,7 +227,7 @@ std::unique_ptr<ModuleNode> Parser::parseModule() {
                    m_currentToken.text == "Declare" || m_currentToken.text == "declare") {
             moduleNode->members.push_back(parseProcedure());
         } else {
-            consume(); // Top-level structure terminator (e.g., End Structure, End Type)
+            consume();
         }
     }
 

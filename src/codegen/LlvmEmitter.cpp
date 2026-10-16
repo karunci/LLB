@@ -37,13 +37,10 @@ llvm::Type* LlvmEmitter::getLlvmType(const TypeSpec& typeSpec) {
     } else if (typeName == "void") {
         baseType = llvm::Type::getVoidTy(*m_context);
     } else {
-        // Fallback/Opaque Structure Default to 64-bit Int/Opaque Pointer
         baseType = llvm::Type::getInt64Ty(*m_context);
     }
 
-    // Low-Level Basic Pointer Type Translation
     if (typeSpec.pointerDepth > 0) {
-        // LLVM 15+ uses opaque pointers, so all indirections map to generic ptr
         return llvm::PointerType::get(*m_context, 0); 
     }
 
@@ -54,11 +51,9 @@ void LlvmEmitter::emitDimStatement(const DimStmtNode& dimNode) {
     llvm::Function* currentFunc = m_builder->GetInsertBlock()->getParent();
     llvm::Type* varType = getLlvmType(dimNode.type);
 
-    // Create entry block allocation for local variable
     llvm::IRBuilder<> tmpBuilder(&currentFunc->getEntryBlock(), currentFunc->getEntryBlock().begin());
     llvm::AllocaInst* alloca = tmpBuilder.CreateAlloca(varType, nullptr, dimNode.varName);
 
-    // Track symbol in scope table
     m_namedValues[dimNode.varName] = alloca;
 }
 
@@ -70,13 +65,19 @@ void LlvmEmitter::emitCallStatement(const CallExprASTNode& callNode) {
     }
 
     std::vector<llvm::Value*> args;
-    for (const auto& strArg : callNode.stringArgs) {
-        // Create global string constant for CPtr(Pointer To Byte, "...") literals
-        llvm::Value* strVal = m_builder->CreateGlobalStringPtr(strArg);
-        args.push_back(strVal);
+    for (const auto& argStr : callNode.stringArgs) {
+        // Check if argument refers to a local variable/parameter symbol
+        if (m_namedValues.find(argStr) != m_namedValues.end()) {
+            llvm::AllocaInst* alloca = m_namedValues[argStr];
+            llvm::Value* val = m_builder->CreateLoad(alloca->getAllocatedType(), alloca, argStr);
+            args.push_back(val);
+        } else {
+            // Otherwise treat as a string literal constant
+            llvm::Value* strVal = m_builder->CreateGlobalString(argStr);
+            args.push_back(strVal);
+        }
     }
 
-    // Emit LLVM Call Instruction
     m_builder->CreateCall(callee, args);
 }
 
@@ -92,7 +93,6 @@ llvm::Function* LlvmEmitter::emitProcedure(const ProcedureNode& procNode) {
     for (const auto& param : procNode.parameters) {
         llvm::Type* pType = getLlvmType(param.type);
         if (param.isByRef) {
-            // ByRef parameters are passed as explicit pointers
             pType = llvm::PointerType::get(*m_context, 0);
         }
         paramTypes.push_back(pType);
@@ -108,7 +108,6 @@ llvm::Function* LlvmEmitter::emitProcedure(const ProcedureNode& procNode) {
     // 4. Set Call Convention & Attributes
     func->setCallingConv(llvm::CallingConv::C);
 
-    // --- NEW LOGIC: Do not generate a body if it's an external C declaration ---
     if (procNode.isDeclare) {
         return func; 
     }
@@ -135,7 +134,7 @@ llvm::Function* LlvmEmitter::emitProcedure(const ProcedureNode& procNode) {
         m_namedValues[procNode.name] = retAlloca;
     }
 
-  // 7. Lower Body Statements
+    // 7. Lower Body Statements
     for (const auto& stmt : procNode.body) {
         if (auto dimStmt = dynamic_cast<const DimStmtNode*>(stmt.get())) {
             emitDimStatement(*dimStmt);
@@ -152,7 +151,6 @@ llvm::Function* LlvmEmitter::emitProcedure(const ProcedureNode& procNode) {
         m_builder->CreateRetVoid();
     }
 
-    // Verify Function
     llvm::verifyFunction(*func);
     return func;
 }

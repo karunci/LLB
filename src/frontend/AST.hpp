@@ -15,7 +15,7 @@ namespace llbc {
 
 struct TypeSpec {
     std::string name;
-    int pointerDepth{0}; // Replaces bool isPointer
+    int pointerDepth{0};
     bool isVolatile{false};
 };
 
@@ -30,16 +30,16 @@ public:
     virtual ~ASTNode() = default;
 };
 
-class CallExprASTNode : public ASTNode {
-public:
-    std::string funcName;
-    std::vector<std::string> stringArgs; // Holds string literals or expression identifiers
-};
-
 class DimStmtNode : public ASTNode {
 public:
     std::string varName;
     TypeSpec type;
+};
+
+class CallExprASTNode : public ASTNode {
+public:
+    std::string funcName;
+    std::vector<std::string> stringArgs;
 };
 
 class ProcedureNode : public ASTNode {
@@ -48,7 +48,7 @@ public:
     bool isPublic{true};
     bool isUnsafe{false};
     bool isFunction{false};
-    bool isDeclare{false}; 
+    bool isDeclare{false};
     TypeSpec returnType;
     std::vector<ParameterNode> parameters;
     std::vector<std::unique_ptr<ASTNode>> body;

@@ -65,20 +65,51 @@ void LlvmEmitter::emitCallStatement(const CallExprASTNode& callNode) {
     }
 
     std::vector<llvm::Value*> args;
-    for (const auto& argStr : callNode.stringArgs) {
-        // Check if argument refers to a local variable/parameter symbol
-        if (m_namedValues.find(argStr) != m_namedValues.end()) {
-            llvm::AllocaInst* alloca = m_namedValues[argStr];
-            llvm::Value* val = m_builder->CreateLoad(alloca->getAllocatedType(), alloca, argStr);
-            args.push_back(val);
-        } else {
-            // Otherwise treat as a string literal constant
-            llvm::Value* strVal = m_builder->CreateGlobalString(argStr);
-            args.push_back(strVal);
-        }
+    for (const auto& arg : callNode.args) {
+        args.push_back(emitExpression(arg.get()));
     }
 
     m_builder->CreateCall(callee, args);
+}
+
+llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
+    if (auto num = dynamic_cast<NumberExprASTNode*>(expr)) {
+        return llvm::ConstantInt::get(*m_context, llvm::APInt(32, num->val, true));
+    }
+    if (auto str = dynamic_cast<StringExprASTNode*>(expr)) {
+        return m_builder->CreateGlobalString(str->val);
+    }
+    if (auto var = dynamic_cast<VariableExprASTNode*>(expr)) {
+        auto it = m_namedValues.find(var->name);
+        if (it != m_namedValues.end()) {
+            llvm::AllocaInst* alloca = it->second;
+            return m_builder->CreateLoad(alloca->getAllocatedType(), alloca, var->name.c_str());
+        }
+    }
+    if (auto bin = dynamic_cast<BinaryExprASTNode*>(expr)) {
+        llvm::Value* l = emitExpression(bin->lhs.get());
+        llvm::Value* r = emitExpression(bin->rhs.get());
+        if (bin->op == '+') return m_builder->CreateAdd(l, r, "addtmp");
+        if (bin->op == '-') return m_builder->CreateSub(l, r, "subtmp");
+        if (bin->op == '<') return m_builder->CreateICmpSLT(l, r, "cmptmp");
+    }
+    if (auto call = dynamic_cast<CallExprASTNode*>(expr)) {
+        llvm::Function* callee = m_module->getFunction(call->funcName);
+        std::vector<llvm::Value*> args;
+        for (auto& arg : call->args) {
+            args.push_back(emitExpression(arg.get()));
+        }
+        return m_builder->CreateCall(callee, args, "calltmp");
+    }
+    return nullptr;
+}
+
+void LlvmEmitter::emitAssignStatement(const AssignStmtNode& assignNode) {
+    auto it = m_namedValues.find(assignNode.varName);
+    if (it != m_namedValues.end()) {
+        llvm::Value* val = emitExpression(assignNode.value.get());
+        m_builder->CreateStore(val, it->second);
+    }
 }
 
 llvm::Function* LlvmEmitter::emitProcedure(const ProcedureNode& procNode) {
@@ -138,8 +169,15 @@ llvm::Function* LlvmEmitter::emitProcedure(const ProcedureNode& procNode) {
     for (const auto& stmt : procNode.body) {
         if (auto dimStmt = dynamic_cast<const DimStmtNode*>(stmt.get())) {
             emitDimStatement(*dimStmt);
-        } else if (auto callStmt = dynamic_cast<const CallExprASTNode*>(stmt.get())) {
-            emitCallStatement(*callStmt);
+        } else if (auto assignStmt = dynamic_cast<const AssignStmtNode*>(stmt.get())) {
+            emitAssignStatement(*assignStmt);
+        } else if (auto callStmt = dynamic_cast<CallExprASTNode*>(stmt.get())) {
+            std::vector<llvm::Value*> args;
+            for (auto& arg : callStmt->args) {
+                args.push_back(emitExpression(arg.get()));
+            }
+            llvm::Function* callee = m_module->getFunction(callStmt->funcName);
+            if (callee) m_builder->CreateCall(callee, args);
         }
     }
 

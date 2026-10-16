@@ -23,7 +23,9 @@ public:
     bool emitModule(const ModuleNode& moduleNode);
     llvm::Function* emitProcedure(const ProcedureNode& procNode);
     void emitDimStatement(const DimStmtNode& dimNode);
+    void emitAssignStatement(const AssignStmtNode& assignNode);
     void emitCallStatement(const CallExprASTNode& callNode);
+    llvm::Value* emitExpression(ExprASTNode* expr);
 
     llvm::Module* getModule() const { return m_module.get(); }
     void printIR() const;

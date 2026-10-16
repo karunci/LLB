@@ -1,0 +1,20 @@
+[Project]
+Name = "kernel"
+Type = "BareMetalExecutable"
+Version = "0.1.0"
+
+[Target]
+Arch = "x86_64-unknown-none-elf"
+
+[Entry]
+EntryPoint = "_start"
+
+[Linker]
+LinkerScript = "linker.ld"
+
+[Sources]
+Assembly = "src/arch/x86_64/boot.S"
+Assembly = "src/arch/x86_64/IsrStubs.S"
+Module = "src/arch/x86_64/Idt.bas"
+Class = "src/drivers/Terminal.cls"
+Module = "src/KernelMain.bas"

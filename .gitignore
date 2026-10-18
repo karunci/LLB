@@ -1,0 +1,24 @@
+# Build artifacts
+build/
+*.o
+*.so
+*.a
+*.elf
+*.bin
+*.tmp
+*.log
+
+# CMake generated
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+
+# IDE and OS
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.agents/
+.vscode/
+.idea/

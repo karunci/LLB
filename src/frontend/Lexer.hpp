@@ -23,6 +23,7 @@ enum class TokenType {
     // VB6 & LLB Keywords
     KwModule,
     KwClass,
+    KwStructure,
     KwEnd,
     KwSub,
     KwFunction,
@@ -38,42 +39,126 @@ enum class TokenType {
     KwTo,
     KwAsm,
     KwImport,
+    KwIf,
+    KwThen,
+    KwElseIf,
+    KwElse,
+    KwFor,
+    KwNext,
+    KwStep,
+    KwDo,
+    KwLoop,
+    KwWhile,
+    KwWend,
+    KwUntil,
+    KwExit,
+    KwSelect,
+    KwCase,
+    KwMe,
+    KwDeclare,
+    KwConst,
+    KwOptional,
+    KwDelegate,
+    KwCall,
+    KwTrue,
+    KwFalse,
+    KwCPtr,
+    KwCType,
+    KwEnum,
+    KwWith,
+    KwLib,
+    KwAlias,
+    KwPrint,
+    KwInput,
+    KwType,
+    KwAddressOf,
+    KwProperty,
+    KwGet,
+    KwLet,
+    KwSet,
+    KwEach,
+    KwIn,
+    KwNew,
+    KwDelete,
+    KwReDim,
+    KwPreserve,
+    KwIs,
+    KwNothing,
+    KwErase,
+    KwGoTo,
+    KwTry,
+    KwCatch,
+    KwFinally,
+    KwParamArray,
+    KwLike,
+    KwUnion,
+    KwTypeOf,
+    KwOpen,
+    KwClose,
+    KwOutput,
+    KwAppend,
+    KwBinary,
+    KwLine,
+    KwEof,
+    KwLof,
+
+    // Operators as keywords
+    KwAnd,
+    KwOr,
+    KwXor,
+    KwNot,
+    KwLShift,
+    KwRShift,
+    KwMod,
 
     // Symbols & Operators
-    Equal,
-    Comma,
-    Dot,
-    LParen,
-    RParen,
-    Colon,
-    Plus,
-    Minus,
-    Asterisk,
-    Slash
+    Equal,          // =
+    NotEqual,       // <>
+    Less,           // <
+    LessEqual,      // <=
+    Greater,        // >
+    GreaterEqual,   // >=
+    Comma,          // ,
+    Semicolon,      // ;
+    Hash,           // #
+    Dot,            // .
+    LParen,         // (
+    RParen,         // )
+    Colon,          // :
+    ColonEqual,     // :=
+    Plus,           // +
+    Minus,          // -
+    Asterisk,       // *
+    Slash,          // /
+    Ampersand       // &
 };
 
 struct Token {
-    TokenType type;
+    TokenType type{TokenType::Eof};
     std::string text;
-    size_t line;
-    size_t column;
+    size_t line{1};
+    size_t column{1};
+    bool hasLeadingNewline{false};
 };
 
 class Lexer {
 public:
     explicit Lexer(std::string source);
     Token nextToken();
+    Token peekToken();
 
 private:
     std::string m_source;
     size_t m_cursor{0};
     size_t m_line{1};
     size_t m_column{1};
+    bool m_hasLeadingNewline{false};
 
     char peek() const;
+    char peekNext() const;
     char advance();
     void skipWhitespaceAndComments();
-    Token makeToken(TokenType type, const std::string& text);
+    Token makeToken(TokenType type, const std::string& text, size_t line, size_t col);
     TokenType identifyKeyword(const std::string& text) const;
 };
 

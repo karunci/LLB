@@ -21,6 +21,7 @@ struct TargetConfig {
     std::string cpu{"generic"};
     std::string features{""};
     bool isBareMetal{false};
+    int optLevel{0}; // 0 = -O0, 1 = -O1, 2 = -O2, 3 = -O3
 };
 
 class TargetEmitter {
@@ -32,7 +33,14 @@ public:
     static bool linkExecutable(
         const std::vector<std::string>& objectFiles,
         const std::string& outputFile,
-        const std::string& linkerScript = ""
+        const std::string& linkerScript = "",
+        bool isShared = false,
+        bool isFreestanding = false
+    );
+
+    static bool createStaticArchive(
+        const std::vector<std::string>& objectFiles,
+        const std::string& outputFile
     );
 
 private:

@@ -17,6 +17,7 @@ Format = "elf64"
 EntryPoint = "CompilerMain.Main"
 
 [Sources]
+Module = "src/stage1/LlvmC.bas"
 Class = "src/stage1/Lexer.cls"
 Module = "src/stage1/Ast.bas"
 Class = "src/stage1/Parser.cls"

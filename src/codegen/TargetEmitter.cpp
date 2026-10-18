@@ -13,9 +13,13 @@
 #include <llvm/Target/TargetOptions.h>
 #include <llvm/IR/LegacyPassManager.h>
 #include <llvm/TargetParser/Triple.h>
+#include <llvm/Passes/PassBuilder.h>
+#include <llvm/Passes/OptimizationLevel.h>
 
 #include <lld/Common/Driver.h>
 #include <lld/Common/ErrorHandler.h>
+#include <llvm/Object/Archive.h>
+#include <llvm/Object/ArchiveWriter.h>
 
 #include <iostream>
 #include <cstdlib>
@@ -63,6 +67,31 @@ bool TargetEmitter::emitObjectFile(llvm::Module* module, const std::string& outp
         return false;
     }
 
+    // Run LLVM Optimization Passes (O1, O2, O3) if requested
+    if (m_config.optLevel > 0) {
+        llvm::LoopAnalysisManager lam;
+        llvm::FunctionAnalysisManager fam;
+        llvm::CGSCCAnalysisManager cgam;
+        llvm::ModuleAnalysisManager mam;
+
+        llvm::PassBuilder pb(targetMachine);
+        pb.registerModuleAnalyses(mam);
+        pb.registerCGSCCAnalyses(cgam);
+        pb.registerFunctionAnalyses(fam);
+        pb.registerLoopAnalyses(lam);
+        pb.crossRegisterProxies(lam, fam, cgam, mam);
+
+        llvm::OptimizationLevel opt;
+        switch (m_config.optLevel) {
+            case 1: opt = llvm::OptimizationLevel::O1; break;
+            case 2: opt = llvm::OptimizationLevel::O2; break;
+            case 3: default: opt = llvm::OptimizationLevel::O3; break;
+        }
+
+        llvm::ModulePassManager mpm = pb.buildPerModuleDefaultPipeline(opt);
+        mpm.run(*module, mam);
+    }
+
     llvm::legacy::PassManager pass;
     if (targetMachine->addPassesToEmitFile(pass, dest, nullptr, llvm::CodeGenFileType::ObjectFile)) {
         std::cerr << "[Target Error] TargetMachine cannot emit object file format!\n";
@@ -77,10 +106,17 @@ bool TargetEmitter::emitObjectFile(llvm::Module* module, const std::string& outp
 static std::vector<std::string> GetHostLibraryPaths() {
     std::vector<std::string> paths;
     const char* standardDirs[] = {
-        "/data/data/com.termux/files/usr/lib", // Termux Primary
+        "/data/data/com.termux/files/usr/lib", // Termux / Android userland
         "/system/lib64",                       // Android Native 64-bit
         "/system/lib",                         // Android Native 32-bit
-        "/usr/lib", "/lib", "/usr/lib64"
+        "/usr/local/lib",
+        "/usr/lib",
+        "/lib",
+        "/usr/lib64",
+        "/lib64",
+        "/usr/lib/x86_64-linux-gnu",           // Debian / Ubuntu multiarch
+        "/usr/lib/aarch64-linux-gnu",
+        "/usr/lib/arm-linux-gnueabihf"
     };
 
     for (const char* dir : standardDirs) {
@@ -91,12 +127,40 @@ static std::vector<std::string> GetHostLibraryPaths() {
     return paths;
 }
 
+static std::string FindHostCrtFile(const std::vector<std::string>& candidateNames) {
+    const char* searchDirs[] = {
+        "/data/data/com.termux/files/usr/lib",
+        "/system/lib64",
+        "/system/lib",
+        "/usr/lib",
+        "/lib",
+        "/usr/lib64",
+        "/lib64",
+        "/usr/lib/x86_64-linux-gnu",
+        "/usr/lib/aarch64-linux-gnu",
+        "/usr/lib/arm-linux-gnueabihf"
+    };
+
+    for (const auto& name : candidateNames) {
+        for (const char* dir : searchDirs) {
+            std::string fullPath = std::string(dir) + "/" + name;
+            if (llvm::sys::fs::exists(fullPath)) {
+                return fullPath;
+            }
+        }
+    }
+    return "";
+}
+
 static std::string GetHostDynamicLinker() {
     const char* linkers[] = {
         "/system/bin/linker64",                // Android 64-bit
         "/system/bin/linker",                  // Android 32-bit
-        "/lib64/ld-linux-x86-64.so.2",         // Linux
-        "/lib/ld-linux-aarch64.so.1"
+        "/lib64/ld-linux-x86-64.so.2",         // Linux x86_64
+        "/lib/ld-linux-aarch64.so.1",          // Linux AArch64
+        "/lib/ld-linux-armhf.so.3",            // Linux ARM
+        "/lib/ld-musl-x86_64.so.1",            // Musl x86_64 (Alpine)
+        "/lib/ld-musl-aarch64.so.1"            // Musl AArch64
     };
 
     for (const char* linker : linkers) {
@@ -110,7 +174,9 @@ static std::string GetHostDynamicLinker() {
 bool TargetEmitter::linkExecutable(
     const std::vector<std::string>& objectFiles,
     const std::string& outputFile,
-    const std::string& linkerScript
+    const std::string& linkerScript,
+    bool isShared,
+    bool isFreestanding
 ) {
     std::vector<std::string> argStorage;
     argStorage.push_back("lld");
@@ -119,29 +185,52 @@ bool TargetEmitter::linkExecutable(
     argStorage.push_back("-o");
     argStorage.push_back(outputFile);
 
-    // Bare-Metal Mode
-    if (!linkerScript.empty()) {
+    // Bare-Metal / Freestanding Mode
+    if (!linkerScript.empty() || isFreestanding) {
         argStorage.push_back("--nostdlib");
         argStorage.push_back("-z");
         argStorage.push_back("max-page-size=0x1000");
-        argStorage.push_back("-T");
-        argStorage.push_back(linkerScript);
+        if (!linkerScript.empty()) {
+            argStorage.push_back("-T");
+            argStorage.push_back(linkerScript);
+        }
     } 
     // Hosted Userland Mode (Android/Linux)
     else {
-        argStorage.push_back("-pie"); // Position Independent Executable (Required by Android)
-        argStorage.push_back("--defsym=main=Main"); // Map LLB Main to C main
+        if (isShared) {
+            argStorage.push_back("-shared");
+            argStorage.push_back("-soname");
+            argStorage.push_back(outputFile);
+        } else {
+            argStorage.push_back("-pie"); // Position Independent Executable (Required by Android)
+            // Allow looking for shared libraries in the same directory as the executable ($ORIGIN)
+            argStorage.push_back("-rpath");
+            argStorage.push_back("$ORIGIN");
+            argStorage.push_back("-rpath");
+            argStorage.push_back(".");
+        }
 
         std::string interpreter = GetHostDynamicLinker();
-        if (!interpreter.empty()) {
+        if (!interpreter.empty() && !isShared) {
             argStorage.push_back("-dynamic-linker");
             argStorage.push_back(interpreter);
         }
 
-        // Add C Runtime Startup objects for Termux/Android to provide '_start'
-        std::string termuxLib = "/data/data/com.termux/files/usr/lib";
-        if (llvm::sys::fs::exists(termuxLib + "/crtbegin_dynamic.o")) {
-            argStorage.push_back(termuxLib + "/crtbegin_dynamic.o");
+        // Add C Runtime Startup objects dynamically
+        if (isShared) {
+            std::string crtBegin = FindHostCrtFile({"crtbegin_so.o", "crti.o"});
+            if (!crtBegin.empty()) {
+                argStorage.push_back(crtBegin);
+            }
+        } else {
+            std::string crtBegin = FindHostCrtFile({"crtbegin_dynamic.o", "Scrt1.o", "crt1.o"});
+            if (!crtBegin.empty()) {
+                argStorage.push_back(crtBegin);
+            }
+            std::string crtI = FindHostCrtFile({"crti.o"});
+            if (!crtI.empty()) {
+                argStorage.push_back(crtI);
+            }
         }
 
         for (const auto& path : GetHostLibraryPaths()) {
@@ -155,10 +244,18 @@ bool TargetEmitter::linkExecutable(
         argStorage.push_back(obj);
     }
 
-    // Append Termux CRT End object if hosted
-    if (linkerScript.empty()) {
-        if (llvm::sys::fs::exists("/data/data/com.termux/files/usr/lib/crtend_android.o")) {
-            argStorage.push_back("/data/data/com.termux/files/usr/lib/crtend_android.o");
+    // Append CRT End object dynamically if hosted
+    if (linkerScript.empty() && !isFreestanding) {
+        if (isShared) {
+            std::string crtEnd = FindHostCrtFile({"crtend_so.o", "crtn.o"});
+            if (!crtEnd.empty()) {
+                argStorage.push_back(crtEnd);
+            }
+        } else {
+            std::string crtEnd = FindHostCrtFile({"crtend_android.o", "crtend.o", "crtn.o"});
+            if (!crtEnd.empty()) {
+                argStorage.push_back(crtEnd);
+            }
         }
     }
 
@@ -172,6 +269,39 @@ bool TargetEmitter::linkExecutable(
 
     lld::Result result = lld::lldMain(args, llvm::outs(), llvm::errs(), drivers);
     return result.retCode == 0;
+}
+
+bool TargetEmitter::createStaticArchive(
+    const std::vector<std::string>& objectFiles,
+    const std::string& outputFile
+) {
+    std::vector<llvm::NewArchiveMember> members;
+    for (const auto& objFile : objectFiles) {
+        llvm::Expected<llvm::NewArchiveMember> memberOrErr =
+            llvm::NewArchiveMember::getFile(objFile, /*Deterministic=*/true);
+        if (!memberOrErr) {
+            std::cerr << "[llbc] Archive error: Unable to read object member " << objFile << "\n";
+            return false;
+        }
+        members.push_back(std::move(*memberOrErr));
+    }
+
+    auto err = llvm::writeArchive(
+        outputFile,
+        members,
+        llvm::SymtabWritingMode::NormalSymtab,
+        llvm::object::Archive::K_GNU,
+        /*Deterministic=*/true,
+        /*Thin=*/false
+    );
+
+    if (err) {
+        std::cerr << "[llbc] Archive error writing to " << outputFile << ": "
+                  << llvm::toString(std::move(err)) << "\n";
+        return false;
+    }
+
+    return true;
 }
 
 } // namespace llbc

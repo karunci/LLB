@@ -22,6 +22,7 @@ struct ProjectConfig {
     std::string entryPoint;
     std::string outputFile;
     std::string linkerScript;
+    bool isFreestanding{false};
     std::vector<std::string> sourceFiles;    // .bas / .cls
     std::vector<std::string> assemblyFiles;  // .S / .s
 };
@@ -35,6 +36,14 @@ public:
             std::cerr << "Error: Could not open project file " << projectFilePath << "\n";
             return config;
         }
+
+        std::filesystem::path baseDir = std::filesystem::path(projectFilePath).parent_path();
+        auto resolvePath = [&](const std::string& p) -> std::string {
+            if (p.empty() || std::filesystem::path(p).is_absolute() || baseDir.empty()) {
+                return p;
+            }
+            return (baseDir / p).lexically_normal().string();
+        };
 
         std::string line;
         while (std::getline(file, line)) {
@@ -52,17 +61,26 @@ public:
                 value.erase(value.find_last_not_of(" \t\"") + 1);
 
                 if (key == "Name") config.name = value;
+                else if (key == "Type") {
+                    config.type = value;
+                    if (value == "Kernel" || value == "Freestanding" || value == "BareMetal") {
+                        config.isFreestanding = true;
+                    }
+                } else if (key == "Freestanding") {
+                    config.isFreestanding = (value == "True" || value == "true" || value == "1");
+                }
+                else if (key == "Arch") config.targetArch = value;
                 else if (key == "EntryPoint") config.entryPoint = value;
-                else if (key == "LinkerScript") config.linkerScript = value;
+                else if (key == "LinkerScript") config.linkerScript = resolvePath(value);
                 else if (key == "Module" || key == "Class") {
-                    config.sourceFiles.push_back(value);
+                    config.sourceFiles.push_back(resolvePath(value));
                 } else if (key == "Assembly") {
-                    config.assemblyFiles.push_back(value);
+                    config.assemblyFiles.push_back(resolvePath(value));
                 }
             }
         }
 
-        config.outputFile = config.name + ".elf";
+        config.outputFile = resolvePath(config.name + ".elf");
         return config;
     }
 };

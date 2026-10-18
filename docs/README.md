@@ -4,7 +4,9 @@
 
 ### Executive Summary
 
-**Low-Level Basic (LLB)** is an ahead-of-time (AOT) compiled systems programming language. It combines the familiar readable syntax and object model of Microsoft Visual Basic 6 (Modules, Classes, `ByVal`/`ByRef`, `Sub`/`Function`) with bare-metal execution semantics needed to develop operating system kernels, bootloaders, device drivers, and freestanding applications.
+**Low-Level Basic (LLB)** is an ahead-of-time (AOT) compiled systems and general-purpose programming language. It combines the strong features of Rust (memory safety, zero-cost abstractions, robust static verification) and high-level systems languages (C/C++ manual memory management, hardware control, pointer arithmetic, inline assembly) with the simple, expressive syntax of Visual Basic 6 (Modules, Classes, `ByVal`/`ByRef`, `Sub`/`Function`, `Select Case`, `With`, `Print`).
+
+Targeted at systems programmers, kernel developers, and hobbyist coders alike, LLB emphasizes code that is intuitive to read and write without sacrificing bare-metal efficiency. The reference compiler toolchain (`llbc`) generates compact, highly optimized native machine code with a minimal freestanding footprint, full cross-compilation support, and zero mandatory external runtime dependencies.
 
 LLB eliminates the runtime overhead of classic BASIC engines (such as dynamic `Variant` types, COM/OLE dynamic resolution, or mandatory heap garbage collection). It introduces explicit fixed-width data types, low-level pointer semantics (`Pointer To T`), volatile memory-mapped I/O controls, explicit struct alignment directives, and inline assembly integration.
 
@@ -187,18 +189,155 @@ End Asm
 
 ```
 
-#### Volatile Memory Access
+### Control Flow & Structured Programming
 
-Prevent compiler optimization passes from stripping or reordering memory-mapped register writes (e.g., LAPIC, VGA Text Buffer):
+LLB provides modern structured control flow constructs matching classic Visual Basic 6 syntax, compiled ahead-of-time to optimized LLVM basic blocks:
+
+#### 1. Conditional Branching (`If ... ElseIf ... Else ... End If`)
+
+Supports nested conditional blocks as well as single-line conditions:
 
 ```vb
-Private buffer As Volatile Pointer To UInt16
-buffer = CPtr(Volatile Pointer To UInt16, &HB8000)
+' Nested Block Conditional
+If x > 100 Then
+    If x > 200 Then
+        score = 3
+    Else
+        score = 2
+    End If
+ElseIf x > 50 Then
+    score = 1
+Else
+    score = 0
+End If
 
-' Guaranteed physical MMIO write
-buffer(0) = &H0F41 
-
+' Single-Line Conditional
+If errorOccurred Then Exit Function
 ```
+
+#### 2. Pattern & Range Selection (`Select Case`)
+
+Multi-branch dispatch lowered directly to jump tables or optimized conditional branches:
+
+```vb
+Select Case messageId
+    Case 1, 2, 3
+        HandleLowPriority
+    Case 10, 20
+        HandleHighPriority
+    Case Else
+        HandleUnknown
+End Select
+```
+
+#### 3. Iteration & Loops (`For`, `Do`, `While`)
+
+```vb
+' For Loop with explicit Step increment
+Dim i As Int32
+For i = 0 To 100 Step 5
+    buffer(i) = 0
+Next i
+
+' Pre-tested and Post-tested Do Loops
+Do While cursor < length
+    cursor = cursor + 1
+Loop
+
+Do
+    pollStatus = ReadRegister()
+    If pollStatus = 1 Then Exit Do
+Loop While pollStatus <> 0
+
+' While-Wend Construct
+While n < 32
+    n = n * 2
+Wend
+```
+
+#### 4. Pointer Arithmetic & Low-Level Memory Access
+
+In addition to index access (`ptr(i)`), LLB allows direct pointer offset arithmetic:
+
+```vb
+Dim startPtr As Pointer To Byte
+startPtr = CPtr(Pointer To Byte, &H2000)
+
+' Pointer arithmetic: advances by byte offset
+Dim offsetPtr As Pointer To Byte
+offsetPtr = startPtr + 16
+offsetPtr(0) = &HFF
+```
+
+#### 5. VB6-Style String Concatenation & Auto-Conversion (`&` and `+`)
+
+Inspired by Visual Basic 6, LLB provides first-class string concatenation and automatic numeric conversion:
+
+* **Ampersand (`&`):** Unconditionally performs string concatenation. Numbers are automatically formatted and converted to strings without requiring manual `CStr()` calls:
+  ```vb
+  Dim percent As Int32 = 75
+  Dim msg As String
+  msg = "Loading " & percent & "%" ' Result: "Loading 75%"
+  ```
+* **Plus (`+`):** If either operand is a string, `+` performs string concatenation:
+  ```vb
+  Dim status As String = "Status: " + 100 + "% Complete"
+  ```
+
+#### 6. Foreign Function Interface (FFI) & Dynamic Libraries
+
+LLB provides comprehensive support for interfacing with external libraries (both standard C dynamic libraries `.so` / `.dll` and native shared objects):
+
+##### Static/AOT Dynamic Linking (`Declare Function ... Lib ...`)
+LLB supports the classic VB6-style `Declare` syntax for binding external functions from libraries:
+```vb
+' Standard C library binding with symbol aliasing
+Declare Function putsLib Lib "c" Alias "puts" (ByVal str As Pointer To Byte) As Int32
+
+' Custom dynamic library binding
+Declare Function AddNumbers Lib "SharedLib" Alias "AddNumbers" (ByVal a As Int32, ByVal b As Int32) As Int32
+```
+* **Syntax:** `[Public | Private] Declare [Sub | Function] Name Lib "libName" [Alias "realSymbol"] (params...) [As ReturnType]`
+* **Linkage:** Automatically links against the external symbol using standard C calling conventions (`CallingConv::C`). On ELF targets, `llbc` injects `-rpath $ORIGIN` and `-rpath .` so libraries located in the application directory are automatically discovered at runtime without needing `LD_LIBRARY_PATH`.
+
+##### Dynamic Runtime Loading (`LoadLibrary` / `dlopen`)
+In hosted systems, LLB can dynamically load libraries and resolve procedure addresses at runtime via POSIX `dlopen`/`dlsym` or Win32 `LoadLibrary`/`GetProcAddress`:
+```vb
+' Dynamic runtime resolution using POSIX dlopen / dlsym
+Declare Function dlopen Lib "c" (ByVal filename As Pointer To Byte, ByVal flags As Int32) As Pointer To Void
+Declare Function dlsym Lib "c" (ByVal handle As Pointer To Void, ByVal symbol As Pointer To Byte) As Pointer To Void
+Declare Function dlclose Lib "c" (ByVal handle As Pointer To Void) As Int32
+
+' Win32 dynamic resolution
+Declare Function LoadLibraryA Lib "kernel32.dll" (ByVal lpLibFileName As Pointer To Byte) As Pointer To Void
+Declare Function GetProcAddress Lib "kernel32.dll" (ByVal hModule As Pointer To Void, ByVal lpProcName As Pointer To Byte) As Pointer To Void
+Declare Function FreeLibrary Lib "kernel32.dll" (ByVal hLibModule As Pointer To Void) As Int32
+```
+
+##### Compiling Shared Libraries (`-shared`)
+LLB can also compile shared libraries (`.so` / `.dll`) for modular plugins, external language FFI, or dynamic loading:
+* **Command Line:**
+  ```bash
+  llbc-stage0 MyLibrary.bas -shared -o libMyLibrary.so
+  ```
+* **Project Descriptor (`.llbproj`):**
+  ```ini
+  [Project]
+  Name = "MyLibrary"
+  Type = "SharedLibrary" ' or "DynamicLibrary"
+  ```
+Public functions in the module are exported as unmangled symbols.
+
+---
+
+### Self-Hosting Roadmap & LLVM-C API Bindings
+
+The Stage-1 compiler (`llbc-stage1`) is written entirely in Low-Level Basic. It bridges to the LLVM code generator and target emitter via direct bindings to the LLVM-C API (`libLLVM`) defined in `src/stage1/LlvmC.bas`:
+
+* **Context & Modules:** `LLVMContextCreate()`, `LLVMModuleCreateWithNameInContext()`
+* **Type Construction:** `LLVMInt32TypeInContext()`, `LLVMPointerType()`, `LLVMFunctionType()`
+* **Instruction Builders:** `LLVMBuildAlloca()`, `LLVMBuildStore()`, `LLVMBuildLoad2()`, `LLVMBuildGEP2()`, `LLVMBuildCall2()`
+* **Target Emission:** `LLVMTargetMachineEmitToFile()`
 
 ---
 

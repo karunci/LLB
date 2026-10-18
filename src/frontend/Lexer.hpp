@@ -146,6 +146,7 @@ public:
     explicit Lexer(std::string source);
     Token nextToken();
     Token peekToken();
+    const std::string& getSource() const { return m_source; }
 
 private:
     std::string m_source;

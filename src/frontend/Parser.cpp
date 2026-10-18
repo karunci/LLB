@@ -6,6 +6,7 @@
  */
 
 #include "Parser.hpp"
+#include "Diagnostic.hpp"
 #include <iostream>
 #include <stdexcept>
 #include <algorithm>
@@ -19,8 +20,8 @@ static std::string toLower(const std::string& str) {
     return res;
 }
 
-Parser::Parser(Lexer lexer, std::unordered_map<std::string, int64_t> defines)
-    : m_lexer(std::move(lexer)), m_condConstants(std::move(defines)) {
+Parser::Parser(Lexer lexer, std::unordered_map<std::string, int64_t> defines, std::string sourceFilePath)
+    : m_lexer(std::move(lexer)), m_sourceFilePath(std::move(sourceFilePath)), m_condConstants(std::move(defines)) {
     // Default compiler preprocessor constants
     if (m_condConstants.find("__LLBC__") == m_condConstants.end()) {
         m_condConstants["__LLBC__"] = 1;
@@ -29,6 +30,11 @@ Parser::Parser(Lexer lexer, std::unordered_map<std::string, int64_t> defines)
         m_condConstants["__LLBC_STAGE0__"] = 1;
     }
     consume();
+}
+
+void Parser::reportError(const std::string& message, const Token* tok) {
+    const Token& t = tok ? *tok : m_currentToken;
+    Diagnostic::report(m_sourceFilePath, t.line, t.column, true, message, m_lexer.getSource());
 }
 
 int64_t Parser::evalCondPrimary() {
@@ -318,9 +324,7 @@ bool Parser::expect(TokenType type, const std::string& errorMessage) {
         consume();
         return true;
     }
-    std::cerr << "[Parser Error] Line " << m_currentToken.line 
-              << ":" << m_currentToken.column << " - " 
-              << errorMessage << " (Found: '" << m_currentToken.text << "')\n";
+    reportError(errorMessage + " (Found: '" + m_currentToken.text + "')");
     throw std::runtime_error("Parse failure");
 }
 
@@ -874,95 +878,88 @@ std::unique_ptr<ASTNode> Parser::parseStatement() {
         while (match(TokenType::Colon)) {}
     }
 
+    size_t stmtLine = m_currentToken.line;
+    size_t stmtCol = m_currentToken.column;
+
+    std::unique_ptr<ASTNode> result;
+
     if (m_currentToken.type == TokenType::KwDim || checkKeyword("Dim")) {
         consume();
-        return parseDimStatement();
-    }
-    if (m_currentToken.type == TokenType::KwConst || checkKeyword("Const")) {
+        result = parseDimStatement();
+    } else if (m_currentToken.type == TokenType::KwConst || checkKeyword("Const")) {
         consume();
-        return parseConstStatement(false);
-    }
-    if (m_currentToken.type == TokenType::KwIf || checkKeyword("If")) {
+        result = parseConstStatement(false);
+    } else if (m_currentToken.type == TokenType::KwIf || checkKeyword("If")) {
         consume();
-        return parseIfStatement();
-    }
-    if (m_currentToken.type == TokenType::KwFor || checkKeyword("For")) {
+        result = parseIfStatement();
+    } else if (m_currentToken.type == TokenType::KwFor || checkKeyword("For")) {
         consume();
         if (m_currentToken.type == TokenType::KwEach || checkKeyword("Each")) {
             consume();
-            return parseForEachStatement();
+            result = parseForEachStatement();
+        } else {
+            result = parseForStatement();
         }
-        return parseForStatement();
-    }
-    if (m_currentToken.type == TokenType::KwDo || checkKeyword("Do")) {
+    } else if (m_currentToken.type == TokenType::KwDo || checkKeyword("Do")) {
         consume();
-        return parseDoLoopStatement();
-    }
-    if (m_currentToken.type == TokenType::KwWhile || checkKeyword("While")) {
+        result = parseDoLoopStatement();
+    } else if (m_currentToken.type == TokenType::KwWhile || checkKeyword("While")) {
         consume();
-        return parseWhileStatement();
-    }
-    if (m_currentToken.type == TokenType::KwExit || checkKeyword("Exit")) {
+        result = parseWhileStatement();
+    } else if (m_currentToken.type == TokenType::KwExit || checkKeyword("Exit")) {
         consume();
-        return parseExitStatement();
-    }
-    if (m_currentToken.type == TokenType::KwSelect || checkKeyword("Select")) {
+        result = parseExitStatement();
+    } else if (m_currentToken.type == TokenType::KwSelect || checkKeyword("Select")) {
         consume();
-        return parseSelectStatement();
-    }
-    if (m_currentToken.type == TokenType::KwAsm || checkKeyword("Asm")) {
+        result = parseSelectStatement();
+    } else if (m_currentToken.type == TokenType::KwAsm || checkKeyword("Asm")) {
         consume();
-        return parseAsmStatement();
-    }
-    if (m_currentToken.type == TokenType::KwWith || checkKeyword("With")) {
+        result = parseAsmStatement();
+    } else if (m_currentToken.type == TokenType::KwWith || checkKeyword("With")) {
         consume();
-        return parseWithStatement();
-    }
-    if (m_currentToken.type == TokenType::KwOpen || checkKeyword("Open")) {
+        result = parseWithStatement();
+    } else if (m_currentToken.type == TokenType::KwOpen || checkKeyword("Open")) {
         consume();
-        return parseOpenStatement();
-    }
-    if (m_currentToken.type == TokenType::KwClose || checkKeyword("Close")) {
+        result = parseOpenStatement();
+    } else if (m_currentToken.type == TokenType::KwClose || checkKeyword("Close")) {
         consume();
-        return parseCloseStatement();
-    }
-    if (m_currentToken.type == TokenType::KwLine || checkKeyword("Line")) {
+        result = parseCloseStatement();
+    } else if (m_currentToken.type == TokenType::KwLine || checkKeyword("Line")) {
         consume();
         if (m_currentToken.type == TokenType::KwInput || checkKeyword("Input")) {
             consume();
-            return parseLineInputStatement();
+            result = parseLineInputStatement();
         }
-    }
-    if (m_currentToken.type == TokenType::KwPrint || checkKeyword("Print")) {
+    } else if (m_currentToken.type == TokenType::KwPrint || checkKeyword("Print")) {
         consume();
-        return parsePrintOrPrintFileStatement();
-    }
-    if (m_currentToken.type == TokenType::KwInput || checkKeyword("Input")) {
+        result = parsePrintOrPrintFileStatement();
+    } else if (m_currentToken.type == TokenType::KwInput || checkKeyword("Input")) {
         consume();
-        return parseInputOrInputFileStatement();
-    }
-    if (m_currentToken.type == TokenType::KwDelete || checkKeyword("Delete")) {
+        result = parseInputOrInputFileStatement();
+    } else if (m_currentToken.type == TokenType::KwDelete || checkKeyword("Delete")) {
         consume();
-        return parseDeleteStatement();
-    }
-    if (m_currentToken.type == TokenType::KwReDim || checkKeyword("ReDim")) {
+        result = parseDeleteStatement();
+    } else if (m_currentToken.type == TokenType::KwReDim || checkKeyword("ReDim")) {
         consume();
-        return parseReDimStatement();
-    }
-    if (m_currentToken.type == TokenType::KwErase || checkKeyword("Erase")) {
+        result = parseReDimStatement();
+    } else if (m_currentToken.type == TokenType::KwErase || checkKeyword("Erase")) {
         consume();
-        return parseEraseStatement();
-    }
-    if (m_currentToken.type == TokenType::KwGoTo || checkKeyword("GoTo")) {
+        result = parseEraseStatement();
+    } else if (m_currentToken.type == TokenType::KwGoTo || checkKeyword("GoTo")) {
         consume();
-        return parseGoToStatement();
-    }
-    if (m_currentToken.type == TokenType::KwTry || checkKeyword("Try")) {
+        result = parseGoToStatement();
+    } else if (m_currentToken.type == TokenType::KwTry || checkKeyword("Try")) {
         consume();
-        return parseTryStatement();
+        result = parseTryStatement();
+    } else {
+        result = parseAssignOrCallStatement();
     }
 
-    return parseAssignOrCallStatement();
+    if (result) {
+        result->line = stmtLine;
+        result->column = stmtCol;
+    }
+    return result;
 }
 
 std::unique_ptr<GoToStmtNode> Parser::parseGoToStatement() {
@@ -1612,9 +1609,14 @@ std::unique_ptr<ExprASTNode> Parser::parsePrimaryExpr() {
 
 // --- Procedure & Module Parsing ---
 
-std::unique_ptr<ProcedureNode> Parser::parseProcedure(bool isPublic) {
+std::unique_ptr<ProcedureNode> Parser::parseProcedure(bool isPublic, bool isInline, bool isNoReturn, bool isExport) {
     auto procNode = std::make_unique<ProcedureNode>();
     procNode->isPublic = isPublic;
+    procNode->isInline = isInline;
+    procNode->isNoReturn = isNoReturn;
+    procNode->isExport = isExport;
+    procNode->line = m_currentToken.line;
+    procNode->column = m_currentToken.column;
 
     if (m_currentToken.type == TokenType::KwPublic || checkKeyword("Public")) {
         consume();
@@ -2029,25 +2031,42 @@ std::unique_ptr<ModuleNode> Parser::parseModule() {
             }
         }
 
-        // Check for struct attribute annotations: <Packed> or <Align(N)>
+        // Check for attribute annotations: <Packed>, <Align(N)>, <Inline>, <NoReturn>, <Export>
         bool isPacked = false;
         int alignVal = 0;
-        if (match(TokenType::Less)) {
-            if (checkKeyword("Packed")) {
-                consume();
-                isPacked = true;
-            } else if (checkKeyword("Align")) {
-                consume();
-                if (match(TokenType::LParen)) {
-                    if (m_currentToken.type == TokenType::NumberLiteral) {
-                        try {
-                            alignVal = std::stoi(m_currentToken.text);
-                        } catch (...) {}
-                        consume();
+        bool isInline = false;
+        bool isNoReturn = false;
+        bool isExport = false;
+
+        while (match(TokenType::Less)) {
+            do {
+                if (checkKeyword("Packed")) {
+                    consume();
+                    isPacked = true;
+                } else if (checkKeyword("Inline")) {
+                    consume();
+                    isInline = true;
+                } else if (checkKeyword("NoReturn")) {
+                    consume();
+                    isNoReturn = true;
+                } else if (checkKeyword("Export")) {
+                    consume();
+                    isExport = true;
+                } else if (checkKeyword("Align")) {
+                    consume();
+                    if (match(TokenType::LParen)) {
+                        if (m_currentToken.type == TokenType::NumberLiteral) {
+                            try {
+                                alignVal = std::stoi(m_currentToken.text);
+                            } catch (...) {}
+                            consume();
+                        }
+                        expect(TokenType::RParen, "Expected ')' after alignment value");
                     }
-                    expect(TokenType::RParen, "Expected ')' after alignment value");
+                } else {
+                    consume(); // Skip unknown attribute gracefully
                 }
-            }
+            } while (match(TokenType::Comma));
             expect(TokenType::Greater, "Expected '>' to close attribute");
         }
 
@@ -2195,7 +2214,7 @@ std::unique_ptr<ModuleNode> Parser::parseModule() {
             }
 
             // Procedure (Sub / Function / Property / Declare / Unsafe)
-            auto proc = parseProcedure(isPub);
+            auto proc = parseProcedure(isPub, isInline, isNoReturn, isExport);
             moduleNode->members.push_back(std::move(proc));
             continue;
         }
@@ -2205,7 +2224,7 @@ std::unique_ptr<ModuleNode> Parser::parseModule() {
             m_currentToken.type == TokenType::KwProperty || checkKeyword("Property") ||
             m_currentToken.type == TokenType::KwUnsafe || checkKeyword("Unsafe") ||
             m_currentToken.type == TokenType::KwDeclare || checkKeyword("Declare")) {
-            moduleNode->members.push_back(parseProcedure());
+            moduleNode->members.push_back(parseProcedure(true, isInline, isNoReturn, isExport));
             continue;
         }
 

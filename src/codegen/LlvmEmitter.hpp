@@ -12,6 +12,7 @@
 #include <llvm/IR/Module.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/InlineAsm.h>
+#include <llvm/IR/DIBuilder.h>
 #include <memory>
 #include <unordered_map>
 #include <unordered_set>
@@ -22,7 +23,7 @@ namespace llbc {
 
 class LlvmEmitter {
 public:
-    explicit LlvmEmitter(const std::string& moduleName);
+    explicit LlvmEmitter(const std::string& moduleName, bool enableDebugInfo = false);
 
     bool emitModule(const ModuleNode& moduleNode);
     void registerExternalProcedure(const std::string& name, const TypeSpec& retType, const std::vector<TypeSpec>& paramTypes, const std::string& aliasName = "");
@@ -126,6 +127,15 @@ private:
     std::unordered_map<std::string, llvm::BasicBlock*> m_labels;
     std::vector<llvm::BasicBlock*> m_catchStack;
     bool m_currentProcIsUnsafe{false};
+
+    // DWARF Debug Information Generation (-g)
+    bool m_enableDebugInfo{false};
+    std::unique_ptr<llvm::DIBuilder> m_diBuilder;
+    llvm::DICompileUnit* m_diCompileUnit{nullptr};
+    llvm::DIFile* m_diFile{nullptr};
+    std::vector<llvm::DIScope*> m_diScopes;
+
+    void emitDebugLocation(size_t line, size_t col);
 };
 
 } // namespace llbc

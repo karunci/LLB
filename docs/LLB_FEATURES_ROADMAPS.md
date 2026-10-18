@@ -65,7 +65,7 @@ LLB fuses the safety and performance of modern systems languages with the approa
 | Packed structures (`<Packed>`, `<Align(N)>`) | ✅ | Hardware descriptor layout |
 | Static arrays (`Dim x(N) As T`) | ✅ | Stack-allocated fixed arrays |
 | `Single` / `Double` (floating point) | ✅ | IEEE-754 32-bit & 64-bit float types |
-| `Currency` / `Decimal` | ❌ | Fixed-point decimal types |
+| `Currency` / `Decimal` | ✅ | Fixed-point decimal types (64-bit fixed-point scaled units) |
 | `Variant` / `Object` | ❌ | Dynamic/boxed types (low priority for systems lang) |
 | `Date` | ❌ | Date/time type |
 | Dynamic arrays (heap, resizable) | ❌ | Requires runtime allocator |
@@ -129,10 +129,10 @@ LLB fuses the safety and performance of modern systems languages with the approa
 | Executable linking (LLD) | ✅ | Embedded LLD |
 | Dynamic library linking (`-shared`) | ✅ | `.so` generation |
 | Static library archiving (`.a`) | ✅ | Native LLVM archive writer (`llvm::writeArchive`) via `-static` / `-archive` / `.a` |
-| Multi-module compilation | 🔧 | Via `.llbproj` only, no `Import` resolution |
-| `Import` / `#include` system | ❌ | Module dependency resolution |
+| Multi-module compilation | ✅ | Fully supported with automatic transitive dependency discovery |
+| `Import` / `#include` system | ✅ | Modular import resolution: `Import ModuleName`, `Import Mod.Sym`, `Import In "path"` |
 | Optimization passes (`-O0` to `-O3`) | ✅ | Full LLVM PassBuilder pipeline integration |
-| Debug info emission (`-g`, DWARF) | ❌ | Source-level debugging |
+| Debug info emission (`-g`, DWARF) | ✅ | Source-level DWARF v4 debugging symbols & subprogram line/col mappings |
 | Cross-compilation (`--target=`) | 🔧 | Triple in `.llbproj`, not CLI |
 | Incremental / parallel builds | ❌ | Recompile-only-changed |
 | Package manager | ❌ | Dependency resolution |
@@ -171,9 +171,9 @@ LLB fuses the safety and performance of modern systems languages with the approa
 | Operator overloading | ❌ | Custom `+`, `-`, `=`, etc. |
 | Iterators / Generators (`Yield`) | ❌ | Lazy sequence production |
 | Namespaces / Module nesting | ❌ | Hierarchical scope organization |
-| Compile-time evaluation (`Const` expressions) | ❌ | `constexpr`-style folding |
-| Conditional compilation (`#If`, `#Else`, `#End If`) | ❌ | Preprocessor directives |
-| Attributes / Annotations beyond `<Packed>` | ❌ | `<Inline>`, `<NoReturn>`, `<Export>`, etc. |
+| Compile-time evaluation (`Const` expressions) | ✅ | Compile-time constant evaluation in preprocessor |
+| Conditional compilation (`#If`, `#Else`, `#End If`) | ✅ | Full preprocessor directives (`#Const`, `#If`, `#ElseIf`, `#Else`, `#End If`) with `-D` flags |
+| Attributes / Annotations beyond `<Packed>` | ✅ | `<Inline>` (AlwaysInline), `<NoReturn>`, `<Export>`, `<Packed>`, `<Align(N)>` |
 | Result / Error return types | ❌ | `Result(T, E)` sum types |
 
 ---
@@ -197,10 +197,10 @@ LLB fuses the safety and performance of modern systems languages with the approa
 
 ### Phase 3: Toolchain Hardening
 12. ~~LLVM optimization passes (`-O1`, `-O2`, `-O3` via PassBuilder)~~ — **Done** ✅
-13. ❌ Debug info emission (DWARF)
-14. ❌ `Import` / module dependency resolution
+13. ❌ Debug info emission (DWARF `-g`) — **In Progress** 🎯
+14. ~~`Import` / module dependency resolution~~ — **Done** ✅
 15. ~~Static library output (`.a`)~~ — **Done** ✅
-16. ❌ Conditional compilation (`#If`)
+16. ~~Conditional compilation (`#If`)~~ — **Done** ✅
 
 ### Phase 4: Modern Language Power
 17. ~~`New` / `Delete` + heap object lifecycle~~ — **Done** ✅

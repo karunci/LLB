@@ -18,14 +18,17 @@ namespace llbc {
 
 class Parser {
 public:
-    explicit Parser(Lexer lexer, std::unordered_map<std::string, int64_t> defines = {});
+    explicit Parser(Lexer lexer, std::unordered_map<std::string, int64_t> defines = {}, std::string sourceFilePath = "");
 
     std::unique_ptr<ModuleNode> parseModule();
+
+    void reportError(const std::string& message, const Token* tok = nullptr);
 
 private:
     Lexer m_lexer;
     Token m_currentToken;
     Token m_prevToken;
+    std::string m_sourceFilePath;
 
     // Preprocessor & Conditional Compilation State
     std::unordered_map<std::string, int64_t> m_condConstants;
@@ -61,7 +64,7 @@ private:
     TypeSpec parseTypeSpec();
 
     // Declarations & Members
-    std::unique_ptr<ProcedureNode> parseProcedure(bool isPublic = true);
+    std::unique_ptr<ProcedureNode> parseProcedure(bool isPublic = true, bool isInline = false, bool isNoReturn = false, bool isExport = false);
     std::unique_ptr<StructureNode> parseStructure(bool isPacked = false, int alignment = 0);
     std::unique_ptr<StructureNode> parseUnion(bool isPacked = false, int alignment = 0);
     std::unique_ptr<ConstStmtNode> parseConstStatement(bool isPublic = false);

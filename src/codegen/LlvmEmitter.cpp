@@ -45,10 +45,24 @@ static llvm::Function* findFunctionCaseInsensitive(llvm::Module* mod, const std:
     return nullptr;
 }
 
-LlvmEmitter::LlvmEmitter(const std::string& moduleName) {
+LlvmEmitter::LlvmEmitter(const std::string& moduleName, bool enableDebugInfo) 
+    : m_enableDebugInfo(enableDebugInfo) {
     m_context = std::make_unique<llvm::LLVMContext>();
     m_module = std::make_unique<llvm::Module>(moduleName, *m_context);
     m_builder = std::make_unique<llvm::IRBuilder<>>(*m_context);
+
+    if (m_enableDebugInfo) {
+        m_diBuilder = std::make_unique<llvm::DIBuilder>(*m_module);
+        // LLVM debug metadata flags: Dwarf Version 4, Debug Info Version
+        m_module->addModuleFlag(llvm::Module::Warning, "Debug Info Version", llvm::DEBUG_METADATA_VERSION);
+        m_module->addModuleFlag(llvm::Module::Warning, "Dwarf Version", 4);
+    }
+}
+
+void LlvmEmitter::emitDebugLocation(size_t line, size_t col) {
+    if (!m_enableDebugInfo || m_diScopes.empty()) return;
+    llvm::DILocation* loc = llvm::DILocation::get(*m_context, line, col, m_diScopes.back());
+    m_builder->SetCurrentDebugLocation(loc);
 }
 
 llvm::Type* LlvmEmitter::getLlvmType(const TypeSpec& typeSpec) {
@@ -61,11 +75,11 @@ llvm::Type* LlvmEmitter::getLlvmType(const TypeSpec& typeSpec) {
     llvm::Type* baseType = nullptr;
     if (typeName == "byte" || typeName == "ubyte") {
         baseType = llvm::Type::getInt8Ty(*m_context);
-    } else if (typeName == "uint16" || typeName == "int16") {
+    } else if (typeName == "uint16" || typeName == "int16" || typeName == "short" || typeName == "ushort") {
         baseType = llvm::Type::getInt16Ty(*m_context);
-    } else if (typeName == "uint32" || typeName == "int32" || typeName == "long") {
+    } else if (typeName == "uint32" || typeName == "int32" || typeName == "long" || typeName == "ulong" || typeName == "integer" || typeName == "uinteger") {
         baseType = llvm::Type::getInt32Ty(*m_context);
-    } else if (typeName == "uint64" || typeName == "int64") {
+    } else if (typeName == "uint64" || typeName == "int64" || typeName == "currency" || typeName == "decimal") {
         baseType = llvm::Type::getInt64Ty(*m_context);
     } else if (typeName == "boolean") {
         baseType = llvm::Type::getInt1Ty(*m_context);
@@ -307,20 +321,23 @@ bool LlvmEmitter::isStringExpr(ExprASTNode* expr) {
 
 bool LlvmEmitter::isUnsignedExpr(ExprASTNode* expr) {
     if (!expr) return false;
+    auto isUnsignedType = [](const std::string& name) {
+        std::string t = toLower(name);
+        return (t == "byte" || t == "ubyte" || t == "uint8" || t == "uint16" || 
+                t == "ushort" || t == "uint32" || t == "ulong" || 
+                t == "uinteger" || t == "uint64" || t == "uintptr");
+    };
+
     if (auto var = dynamic_cast<VariableExprASTNode*>(expr)) {
         auto it = m_variableTypes.find(var->name);
         if (it != m_variableTypes.end()) {
             if (it->second.pointerDepth > 0) return true;
-            std::string tName = toLower(it->second.name);
-            return (tName == "byte" || tName == "uint8" || tName == "uint16" || 
-                    tName == "uint32" || tName == "uint64" || tName == "uintptr");
+            return isUnsignedType(it->second.name);
         }
     }
     if (auto cast = dynamic_cast<CastExprASTNode*>(expr)) {
         if (cast->targetType.pointerDepth > 0) return true;
-        std::string tName = toLower(cast->targetType.name);
-        return (tName == "byte" || tName == "uint8" || tName == "uint16" || 
-                tName == "uint32" || tName == "uint64" || tName == "uintptr");
+        return isUnsignedType(cast->targetType.name);
     }
     if (auto mem = dynamic_cast<MemberAccessExprASTNode*>(expr)) {
         if (auto baseVar = dynamic_cast<VariableExprASTNode*>(mem->base.get())) {
@@ -332,9 +349,7 @@ bool LlvmEmitter::isUnsignedExpr(ExprASTNode* expr) {
                     auto fIt = sIt->second.find(toLower(mem->memberName));
                     if (fIt != sIt->second.end()) {
                         if (fIt->second.pointerDepth > 0) return true;
-                        std::string tName = toLower(fIt->second.name);
-                        return (tName == "byte" || tName == "uint8" || tName == "uint16" || 
-                                tName == "uint32" || tName == "uint64" || tName == "uintptr");
+                        return isUnsignedType(fIt->second.name);
                     }
                 }
             }
@@ -344,16 +359,12 @@ bool LlvmEmitter::isUnsignedExpr(ExprASTNode* expr) {
         auto it = m_variableTypes.find(call->funcName);
         if (it != m_variableTypes.end()) {
             if (it->second.pointerDepth > 0) return true;
-            std::string tName = toLower(it->second.name);
-            return (tName == "byte" || tName == "uint8" || tName == "uint16" || 
-                    tName == "uint32" || tName == "uint64" || tName == "uintptr");
+            return isUnsignedType(it->second.name);
         }
         auto pIt = m_procReturnTypes.find(toLower(call->funcName));
         if (pIt != m_procReturnTypes.end()) {
             if (pIt->second.pointerDepth > 0) return true;
-            std::string tName = toLower(pIt->second.name);
-            return (tName == "byte" || tName == "uint8" || tName == "uint16" || 
-                    tName == "uint32" || tName == "uint64" || tName == "uintptr");
+            return isUnsignedType(pIt->second.name);
         }
     }
     if (auto bin = dynamic_cast<BinaryExprASTNode*>(expr)) {
@@ -3200,6 +3211,10 @@ void LlvmEmitter::emitAsmStatement(const AsmStmtNode& asmNode) {
 void LlvmEmitter::emitStatement(ASTNode* stmt) {
     if (!stmt) return;
 
+    if (stmt->line > 0) {
+        emitDebugLocation(stmt->line, stmt->column > 0 ? stmt->column : 1);
+    }
+
     if (auto dimStmt = dynamic_cast<DimStmtNode*>(stmt)) {
         emitDimStatement(*dimStmt);
     } else if (auto constStmt = dynamic_cast<ConstStmtNode*>(stmt)) {
@@ -3663,7 +3678,10 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
         if (num->typeHint == "Boolean") {
             return llvm::ConstantInt::get(llvm::Type::getInt1Ty(*m_context), num->val != 0);
         }
-        return llvm::ConstantInt::get(llvm::Type::getInt32Ty(*m_context), num->val);
+        if (num->val < std::numeric_limits<int32_t>::min() || num->val > std::numeric_limits<int32_t>::max()) {
+            return llvm::ConstantInt::get(llvm::Type::getInt64Ty(*m_context), num->val);
+        }
+        return llvm::ConstantInt::get(llvm::Type::getInt32Ty(*m_context), static_cast<int32_t>(num->val));
     }
 
     // Strings
@@ -4992,8 +5010,42 @@ llvm::Function* LlvmEmitter::emitProcedure(const ProcedureNode& procNode, const 
     m_currentProcIsUnsafe = procNode.isUnsafe;
     func->addFnAttr(llvm::Attribute::StackProtectStrong);
 
+    if (procNode.isInline) {
+        func->addFnAttr(llvm::Attribute::AlwaysInline);
+    }
+    if (procNode.isNoReturn) {
+        func->addFnAttr(llvm::Attribute::NoReturn);
+    }
+    if (procNode.isExport) {
+        func->setLinkage(llvm::GlobalValue::ExternalLinkage);
+        func->setVisibility(llvm::GlobalValue::DefaultVisibility);
+    }
+
     m_labels.clear();
     m_catchStack.clear();
+
+    // DWARF DISubprogram for procedure
+    llvm::DISubprogram* diSubprogram = nullptr;
+    if (m_enableDebugInfo && m_diBuilder && m_diFile) {
+        llvm::DISubroutineType* diFnType = m_diBuilder->createSubroutineType(
+            m_diBuilder->getOrCreateTypeArray({})
+        );
+        unsigned lineNo = procNode.line > 0 ? procNode.line : 1;
+        diSubprogram = m_diBuilder->createFunction(
+            m_diFile,
+            procNode.name,
+            func->getName(),
+            m_diFile,
+            lineNo,
+            diFnType,
+            lineNo,
+            llvm::DINode::FlagPrototyped,
+            llvm::DISubprogram::SPFlagDefinition
+        );
+        func->setSubprogram(diSubprogram);
+        m_diScopes.push_back(diSubprogram);
+        emitDebugLocation(lineNo, 1);
+    }
 
     // 4. Create Entry Block
     llvm::BasicBlock* entryBB = llvm::BasicBlock::Create(*m_context, "entry", func);
@@ -5039,11 +5091,38 @@ llvm::Function* LlvmEmitter::emitProcedure(const ProcedureNode& procNode, const 
         m_builder->CreateRetVoid();
     }
 
+    if (m_enableDebugInfo && diSubprogram) {
+        m_diScopes.pop_back();
+        m_builder->SetCurrentDebugLocation(llvm::DebugLoc());
+    }
+
     llvm::verifyFunction(*func);
     return func;
 }
 
 bool LlvmEmitter::emitModule(const ModuleNode& moduleNode) {
+    if (m_enableDebugInfo && m_diBuilder) {
+        std::string sourceFile = !moduleNode.sourceFilePath.empty() 
+            ? moduleNode.sourceFilePath 
+            : (moduleNode.name + ".bas");
+        std::string dir = ".";
+        std::string filename = sourceFile;
+        size_t slashPos = sourceFile.find_last_of("/\\");
+        if (slashPos != std::string::npos) {
+            dir = sourceFile.substr(0, slashPos);
+            filename = sourceFile.substr(slashPos + 1);
+        }
+
+        m_diFile = m_diBuilder->createFile(filename, dir);
+        m_diCompileUnit = m_diBuilder->createCompileUnit(
+            llvm::dwarf::DW_LANG_C99, // Closest compatible DWARF language identifier
+            m_diFile,
+            "Low-Level Basic Compiler (llbc)",
+            /*isOptimized=*/false,
+            /*flags=*/"",
+            /*runtimeVersion=*/0
+        );
+    }
     // 1. Emit Enums
     for (const auto& member : moduleNode.members) {
         if (auto en = dynamic_cast<const EnumNode*>(member.get())) {
@@ -5176,6 +5255,10 @@ bool LlvmEmitter::emitModule(const ModuleNode& moduleNode) {
         } else {
             m_builder->CreateRet(llvm::ConstantInt::get(llvm::Type::getInt32Ty(*m_context), 0));
         }
+    }
+
+    if (m_enableDebugInfo && m_diBuilder) {
+        m_diBuilder->finalize();
     }
 
     return !llvm::verifyModule(*m_module, &llvm::errs());

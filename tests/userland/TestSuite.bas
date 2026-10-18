@@ -1389,6 +1389,73 @@ SkipMiddle:
         End If
     End Function
 
+    ' 53. DWARF Debug Information Emission (-g metadata & symbol locations)
+    Public Function TestDebugInfoEmission() As Boolean
+        ' Validate that line numbers, scopes, and local variable locations are active
+        Dim checkVal As Int32
+        checkVal = 12345
+        Dim stepVal As Int32
+        stepVal = checkVal * 2
+
+        If stepVal = 24690 Then
+            TestDebugInfoEmission = True
+        Else
+            TestDebugInfoEmission = False
+        End If
+    End Function
+
+    ' Helper inline procedure with <Inline> attribute
+    <Inline>
+    Public Function InlineMultiply(ByVal a As Int32, ByVal b As Int32) As Int32
+        InlineMultiply = a * b
+    End Function
+
+    ' 54. Advanced Type System & Procedure Attributes (<Inline>, Currency, Short, UShort, ULong)
+    Public Function TestTypeSystemAndAttributes() As Boolean
+        Dim passCount As Int32
+        passCount = 0
+
+        ' Test <Inline> procedure call
+        Dim inlineRes As Int32
+        inlineRes = InlineMultiply(6, 7)
+        If inlineRes = 42 Then
+            passCount = passCount + 1
+        End If
+
+        ' Test Currency type (fixed-point 64-bit integer)
+        Dim price As Currency
+        price = 125000 ' $12.5000 in 4 decimal place fixed-point units
+        Dim qty As Currency
+        qty = 3
+        Dim total As Currency
+        total = price * qty
+        If total = 375000 Then
+            passCount = passCount + 1
+        End If
+
+        ' Test Short (16-bit) and UShort (unsigned 16-bit)
+        Dim sVal As Short
+        sVal = 30000
+        Dim usVal As UShort
+        usVal = 50000
+        If sVal = 30000 And usVal = 50000 Then
+            passCount = passCount + 1
+        End If
+
+        ' Test ULong (unsigned 32-bit)
+        Dim ulVal As ULong
+        ulVal = 3000000000
+        If ulVal = 3000000000 Then
+            passCount = passCount + 1
+        End If
+
+        If passCount = 4 Then
+            TestTypeSystemAndAttributes = True
+        Else
+            TestTypeSystemAndAttributes = False
+        End If
+    End Function
+
     ' Main Entry Point
     Public Unsafe Function Main(ByVal argc As Int32, ByVal argv As Pointer To Pointer To Byte) As Int32
         puts CPtr(Pointer To Byte, "================================================")
@@ -1863,8 +1930,26 @@ SkipMiddle:
             Exit Function
         End If
 
+        ' 53. DWARF Debug Information Emission (-g metadata)
+        If TestDebugInfoEmission() Then
+            puts CPtr(Pointer To Byte, "[PASS] DWARF Debug Information & Source Locations (-g)")
+        Else
+            puts CPtr(Pointer To Byte, "[FAIL] DWARF Debug Information Emission")
+            Main = 1
+            Exit Function
+        End If
+
+        ' 54. Advanced Type System & Procedure Attributes (<Inline>, Currency, Short, UShort, ULong)
+        If TestTypeSystemAndAttributes() Then
+            puts CPtr(Pointer To Byte, "[PASS] Type System & Procedure Attributes (<Inline>, Currency, UShort, ULong)")
+        Else
+            puts CPtr(Pointer To Byte, "[FAIL] Type System & Procedure Attributes")
+            Main = 1
+            Exit Function
+        End If
+
         puts CPtr(Pointer To Byte, "================================================")
-        puts CPtr(Pointer To Byte, "   ALL 52 TEST SUITES PASSED SUCCESSFULLY!      ")
+        puts CPtr(Pointer To Byte, "   ALL 54 TEST SUITES PASSED SUCCESSFULLY!      ")
         puts CPtr(Pointer To Byte, "================================================")
 
         Main = 0

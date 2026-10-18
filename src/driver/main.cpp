@@ -7,6 +7,7 @@
 #include "ProjectParser.hpp"
 #include "../frontend/Lexer.hpp"
 #include "../frontend/Parser.hpp"
+#include "../frontend/Diagnostic.hpp"
 #include "../codegen/LlvmEmitter.hpp"
 #include "../codegen/TargetEmitter.hpp"
 #include "../codegen/AsmCompiler.hpp"
@@ -105,9 +106,10 @@ static std::shared_ptr<llbc::ModuleNode> getOrParseModule(const std::string& sou
     buffer << file.rdbuf();
 
     llbc::Lexer lexer(buffer.str());
-    llbc::Parser parser(lexer, g_defines);
+    llbc::Parser parser(lexer, g_defines, sourcePath);
     auto mod = std::shared_ptr<llbc::ModuleNode>(parser.parseModule().release());
     if (mod) {
+        mod->sourceFilePath = sourcePath;
         g_parsedModules[sourcePath] = mod;
         g_moduleFileIndex[toLowerStr(mod->name)] = sourcePath;
     }
@@ -154,14 +156,14 @@ static bool resolveDependencies(
     return true;
 }
 
-static std::string compileSourceFile(const std::string& sourcePath, int optLevel = 0) {
+static std::string compileSourceFile(const std::string& sourcePath, int optLevel = 0, bool enableDebugInfo = false) {
     auto moduleAST = getOrParseModule(sourcePath);
     if (!moduleAST) {
-        std::cerr << "Error: Could not parse source file: " << sourcePath << "\n";
+        llbc::Diagnostic::report(sourcePath, 1, 1, true, "Could not parse source file");
         return "";
     }
 
-    llbc::LlvmEmitter irEmitter(moduleAST->name);
+    llbc::LlvmEmitter irEmitter(moduleAST->name, enableDebugInfo);
 
     // Inject exported symbols from all imported modules into this emitter
     for (const auto& imp : moduleAST->imports) {
@@ -243,6 +245,7 @@ int main(int argc, char** argv) {
     bool isShared = false;
     bool isStatic = false;
     bool isFreestanding = false;
+    bool enableDebugInfo = false;
     int optLevel = 0;
 
     // 1. Parse CLI options and collect input source files
@@ -250,6 +253,8 @@ int main(int argc, char** argv) {
         std::string arg = argv[i];
         if (arg == "-o" && i + 1 < argc) {
             outputFile = argv[++i];
+        } else if (arg == "-g") {
+            enableDebugInfo = true;
         } else if (arg == "-I" && i + 1 < argc) {
             g_includeDirs.push_back(argv[++i]);
         } else if (arg.rfind("-I", 0) == 0 && arg.size() > 2) {
@@ -330,7 +335,7 @@ int main(int argc, char** argv) {
 
         // Compile LLB Modules (.bas / .cls)
         for (const auto& srcFile : config.sourceFiles) {
-            std::string objFile = compileSourceFile(srcFile, optLevel);
+            std::string objFile = compileSourceFile(srcFile, optLevel, enableDebugInfo);
             if (objFile.empty()) return 1;
             objectFiles.push_back(objFile);
         }
@@ -366,7 +371,7 @@ int main(int argc, char** argv) {
 
         // Compile all discovered LLB modules
         for (const auto& file : allSources) {
-            std::string objFile = compileSourceFile(file, optLevel);
+            std::string objFile = compileSourceFile(file, optLevel, enableDebugInfo);
             if (objFile.empty()) return 1;
             objectFiles.push_back(objFile);
         }

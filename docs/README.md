@@ -82,10 +82,13 @@ LLB replaces dynamic typing with explicit fixed-width static primitive types and
 | Type | Width | Description |
 | --- | --- | --- |
 | `Byte` / `UByte` | 8-bit | Unsigned 8-bit byte (`0` to `255`) |
-| `Int16` / `UInt16` | 16-bit | Signed/Unsigned 16-bit integer |
-| `Int32` / `UInt32` / `Long` | 32-bit | Signed/Unsigned 32-bit integer |
+| `Int16` / `UInt16` / `Short` / `UShort` | 16-bit | Signed/Unsigned 16-bit integer |
+| `Int32` / `UInt32` / `Integer` / `Long` / `ULong` | 32-bit | Signed/Unsigned 32-bit integer |
 | `Int64` / `UInt64` | 64-bit | Signed/Unsigned 64-bit integer |
+| `Currency` / `Decimal` | 64-bit | Fixed-point decimal integer (4-place decimal scaling) |
+| `Single` / `Double` | 32/64-bit | IEEE-754 Single (float) and Double floating point |
 | `Boolean` | 1-bit / 8-bit | Logical truth value (`True` / `False`) |
+| `String` | Pointer | Pointer-based freestanding null-terminated C string |
 | `Pointer To T` | 32/64-bit | Direct memory address referencing type `T` |
 | `Volatile Pointer To T` | 32/64-bit | MMIO address pointer exempt from compiler optimization |
 
@@ -165,8 +168,41 @@ Public Structure IdtEntry
     Public BaseHigh As UInt32
     Public Reserved As UInt32
 End Structure
-
 ```
+
+#### 4. Procedure Attributes & Annotations
+
+Procedures can be decorated with compiler attributes to control optimization, code generation, and symbol visibility:
+
+```vb
+<Inline>
+Public Function FastMultiply(ByVal a As Int32, ByVal b As Int32) As Int32
+    FastMultiply = a * b
+End Function
+
+<NoReturn>
+Public Sub KernelPanic(ByVal msg As Pointer To Byte)
+    puts msg
+    Asm "hlt"
+End Sub
+
+<Export>
+Public Sub ExternalHook()
+    ' Exported with default external visibility in shared libraries
+End Sub
+```
+
+#### 5. High-Signal Compiler Diagnostics
+
+The `llbc` compiler provides ANSI-colored diagnostic messages automatically when run in a terminal or console:
+```
+source.bas:14:10: error: Expected '=' in constant declaration
+   14 | Const MAX_LIMIT As Int32
+      |                 ^
+```
+- **Error messages**: Bold red (`error:`) with cyan caret pointer (`^`) indicating exact token column.
+- **Source line context**: Gutter line number and the original source line context printed directly under the diagnostic.
+- **TTY Auto-detection**: Automatically enables colors on terminals/consoles (`isatty`) and falls back to plain text when piped or redirected.
 
 ---
 

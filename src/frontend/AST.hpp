@@ -37,6 +37,8 @@ struct ParameterNode {
 class ASTNode {
 public:
     virtual ~ASTNode() = default;
+    size_t line{1};
+    size_t column{1};
 };
 
 // --- Expressions ---
@@ -401,6 +403,9 @@ public:
     bool isUnsafe{false};
     bool isFunction{false};
     bool isDeclare{false};
+    bool isInline{false};
+    bool isNoReturn{false};
+    bool isExport{false};
     PropertyKind propertyKind{PropertyKind::None};
     TypeSpec returnType;
     std::vector<ParameterNode> parameters;
@@ -417,6 +422,7 @@ struct ImportDirective {
 class ModuleNode : public ASTNode {
 public:
     std::string name;
+    std::string sourceFilePath;
     bool isClass{false};
     std::vector<ImportDirective> imports;
     std::vector<std::unique_ptr<ASTNode>> members;

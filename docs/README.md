@@ -284,7 +284,36 @@ Else
 End If
 ```
 
-#### 9. High-Signal Compiler Diagnostics
+#### 9. Generics & Parameterized Templates (`Structure(Of T)` / `Function(Of T)`)
+
+
+LLB supports zero-cost generic abstractions through template monomorphization. Both structures and functions can be parameterized with type arguments:
+
+```vb
+' Parameterized structure template
+Structure Box(Of T)
+    Public Value As T
+    Public Tag As Int32
+End Structure
+
+' Parameterized function template
+Function Min(Of T)(ByVal a As T, ByVal b As T) As T
+    If a < b Then
+        Min = a
+    Else
+        Min = b
+    End If
+End Function
+
+' Instantiation with concrete types
+Dim intBox As Box(Of Int32)
+intBox.Value = 42
+
+Dim smallest As Int32 = Min(Of Int32)(100, 45) ' smallest = 45
+```
+
+#### 10. High-Signal Compiler Diagnostics
+
 
 
 The `llbc` compiler provides ANSI-colored diagnostic messages automatically when run in a terminal or console:

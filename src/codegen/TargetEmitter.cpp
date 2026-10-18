@@ -103,8 +103,21 @@ bool TargetEmitter::emitObjectFile(llvm::Module* module, const std::string& outp
     return true;
 }
 
-static std::vector<std::string> GetHostLibraryPaths() {
+static std::vector<std::string> GetHostLibraryPaths(const std::string& sysroot = "") {
     std::vector<std::string> paths;
+    if (!sysroot.empty()) {
+        const char* subDirs[] = {
+            "/usr/lib", "/lib", "/usr/lib64", "/lib64", "/usr/local/lib"
+        };
+        for (const char* sub : subDirs) {
+            std::string d = sysroot + sub;
+            if (llvm::sys::fs::exists(d)) {
+                paths.push_back(std::string("-L") + d);
+            }
+        }
+        return paths;
+    }
+
     const char* standardDirs[] = {
         "/data/data/com.termux/files/usr/lib", // Termux / Android userland
         "/system/lib64",                       // Android Native 64-bit
@@ -127,23 +140,32 @@ static std::vector<std::string> GetHostLibraryPaths() {
     return paths;
 }
 
-static std::string FindHostCrtFile(const std::vector<std::string>& candidateNames) {
-    const char* searchDirs[] = {
-        "/data/data/com.termux/files/usr/lib",
-        "/system/lib64",
-        "/system/lib",
-        "/usr/lib",
-        "/lib",
-        "/usr/lib64",
-        "/lib64",
-        "/usr/lib/x86_64-linux-gnu",
-        "/usr/lib/aarch64-linux-gnu",
-        "/usr/lib/arm-linux-gnueabihf"
-    };
+static std::string FindHostCrtFile(const std::vector<std::string>& candidateNames, const std::string& sysroot = "") {
+    std::vector<std::string> searchDirs;
+    if (!sysroot.empty()) {
+        searchDirs.push_back(sysroot + "/usr/lib");
+        searchDirs.push_back(sysroot + "/lib");
+        searchDirs.push_back(sysroot + "/usr/lib64");
+        searchDirs.push_back(sysroot + "/lib64");
+    } else {
+        const char* defaultDirs[] = {
+            "/data/data/com.termux/files/usr/lib",
+            "/system/lib64",
+            "/system/lib",
+            "/usr/lib",
+            "/lib",
+            "/usr/lib64",
+            "/lib64",
+            "/usr/lib/x86_64-linux-gnu",
+            "/usr/lib/aarch64-linux-gnu",
+            "/usr/lib/arm-linux-gnueabihf"
+        };
+        for (const char* d : defaultDirs) searchDirs.push_back(d);
+    }
 
     for (const auto& name : candidateNames) {
-        for (const char* dir : searchDirs) {
-            std::string fullPath = std::string(dir) + "/" + name;
+        for (const auto& dir : searchDirs) {
+            std::string fullPath = dir + "/" + name;
             if (llvm::sys::fs::exists(fullPath)) {
                 return fullPath;
             }
@@ -152,7 +174,25 @@ static std::string FindHostCrtFile(const std::vector<std::string>& candidateName
     return "";
 }
 
-static std::string GetHostDynamicLinker() {
+static std::string GetHostDynamicLinker(const std::string& sysroot = "") {
+    if (!sysroot.empty()) {
+        const char* subLinkers[] = {
+            "/lib64/ld-linux-x86-64.so.2",
+            "/lib/ld-linux-aarch64.so.1",
+            "/lib/ld-linux-armhf.so.3",
+            "/lib/ld-musl-x86_64.so.1",
+            "/lib/ld-musl-aarch64.so.1",
+            "/system/bin/linker64",
+            "/system/bin/linker"
+        };
+        for (const char* linker : subLinkers) {
+            std::string fullPath = sysroot + linker;
+            if (llvm::sys::fs::exists(fullPath)) {
+                return fullPath;
+            }
+        }
+    }
+
     const char* linkers[] = {
         "/system/bin/linker64",                // Android 64-bit
         "/system/bin/linker",                  // Android 32-bit
@@ -176,7 +216,9 @@ bool TargetEmitter::linkExecutable(
     const std::string& outputFile,
     const std::string& linkerScript,
     bool isShared,
-    bool isFreestanding
+    bool isFreestanding,
+    const std::string& targetTriple,
+    const std::string& sysroot
 ) {
     std::vector<std::string> argStorage;
     argStorage.push_back("lld");
@@ -184,6 +226,33 @@ bool TargetEmitter::linkExecutable(
     argStorage.push_back("gnu");
     argStorage.push_back("-o");
     argStorage.push_back(outputFile);
+
+    // Apply cross-target emulation if targetTriple is supplied
+    if (!targetTriple.empty()) {
+        llvm::Triple triple(targetTriple);
+        std::string emul = "";
+        if (triple.getArch() == llvm::Triple::x86_64) {
+            emul = "elf_x86_64";
+        } else if (triple.getArch() == llvm::Triple::x86) {
+            emul = "elf_i386";
+        } else if (triple.getArch() == llvm::Triple::aarch64) {
+            emul = triple.isAndroid() ? "aarch64linux" : "aarch64elf";
+        } else if (triple.getArch() == llvm::Triple::arm) {
+            emul = "armelf";
+        } else if (triple.getArch() == llvm::Triple::riscv64) {
+            emul = "elf64lriscv";
+        } else if (triple.getArch() == llvm::Triple::riscv32) {
+            emul = "elf32lriscv";
+        }
+        if (!emul.empty()) {
+            argStorage.push_back("-m");
+            argStorage.push_back(emul);
+        }
+    }
+
+    if (!sysroot.empty()) {
+        argStorage.push_back("--sysroot=" + sysroot);
+    }
 
     // Bare-Metal / Freestanding Mode
     if (!linkerScript.empty() || isFreestanding) {
@@ -210,7 +279,7 @@ bool TargetEmitter::linkExecutable(
             argStorage.push_back(".");
         }
 
-        std::string interpreter = GetHostDynamicLinker();
+        std::string interpreter = GetHostDynamicLinker(sysroot);
         if (!interpreter.empty() && !isShared) {
             argStorage.push_back("-dynamic-linker");
             argStorage.push_back(interpreter);
@@ -218,22 +287,22 @@ bool TargetEmitter::linkExecutable(
 
         // Add C Runtime Startup objects dynamically
         if (isShared) {
-            std::string crtBegin = FindHostCrtFile({"crtbegin_so.o", "crti.o"});
+            std::string crtBegin = FindHostCrtFile({"crtbegin_so.o", "crti.o"}, sysroot);
             if (!crtBegin.empty()) {
                 argStorage.push_back(crtBegin);
             }
         } else {
-            std::string crtBegin = FindHostCrtFile({"crtbegin_dynamic.o", "Scrt1.o", "crt1.o"});
+            std::string crtBegin = FindHostCrtFile({"crtbegin_dynamic.o", "Scrt1.o", "crt1.o"}, sysroot);
             if (!crtBegin.empty()) {
                 argStorage.push_back(crtBegin);
             }
-            std::string crtI = FindHostCrtFile({"crti.o"});
+            std::string crtI = FindHostCrtFile({"crti.o"}, sysroot);
             if (!crtI.empty()) {
                 argStorage.push_back(crtI);
             }
         }
 
-        for (const auto& path : GetHostLibraryPaths()) {
+        for (const auto& path : GetHostLibraryPaths(sysroot)) {
             argStorage.push_back(path);
         }
 
@@ -247,12 +316,12 @@ bool TargetEmitter::linkExecutable(
     // Append CRT End object dynamically if hosted
     if (linkerScript.empty() && !isFreestanding) {
         if (isShared) {
-            std::string crtEnd = FindHostCrtFile({"crtend_so.o", "crtn.o"});
+            std::string crtEnd = FindHostCrtFile({"crtend_so.o", "crtn.o"}, sysroot);
             if (!crtEnd.empty()) {
                 argStorage.push_back(crtEnd);
             }
         } else {
-            std::string crtEnd = FindHostCrtFile({"crtend_android.o", "crtend.o", "crtn.o"});
+            std::string crtEnd = FindHostCrtFile({"crtend_android.o", "crtend.o", "crtn.o"}, sysroot);
             if (!crtEnd.empty()) {
                 argStorage.push_back(crtEnd);
             }

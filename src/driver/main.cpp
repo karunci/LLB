@@ -156,7 +156,13 @@ static bool resolveDependencies(
     return true;
 }
 
-static std::string compileSourceFile(const std::string& sourcePath, int optLevel = 0, bool enableDebugInfo = false) {
+static std::string compileSourceFile(
+    const std::string& sourcePath,
+    int optLevel = 0,
+    bool enableDebugInfo = false,
+    const std::string& targetTriple = "",
+    const std::string& sysroot = ""
+) {
     auto moduleAST = getOrParseModule(sourcePath);
     if (!moduleAST) {
         llbc::Diagnostic::report(sourcePath, 1, 1, true, "Could not parse source file");
@@ -219,6 +225,9 @@ static std::string compileSourceFile(const std::string& sourcePath, int optLevel
 
     std::string objFilename = moduleAST->name + ".o";
     llbc::TargetConfig targetConfig;
+    if (!targetTriple.empty()) {
+        targetConfig.targetTriple = targetTriple;
+    }
     targetConfig.optLevel = optLevel;
     llbc::TargetEmitter targetEmitter(targetConfig);
     if (!targetEmitter.emitObjectFile(irEmitter.getModule(), objFilename)) {
@@ -233,8 +242,8 @@ static std::string compileSourceFile(const std::string& sourcePath, int optLevel
 int main(int argc, char** argv) {
     if (argc < 2) {
         std::cout << "Usage:\n";
-        std::cout << "  Project Mode: llbc-stage0 <project.llbproj>\n";
-        std::cout << "  Single File:  llbc-stage0 <source.bas|boot.S> [-I include_dir] [-o output.elf] [-T linker.ld]\n";
+        std::cout << "  Project Mode: llbc-stage0 <project.llbproj> [--target=<triple>] [--sysroot=<path>] [-nostdlib]\n";
+        std::cout << "  Single File:  llbc-stage0 <source.bas|boot.S> [-I include_dir] [-o output.elf] [-T linker.ld] [--target=<triple>] [--sysroot=<path>] [-nostdlib]\n";
         return 1;
     }
 
@@ -242,6 +251,8 @@ int main(int argc, char** argv) {
     std::vector<std::string> objectFiles;
     std::string outputFile = "output.elf";
     std::string linkerScript = "";
+    std::string targetTriple = "";
+    std::string sysroot = "";
     bool isShared = false;
     bool isStatic = false;
     bool isFreestanding = false;
@@ -261,6 +272,18 @@ int main(int argc, char** argv) {
             g_includeDirs.push_back(arg.substr(2));
         } else if (arg == "-T" && i + 1 < argc) {
             linkerScript = argv[++i];
+        } else if (arg == "--target" && i + 1 < argc) {
+            targetTriple = argv[++i];
+        } else if (arg == "-target" && i + 1 < argc) {
+            targetTriple = argv[++i];
+        } else if (arg.rfind("--target=", 0) == 0) {
+            targetTriple = arg.substr(9);
+        } else if (arg.rfind("-target=", 0) == 0) {
+            targetTriple = arg.substr(8);
+        } else if (arg == "--sysroot" && i + 1 < argc) {
+            sysroot = argv[++i];
+        } else if (arg.rfind("--sysroot=", 0) == 0) {
+            sysroot = arg.substr(10);
         } else if (arg == "-D" && i + 1 < argc) {
             std::string def = argv[++i];
             size_t eqPos = def.find('=');
@@ -285,7 +308,7 @@ int main(int argc, char** argv) {
             isShared = true;
         } else if (arg == "-static" || arg == "--static" || arg == "-archive") {
             isStatic = true;
-        } else if (arg == "-freestanding" || arg == "--freestanding" || arg == "-nostdlib") {
+        } else if (arg == "-freestanding" || arg == "--freestanding" || arg == "-nostdlib" || arg == "--nostdlib") {
             isFreestanding = true;
         } else if (arg == "-O0") {
             optLevel = 0;
@@ -322,6 +345,9 @@ int main(int argc, char** argv) {
         outputFile = config.outputFile;
         if (!config.linkerScript.empty()) linkerScript = config.linkerScript;
         if (config.isFreestanding) isFreestanding = true;
+        if (!config.targetArch.empty() && targetTriple.empty()) {
+            targetTriple = config.targetArch;
+        }
         if (config.type == "SharedLibrary" || config.type == "DynamicLibrary") {
             isShared = true;
         } else if (config.type == "StaticLibrary" || config.type == "Archive") {
@@ -335,7 +361,7 @@ int main(int argc, char** argv) {
 
         // Compile LLB Modules (.bas / .cls)
         for (const auto& srcFile : config.sourceFiles) {
-            std::string objFile = compileSourceFile(srcFile, optLevel, enableDebugInfo);
+            std::string objFile = compileSourceFile(srcFile, optLevel, enableDebugInfo, targetTriple, sysroot);
             if (objFile.empty()) return 1;
             objectFiles.push_back(objFile);
         }
@@ -344,7 +370,8 @@ int main(int argc, char** argv) {
             std::string objFile = fs::path(asmFile).stem().string() + "_asm.o";
             std::cout << "  [+] Assembling GNU Assembly: " << asmFile << " -> " << objFile << "\n";
 
-            if (!llbc::AsmCompiler::compileAssemblyFile(asmFile, objFile, config.targetArch)) {
+            std::string asmTarget = !targetTriple.empty() ? targetTriple : config.targetArch;
+            if (!llbc::AsmCompiler::compileAssemblyFile(asmFile, objFile, asmTarget)) {
                 std::cerr << "Error: Assembly compilation failed for " << asmFile << "\n";
                 return 1;
             }
@@ -371,7 +398,7 @@ int main(int argc, char** argv) {
 
         // Compile all discovered LLB modules
         for (const auto& file : allSources) {
-            std::string objFile = compileSourceFile(file, optLevel, enableDebugInfo);
+            std::string objFile = compileSourceFile(file, optLevel, enableDebugInfo, targetTriple, sysroot);
             if (objFile.empty()) return 1;
             objectFiles.push_back(objFile);
         }
@@ -379,7 +406,8 @@ int main(int argc, char** argv) {
         // Assemble Raw Assembly Files
         for (const auto& file : rawAsmFiles) {
             std::string objFile = fs::path(file).stem().string() + "_asm.o";
-            if (llbc::AsmCompiler::compileAssemblyFile(file, objFile)) {
+            std::string asmTarget = !targetTriple.empty() ? targetTriple : "x86_64-unknown-none-elf";
+            if (llbc::AsmCompiler::compileAssemblyFile(file, objFile, asmTarget)) {
                 std::cout << "  [+] Assembled " << file << " -> " << objFile << "\n";
                 objectFiles.push_back(objFile);
             } else {
@@ -404,7 +432,7 @@ int main(int argc, char** argv) {
         }
     } else {
         std::cout << "[llbc] Linking " << objectFiles.size() << " object file(s) into " << outputFile << "...\n";
-        if (llbc::TargetEmitter::linkExecutable(objectFiles, outputFile, linkerScript, isShared, isFreestanding)) {
+        if (llbc::TargetEmitter::linkExecutable(objectFiles, outputFile, linkerScript, isShared, isFreestanding, targetTriple, sysroot)) {
             if (isShared) {
                 std::cout << "[llbc] SUCCESS: Dynamic Library created -> " << outputFile << "\n";
             } else {

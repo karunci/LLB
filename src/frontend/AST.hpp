@@ -21,6 +21,7 @@ struct TypeSpec {
     bool isArray{false};
     size_t arraySize{0};
     std::vector<size_t> dimensions;
+    std::vector<TypeSpec> typeArgs; // e.g. T in Box(Of T) or Pair(Of K, V)
 };
 
 class ExprASTNode;
@@ -133,7 +134,9 @@ public:
     std::unique_ptr<ExprASTNode> calleeExpr; // Optional base object (e.g. Me or instance)
     std::vector<std::unique_ptr<ExprASTNode>> args;
     std::vector<CallArgument> namedArgs;
+    std::vector<TypeSpec> typeArgs; // Explicit generic arguments, e.g. Min(Of Int32)(a, b) or Min[Int32](a, b)
 };
+
 
 class NewExprASTNode : public ExprASTNode {
 public:
@@ -245,6 +248,32 @@ class SelectStmtNode : public ASTNode {
 public:
     std::unique_ptr<ExprASTNode> expr;
     std::vector<CaseBranch> branches;
+};
+
+struct MatchPattern {
+    enum class Kind {
+        Value,
+        Range,
+        OkPattern,
+        ErrPattern,
+        Wildcard
+    };
+    Kind kind{Kind::Value};
+    std::unique_ptr<ExprASTNode> expr;
+    std::unique_ptr<ExprASTNode> rangeEnd;
+    std::string boundVar;
+};
+
+struct MatchCaseBranch {
+    std::vector<MatchPattern> patterns;
+    std::vector<std::unique_ptr<ASTNode>> body;
+    bool isElse{false};
+};
+
+class MatchStmtNode : public ASTNode {
+public:
+    std::unique_ptr<ExprASTNode> expr;
+    std::vector<MatchCaseBranch> branches;
 };
 
 class ExitStmtNode : public ASTNode {
@@ -369,6 +398,7 @@ struct StructureField {
 class StructureNode : public ASTNode {
 public:
     std::string name;
+    std::vector<std::string> genericParams; // e.g. ["T"] for Structure Box(Of T)
     bool isPacked{false};
     bool isUnion{false};
     int alignment{0};
@@ -378,6 +408,14 @@ public:
 class WithStmtNode : public ASTNode {
 public:
     std::unique_ptr<ExprASTNode> target;
+    std::vector<std::unique_ptr<ASTNode>> body;
+};
+
+class UsingStmtNode : public ASTNode {
+public:
+    std::string varName;
+    TypeSpec type;
+    std::unique_ptr<ExprASTNode> initExpr;
     std::vector<std::unique_ptr<ASTNode>> body;
 };
 
@@ -404,6 +442,7 @@ public:
     };
 
     std::string name;
+    std::vector<std::string> genericParams; // e.g. ["T"] for Function Min(Of T)
     std::string libName;
     std::string aliasName;
     bool isPublic{true};
@@ -418,6 +457,7 @@ public:
     std::vector<ParameterNode> parameters;
     std::vector<std::unique_ptr<ASTNode>> body;
 };
+
 
 struct ImportDirective {
     std::string moduleName;

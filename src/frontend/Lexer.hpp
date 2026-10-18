@@ -66,6 +66,8 @@ enum class TokenType {
     KwCType,
     KwEnum,
     KwWith,
+    KwUsing,
+    KwMatch,
     KwLib,
     KwAlias,
     KwPrint,
@@ -104,6 +106,7 @@ enum class TokenType {
     KwInterface,
     KwImplements,
     KwNamespace,
+    KwOf,
 
     // Operators as keywords
     KwAnd,

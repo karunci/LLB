@@ -353,6 +353,17 @@ TypeSpec Parser::parseTypeSpec() {
         !m_currentToken.text.empty()) {
         spec.name = m_currentToken.text;
         consume();
+
+        // Support generic type arguments: e.g. Box(Of T) or Pair(Of K, V)
+        if (match(TokenType::LParen)) {
+            if (m_currentToken.type == TokenType::KwOf || checkKeyword("Of")) {
+                consume();
+            }
+            do {
+                spec.typeArgs.push_back(parseTypeSpec());
+            } while (match(TokenType::Comma));
+            expect(TokenType::RParen, "Expected ')' after generic type arguments");
+        }
     } else {
         expect(TokenType::Identifier, "Expected type name identifier");
     }
@@ -363,10 +374,12 @@ TypeSpec Parser::parseTypeSpec() {
         TypeSpec resolved = aliasIt->second;
         resolved.pointerDepth += spec.pointerDepth;
         if (spec.isVolatile) resolved.isVolatile = true;
+        if (resolved.typeArgs.empty()) resolved.typeArgs = spec.typeArgs;
         return resolved;
     }
 
     return spec;
+
 }
 
 void Parser::parseTypeAlias() {
@@ -740,6 +753,74 @@ std::unique_ptr<SelectStmtNode> Parser::parseSelectStatement() {
     return selectNode;
 }
 
+std::unique_ptr<MatchStmtNode> Parser::parseMatchStatement() {
+    auto matchNode = std::make_unique<MatchStmtNode>();
+
+    matchNode->expr = parseExpression();
+
+    while (m_currentToken.type != TokenType::Eof) {
+        while (match(TokenType::Colon)) {}
+
+        if (m_currentToken.type == TokenType::KwEnd || checkKeyword("End")) {
+            consume();
+            if (m_currentToken.type == TokenType::KwMatch || checkKeyword("Match")) {
+                consume();
+            }
+            break;
+        }
+
+        if (m_currentToken.type == TokenType::KwCase || checkKeyword("Case")) {
+            consume();
+            MatchCaseBranch branch;
+
+            if (m_currentToken.type == TokenType::KwElse || checkKeyword("Else")) {
+                consume();
+                branch.isElse = true;
+            } else if (m_currentToken.type == TokenType::Identifier && m_currentToken.text == "_") {
+                consume();
+                branch.isElse = true;
+            } else {
+                do {
+                    MatchPattern pat;
+                    if (m_currentToken.type == TokenType::Identifier && (toLower(m_currentToken.text) == "ok" || toLower(m_currentToken.text) == "err") && m_lexer.peekToken().type == TokenType::LParen) {
+                        std::string constructor = toLower(m_currentToken.text);
+                        consume(); // 'Ok' or 'Err'
+                        consume(); // '('
+                        std::string boundVar = "";
+                        if (m_currentToken.type == TokenType::Identifier) {
+                            boundVar = m_currentToken.text;
+                            consume();
+                        }
+                        expect(TokenType::RParen, "Expected ')' after pattern constructor");
+                        pat.kind = (constructor == "ok") ? MatchPattern::Kind::OkPattern : MatchPattern::Kind::ErrPattern;
+                        pat.boundVar = boundVar;
+                    } else if (m_currentToken.type == TokenType::Identifier && m_currentToken.text == "_") {
+                        consume();
+                        pat.kind = MatchPattern::Kind::Wildcard;
+                    } else {
+                        pat.expr = parseExpression();
+                        if (m_currentToken.type == TokenType::KwTo || checkKeyword("To")) {
+                            consume(); // 'To'
+                            pat.rangeEnd = parseExpression();
+                            pat.kind = MatchPattern::Kind::Range;
+                        } else {
+                            pat.kind = MatchPattern::Kind::Value;
+                        }
+                    }
+                    branch.patterns.push_back(std::move(pat));
+                } while (match(TokenType::Comma));
+            }
+
+            branch.body = parseStatementBlock({"Case", "End"});
+            matchNode->branches.push_back(std::move(branch));
+        } else {
+            consume();
+        }
+    }
+
+    return matchNode;
+}
+
 std::unique_ptr<AsmStmtNode> Parser::parseAsmStatement() {
     if (m_currentToken.type == TokenType::StringLiteral) {
         std::string code = m_currentToken.text;
@@ -783,6 +864,36 @@ std::unique_ptr<WithStmtNode> Parser::parseWithStatement() {
         }
     }
     return withNode;
+}
+
+std::unique_ptr<UsingStmtNode> Parser::parseUsingStatement() {
+    auto usingNode = std::make_unique<UsingStmtNode>();
+
+    if (m_currentToken.type == TokenType::Identifier) {
+        usingNode->varName = m_currentToken.text;
+        consume();
+
+        if (m_currentToken.type == TokenType::KwAs || checkKeyword("As")) {
+            consume();
+            usingNode->type = parseTypeSpec();
+        }
+
+        if (match(TokenType::Equal)) {
+            usingNode->initExpr = parseExpression();
+        }
+    } else {
+        usingNode->initExpr = parseExpression();
+    }
+
+    usingNode->body = parseStatementBlock({"End"});
+
+    if (m_currentToken.type == TokenType::KwEnd || checkKeyword("End")) {
+        consume();
+        if (m_currentToken.type == TokenType::KwUsing || checkKeyword("Using")) {
+            consume();
+        }
+    }
+    return usingNode;
 }
 
 std::unique_ptr<ASTNode> Parser::parseAssignOrCallStatement() {
@@ -915,12 +1026,18 @@ std::unique_ptr<ASTNode> Parser::parseStatement() {
     } else if (m_currentToken.type == TokenType::KwSelect || checkKeyword("Select")) {
         consume();
         result = parseSelectStatement();
+    } else if (m_currentToken.type == TokenType::KwMatch || checkKeyword("Match")) {
+        consume();
+        result = parseMatchStatement();
     } else if (m_currentToken.type == TokenType::KwAsm || checkKeyword("Asm")) {
         consume();
         result = parseAsmStatement();
     } else if (m_currentToken.type == TokenType::KwWith || checkKeyword("With")) {
         consume();
         result = parseWithStatement();
+    } else if (m_currentToken.type == TokenType::KwUsing || checkKeyword("Using")) {
+        consume();
+        result = parseUsingStatement();
     } else if (m_currentToken.type == TokenType::KwOpen || checkKeyword("Open")) {
         consume();
         result = parseOpenStatement();
@@ -1432,6 +1549,16 @@ std::unique_ptr<ExprASTNode> Parser::parsePostfixExpr() {
                 callNode->calleeExpr = std::move(expr);
             }
 
+            // Check if this is an explicit generic type argument list: Func(Of T, U)(args)
+            if (m_currentToken.type == TokenType::KwOf || checkKeyword("Of")) {
+                consume();
+                do {
+                    callNode->typeArgs.push_back(parseTypeSpec());
+                } while (match(TokenType::Comma));
+                expect(TokenType::RParen, "Expected ')' after generic type arguments");
+                expect(TokenType::LParen, "Expected '(' after generic type argument list");
+            }
+
             if (!check(TokenType::RParen)) {
                 do {
                     if (m_currentToken.type == TokenType::Identifier && m_lexer.peekToken().type == TokenType::ColonEqual) {
@@ -1450,6 +1577,7 @@ std::unique_ptr<ExprASTNode> Parser::parsePostfixExpr() {
             expr = std::move(callNode);
             continue;
         }
+
 
         break;
     }
@@ -1713,30 +1841,44 @@ std::unique_ptr<ProcedureNode> Parser::parseProcedure(bool isPublic, bool isInli
     procNode->name = m_currentToken.text;
     expect(TokenType::Identifier, "Expected procedure name");
 
-    if (procNode->isDeclare) {
-        if (m_currentToken.type == TokenType::KwLib || checkKeyword("Lib")) {
+    // Generic parameter definition: Function Name(Of T, U)(...)
+    if (match(TokenType::LParen)) {
+        if (m_currentToken.type == TokenType::KwOf || checkKeyword("Of")) {
             consume();
-            if (m_currentToken.type == TokenType::StringLiteral) {
-                procNode->libName = m_currentToken.text;
+            do {
+                procNode->genericParams.push_back(m_currentToken.text);
+                expect(TokenType::Identifier, "Expected generic type parameter name");
+            } while (match(TokenType::Comma));
+            expect(TokenType::RParen, "Expected ')' after generic type parameters");
+            expect(TokenType::LParen, "Expected '(' after generic parameter list");
+        }
+        // If not 'Of', the '(' is the parameter list opening paren
+    } else {
+        if (procNode->isDeclare) {
+            if (m_currentToken.type == TokenType::KwLib || checkKeyword("Lib")) {
                 consume();
-            } else {
-                expect(TokenType::StringLiteral, "Expected string literal after 'Lib'");
+                if (m_currentToken.type == TokenType::StringLiteral) {
+                    procNode->libName = m_currentToken.text;
+                    consume();
+                } else {
+                    expect(TokenType::StringLiteral, "Expected string literal after 'Lib'");
+                }
+            }
+            if (m_currentToken.type == TokenType::KwAlias || checkKeyword("Alias")) {
+                consume();
+                if (m_currentToken.type == TokenType::StringLiteral) {
+                    procNode->aliasName = m_currentToken.text;
+                    consume();
+                } else {
+                    expect(TokenType::StringLiteral, "Expected string literal after 'Alias'");
+                }
             }
         }
-        if (m_currentToken.type == TokenType::KwAlias || checkKeyword("Alias")) {
-            consume();
-            if (m_currentToken.type == TokenType::StringLiteral) {
-                procNode->aliasName = m_currentToken.text;
-                consume();
-            } else {
-                expect(TokenType::StringLiteral, "Expected string literal after 'Alias'");
-            }
-        }
+        expect(TokenType::LParen, "Expected '(' after procedure name");
     }
 
-    expect(TokenType::LParen, "Expected '(' after procedure name");
-
     if (!check(TokenType::RParen)) {
+
         do {
             ParameterNode param;
             if (m_currentToken.type == TokenType::KwParamArray || checkKeyword("ParamArray")) {
@@ -1825,6 +1967,19 @@ std::unique_ptr<StructureNode> Parser::parseStructure(bool isPacked, int alignme
 
     structNode->name = m_currentToken.text;
     expect(TokenType::Identifier, "Expected structure name");
+
+    // Generic parameter definition: Structure Box(Of T)
+    if (match(TokenType::LParen)) {
+        if (m_currentToken.type == TokenType::KwOf || checkKeyword("Of")) {
+            consume();
+        }
+        do {
+            structNode->genericParams.push_back(m_currentToken.text);
+            expect(TokenType::Identifier, "Expected generic parameter identifier");
+        } while (match(TokenType::Comma));
+        expect(TokenType::RParen, "Expected ')' after generic parameters");
+    }
+
 
     while (m_currentToken.type != TokenType::Eof) {
         while (match(TokenType::Colon)) {}

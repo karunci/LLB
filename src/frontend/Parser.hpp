@@ -86,8 +86,10 @@ private:
     std::unique_ptr<WhileStmtNode> parseWhileStatement();
     std::unique_ptr<ExitStmtNode> parseExitStatement();
     std::unique_ptr<SelectStmtNode> parseSelectStatement();
+    std::unique_ptr<MatchStmtNode> parseMatchStatement();
     std::unique_ptr<AsmStmtNode> parseAsmStatement();
     std::unique_ptr<WithStmtNode> parseWithStatement();
+    std::unique_ptr<UsingStmtNode> parseUsingStatement();
     std::unique_ptr<PrintStmtNode> parsePrintStatement();
     std::unique_ptr<ASTNode> parsePrintOrPrintFileStatement();
     std::unique_ptr<InputStmtNode> parseInputStatement();

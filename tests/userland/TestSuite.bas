@@ -72,6 +72,22 @@ Module TestSuite
         Public ByteVal As Byte
     End Union
 
+    ' Generic Structure Template (Monomorphized)
+    Public Structure Box(Of T)
+        Public Value As T
+        Public Tag As Int32
+    End Structure
+
+    ' Generic Function Template (Monomorphized)
+    Public Function Min(Of T)(ByVal a As T, ByVal b As T) As T
+        If a < b Then
+            Min = a
+        Else
+            Min = b
+        End If
+    End Function
+
+
     ' Test 1: Arithmetic & Modulo
     Public Function TestArithmetic() As Boolean
         Dim a As Int32
@@ -84,6 +100,7 @@ Module TestSuite
         If c = 51 Then
             TestArithmetic = True
         Else
+            Print "TestArithmetic failed: expected c=51, got c=", c
             TestArithmetic = False
         End If
     End Function
@@ -98,24 +115,28 @@ Module TestSuite
 
         res = (val1 Or val2) And &H00FF
         If res <> &H00FF Then
+            Print "TestBitwise failed at Or/And: expected &H00FF, got ", res
             TestBitwise = False
             Exit Function
         End If
 
         res = (val1 LShift 4)
         If res <> &H00F0 Then
+            Print "TestBitwise failed at LShift: expected &H00F0, got ", res
             TestBitwise = False
             Exit Function
         End If
 
         res = (val2 RShift 4)
         If res <> &H000F Then
+            Print "TestBitwise failed at RShift: expected &H000F, got ", res
             TestBitwise = False
             Exit Function
         End If
 
         res = val1 Xor val1
         If res <> 0 Then
+            Print "TestBitwise failed at Xor: expected 0, got ", res
             TestBitwise = False
             Exit Function
         End If
@@ -212,6 +233,7 @@ Module TestSuite
         If ptr(0) = 10 And ptr(1) = 20 And ptr(2) = 30 And ptr(3) = 40 Then
             TestPointerIndexing = True
         Else
+            Print "TestPointerIndexing failed: [0]=", ptr(0), ", [1]=", ptr(1), ", [2]=", ptr(2), ", [3]=", ptr(3)
             TestPointerIndexing = False
         End If
     End Function
@@ -225,6 +247,7 @@ Module TestSuite
         If pt.X = 100 And pt.Y = 200 Then
             TestStructure = True
         Else
+            Print "TestStructure failed: X=", pt.X, ", Y=", pt.Y
             TestStructure = False
         End If
     End Function
@@ -286,6 +309,7 @@ Module TestSuite
         If ok1 And ok2 Then
             TestStringConcatenation = True
         Else
+            Print "TestStringConcatenation failed: ok1=", ok1, ", ok2=", ok2
             TestStringConcatenation = False
         End If
     End Function
@@ -297,6 +321,7 @@ Module TestSuite
         If currentLight = 20 And TrafficLight.Red = 10 And TrafficLight.Green = 30 Then
             TestEnum = True
         Else
+            Print "TestEnum failed: currentLight=", currentLight, ", Red=", TrafficLight.Red, ", Green=", TrafficLight.Green
             TestEnum = False
         End If
     End Function
@@ -311,6 +336,7 @@ Module TestSuite
         If pt.X = 123 And pt.Y = 456 Then
             TestWithStatement = True
         Else
+            Print "TestWithStatement failed: pt.X=", pt.X, ", pt.Y=", pt.Y
             TestWithStatement = False
         End If
     End Function
@@ -1022,7 +1048,7 @@ SkipMiddle:
         End If
     End Function
 
-    ' 39. Structured Exception Handling (Try ... Catch ... Finally)
+    ' 39. Structured Exception Handling (Try ... Catch ... Finally) & VB6 Err Object
     Public Function TestTryCatchFinally() As Boolean
         Dim executedTry As Int32
         Dim executedFinally As Int32
@@ -1035,7 +1061,24 @@ SkipMiddle:
             executedFinally = 200
         End Try
 
-        If executedTry = 100 And executedFinally = 200 Then
+        Dim catchCode As Int32: catchCode = 0
+        Dim catchErrNum As Int32: catchErrNum = 0
+        Dim finallyRan As Int32: finallyRan = 0
+
+        Try
+            Err.Raise 404, "TestSuite", "Resource Not Found"
+        Catch ex As Int32
+            catchCode = ex
+            catchErrNum = Err.Number
+        Finally
+            finallyRan = 1
+        End Try
+
+        Dim clearedNum As Int32: clearedNum = -1
+        Err.Clear()
+        clearedNum = Err.Number
+
+        If executedTry = 100 And executedFinally = 200 And catchCode = 404 And catchErrNum = 404 And finallyRan = 1 And clearedNum = 0 Then
             TestTryCatchFinally = True
         Else
             TestTryCatchFinally = False
@@ -1370,6 +1413,7 @@ SkipMiddle:
         If passCount = 4 Then
             TestConditionalCompilation = True
         Else
+            Print "TestConditionalCompilation failed: passCount=", passCount
             TestConditionalCompilation = False
         End If
     End Function
@@ -1383,6 +1427,7 @@ SkipMiddle:
         If mulRes = 42 And powRes = 256 Then
             TestStaticLibraryArchive = True
         Else
+            Print "TestStaticLibraryArchive failed: mulRes=", mulRes, ", powRes=", powRes
             TestStaticLibraryArchive = False
         End If
     End Function
@@ -1398,6 +1443,7 @@ SkipMiddle:
         If c = 30 Then
             TestDebugInfoEmission = True
         Else
+            Print "TestDebugInfoEmission failed: c=", c
             TestDebugInfoEmission = False
         End If
     End Function
@@ -1417,6 +1463,8 @@ SkipMiddle:
         inlineRes = InlineMultiply(6, 7)
         If inlineRes = 42 Then
             passCount = passCount + 1
+        Else
+            Print "TestTypeSystemAndAttributes failed at InlineMultiply: inlineRes=", inlineRes
         End If
 
         ' Test Currency type (fixed-point 64-bit integer)
@@ -1428,6 +1476,8 @@ SkipMiddle:
         total = price * qty
         If total = 375000 Then
             passCount = passCount + 1
+        Else
+            Print "TestTypeSystemAndAttributes failed at Currency: total=", total
         End If
 
         ' Test Short (16-bit) and UShort (unsigned 16-bit)
@@ -1437,6 +1487,8 @@ SkipMiddle:
         usVal = 50000
         If sVal = 30000 And usVal = 50000 Then
             passCount = passCount + 1
+        Else
+            Print "TestTypeSystemAndAttributes failed at Short/UShort: sVal=", sVal, ", usVal=", usVal
         End If
 
         ' Test ULong (unsigned 32-bit)
@@ -1444,11 +1496,14 @@ SkipMiddle:
         ulVal = 3000000000
         If ulVal = 3000000000 Then
             passCount = passCount + 1
+        Else
+            Print "TestTypeSystemAndAttributes failed at ULong: ulVal=", ulVal
         End If
 
         If passCount = 4 Then
             TestTypeSystemAndAttributes = True
         Else
+            Print "TestTypeSystemAndAttributes passCount: ", passCount
             TestTypeSystemAndAttributes = False
         End If
     End Function
@@ -1463,6 +1518,8 @@ SkipMiddle:
         adder = Function(a As Int32, b As Int32) As Int32 => a + b
         If adder <> 0 Then
             passCount = passCount + 1
+        Else
+            Print "ModernFeatures failed at A (adder)"
         End If
 
         ' B. Result(T, E) Sum Type: Ok(val)
@@ -1470,6 +1527,8 @@ SkipMiddle:
         resOk = Ok(12345)
         If IsOk(resOk) And resOk.value = 12345 And resOk.err_code = 0 Then
             passCount = passCount + 1
+        Else
+            Print "ModernFeatures failed at B (resOk)"
         End If
 
         ' C. Result(T, E) Sum Type: Err(code)
@@ -1477,14 +1536,103 @@ SkipMiddle:
         resErr = Err(404)
         If Not IsOk(resErr) And resErr.err_code = 404 Then
             passCount = passCount + 1
+        Else
+            Print "ModernFeatures failed at C (resErr)"
         End If
 
-        If passCount = 3 Then
+        ' D. Generics / Parameterized Structure: Box(Of Int32)
+        Dim intBox As Box(Of Int32)
+        intBox.Value = 42
+        intBox.Tag = 99
+        If intBox.Value = 42 And intBox.Tag = 99 Then
+            passCount = passCount + 1
+        Else
+            Print "ModernFeatures failed at D (intBox)"
+        End If
+
+        ' E. Generics / Parameterized Function: Min(Of Int32)
+        Dim minVal As Int32
+        minVal = Min(Of Int32)(100, 45)
+        If minVal = 45 Then
+            passCount = passCount + 1
+        Else
+            Print "ModernFeatures failed at E (Min_Int32), minVal=", minVal
+        End If
+
+        If passCount = 5 Then
             TestModernLanguageFeatures = True
         Else
+            Print "ModernFeatures passCount: ", passCount
             TestModernLanguageFeatures = False
         End If
     End Function
+
+    Public g_disposeTracker As Int32 = 0
+
+    Public Structure ScopedResource
+        Dim HandleId As Int32
+    End Structure
+
+    Public Sub ScopedResource_Dispose(ByRef r As ScopedResource)
+        g_disposeTracker = r.HandleId + 100
+    End Sub
+
+    ' 56. Deterministic Scoped Cleanup (Using ... End Using)
+    Public Function TestUsingScopedCleanup() As Boolean
+        g_disposeTracker = 0
+
+        Using res As ScopedResource
+            res.HandleId = 42
+        End Using
+
+        If g_disposeTracker = 142 Then
+            TestUsingScopedCleanup = True
+        Else
+            TestUsingScopedCleanup = False
+        End If
+    End Function
+
+    ' 57. Algebraic Pattern Matching (Match ... Case ... End Match)
+    Public Function TestPatternMatching() As Boolean
+        Dim score As Int32: score = 15
+        Dim category As Int32: category = 0
+
+        Match score
+            Case 1 To 10
+                category = 1
+            Case 11 To 20
+                category = 2
+            Case Else
+                category = 3
+        End Match
+
+        Dim resOk As Result: resOk = Ok(1234)
+        Dim extractedVal As Int64: extractedVal = 0
+
+        Match resOk
+            Case Ok(val)
+                extractedVal = val
+            Case Err(code)
+                extractedVal = -code
+        End Match
+
+        Dim resErr As Result: resErr = Err(404)
+        Dim extractedErr As Int32: extractedErr = 0
+
+        Match resErr
+            Case Ok(val)
+                extractedErr = -1
+            Case Err(code)
+                extractedErr = code
+        End Match
+
+        If category = 2 And extractedVal = 1234 And extractedErr = 404 Then
+            TestPatternMatching = True
+        Else
+            TestPatternMatching = False
+        End If
+    End Function
+
 
     ' Main Entry Point
     Public Unsafe Function Main(ByVal argc As Int32, ByVal argv As Pointer To Pointer To Byte) As Int32
@@ -1494,501 +1642,519 @@ SkipMiddle:
 
         ' 1. Arithmetic
         If TestArithmetic() Then
-            puts CPtr(Pointer To Byte, "[PASS] Arithmetic & Modulo Operations")
+            puts CPtr(Pointer To Byte, "Test 1 > [PASS] Arithmetic & Modulo Operations")
         Else
-            puts CPtr(Pointer To Byte, "[FAIL] Arithmetic & Modulo Operations")
+            puts CPtr(Pointer To Byte, "Test 1 > [FAIL] Arithmetic & Modulo Operations")
             Main = 1
             Exit Function
         End If
 
         ' 2. Bitwise
         If TestBitwise() Then
-            puts CPtr(Pointer To Byte, "[PASS] Bitwise & Shift Operations (And, Or, Xor, LShift, RShift)")
+            puts CPtr(Pointer To Byte, "Test 2 > [PASS] Bitwise & Shift Operations (And, Or, Xor, LShift, RShift)")
         Else
-            puts CPtr(Pointer To Byte, "[FAIL] Bitwise & Shift Operations")
+            puts CPtr(Pointer To Byte, "Test 2 > [FAIL] Bitwise & Shift Operations")
             Main = 1
             Exit Function
         End If
 
         ' 3. Nested If-Else
         If TestNestedIf(250) = 3 And TestNestedIf(150) = 2 And TestNestedIf(75) = 1 And TestNestedIf(10) = 0 Then
-            puts CPtr(Pointer To Byte, "[PASS] Nested If / ElseIf / Else Control Flow")
+            puts CPtr(Pointer To Byte, "Test 3 > [PASS] Nested If / ElseIf / Else Control Flow")
         Else
-            puts CPtr(Pointer To Byte, "[FAIL] Nested If / ElseIf / Else Control Flow")
+            puts CPtr(Pointer To Byte, "Test 3 > [FAIL] Nested If / ElseIf / Else Control Flow")
             Main = 1
             Exit Function
         End If
 
         ' 4. For Loop
         If TestForLoop() = 85 Then
-            puts CPtr(Pointer To Byte, "[PASS] For-Next Loops with Step")
+            puts CPtr(Pointer To Byte, "Test 4 > [PASS] For-Next Loops with Step")
         Else
-            puts CPtr(Pointer To Byte, "[FAIL] For-Next Loops with Step")
+            puts CPtr(Pointer To Byte, "Test 4 > [FAIL] For-Next Loops with Step")
             Main = 1
             Exit Function
         End If
 
         ' 5. Do Loops
         If TestDoLoop() = 15 Then
-            puts CPtr(Pointer To Byte, "[PASS] Do-Loop & Exit Do")
+            puts CPtr(Pointer To Byte, "Test 5 > [PASS] Do-Loop & Exit Do")
         Else
-            puts CPtr(Pointer To Byte, "[FAIL] Do-Loop & Exit Do")
+            puts CPtr(Pointer To Byte, "Test 5 > [FAIL] Do-Loop & Exit Do")
             Main = 1
             Exit Function
         End If
 
         ' 6. While Loop
         If TestWhileLoop() = 32 Then
-            puts CPtr(Pointer To Byte, "[PASS] While-Wend Loop")
+            puts CPtr(Pointer To Byte, "Test 6 > [PASS] While-Wend Loop")
         Else
-            puts CPtr(Pointer To Byte, "[FAIL] While-Wend Loop")
+            puts CPtr(Pointer To Byte, "Test 6 > [FAIL] While-Wend Loop")
             Main = 1
             Exit Function
         End If
 
         ' 7. Recursion
         If Factorial(5) = 120 Then
-            puts CPtr(Pointer To Byte, "[PASS] Recursive Function Calls (Factorial 5! = 120)")
+            puts CPtr(Pointer To Byte, "Test 7 > [PASS] Recursive Function Calls (Factorial 5! = 120)")
         Else
-            puts CPtr(Pointer To Byte, "[FAIL] Recursive Function Calls")
+            puts CPtr(Pointer To Byte, "Test 7 > [FAIL] Recursive Function Calls")
             Main = 1
             Exit Function
         End If
 
         ' 8. Pointer Indexing
         If TestPointerIndexing() Then
-            puts CPtr(Pointer To Byte, "[PASS] Pointer Casting (CPtr) & Indexing (ptr(i))")
+            puts CPtr(Pointer To Byte, "Test 8 > [PASS] Pointer Casting (CPtr) & Indexing (ptr(i))")
         Else
-            puts CPtr(Pointer To Byte, "[FAIL] Pointer Casting & Indexing")
+            puts CPtr(Pointer To Byte, "Test 8 > [FAIL] Pointer Casting & Indexing")
             Main = 1
             Exit Function
         End If
 
         ' 9. Structures
         If TestStructure() Then
-            puts CPtr(Pointer To Byte, "[PASS] Structure Declaration & Field Access")
+            puts CPtr(Pointer To Byte, "Test 9 > [PASS] Structure Declaration & Field Access")
         Else
-            puts CPtr(Pointer To Byte, "[FAIL] Structure Declaration & Field Access")
+            puts CPtr(Pointer To Byte, "Test 9 > [FAIL] Structure Declaration & Field Access")
             Main = 1
             Exit Function
         End If
 
         ' 10. Select Case
         If TestSelectCase(2) = 10 And TestSelectCase(5) = 20 And TestSelectCase(100) = 100 And TestSelectCase(42) = 999 Then
-            puts CPtr(Pointer To Byte, "[PASS] Select Case Statement & Multi-Branch Dispatch")
+            puts CPtr(Pointer To Byte, "Test 10 > [PASS] Select Case Statement & Multi-Branch Dispatch")
         Else
-            puts CPtr(Pointer To Byte, "[FAIL] Select Case Statement")
+            puts CPtr(Pointer To Byte, "Test 10 > [FAIL] Select Case Statement")
             Main = 1
             Exit Function
         End If
 
         ' 11. Pointer Arithmetic
         If TestPointerArithmetic() Then
-            puts CPtr(Pointer To Byte, "[PASS] Low-Level Pointer Arithmetic (ptr + offset)")
+            puts CPtr(Pointer To Byte, "Test 11 > [PASS] Low-Level Pointer Arithmetic (ptr + offset)")
         Else
-            puts CPtr(Pointer To Byte, "[FAIL] Low-Level Pointer Arithmetic")
+            puts CPtr(Pointer To Byte, "Test 11 > [FAIL] Low-Level Pointer Arithmetic")
             Main = 1
             Exit Function
         End If
 
         ' 12. String Concatenation & Conversion
         If TestStringConcatenation() Then
-            puts CPtr(Pointer To Byte, "[PASS] VB6 String Concatenation & Conversion (""+" & """ and ""&"")")
+            puts CPtr(Pointer To Byte, "Test 12 > [PASS] VB6 String Concatenation & Conversion (""+" & """ and ""&"")")
         Else
-            puts CPtr(Pointer To Byte, "[FAIL] VB6 String Concatenation & Conversion")
+            puts CPtr(Pointer To Byte, "Test 12 > [FAIL] VB6 String Concatenation & Conversion")
             Main = 1
             Exit Function
         End If
 
         ' 13. Enum Declarations & Values
         If TestEnum() Then
-            puts CPtr(Pointer To Byte, "[PASS] Enum Declarations & Member Constants (TrafficLight.Yellow)")
+            puts CPtr(Pointer To Byte, "Test 13 > [PASS] Enum Declarations & Member Constants (TrafficLight.Yellow)")
         Else
-            puts CPtr(Pointer To Byte, "[FAIL] Enum Declarations & Member Constants")
+            puts CPtr(Pointer To Byte, "Test 13 > [FAIL] Enum Declarations & Member Constants")
             Main = 1
             Exit Function
         End If
 
         ' 14. With Statement
         If TestWithStatement() Then
-            puts CPtr(Pointer To Byte, "[PASS] With Statement (.X, .Y implicit target binding)")
+            puts CPtr(Pointer To Byte, "Test 14 > [PASS] With Statement (.X, .Y implicit target binding)")
         Else
-            puts CPtr(Pointer To Byte, "[FAIL] With Statement")
+            puts CPtr(Pointer To Byte, "Test 14 > [FAIL] With Statement")
             Main = 1
             Exit Function
         End If
 
         ' 15. Floating Point Operations
         If TestFloatingPoint() Then
-            puts CPtr(Pointer To Byte, "[PASS] Floating Point Types & Arithmetic (Single, Double, IEEE-754)")
+            puts CPtr(Pointer To Byte, "Test 15 > [PASS] Floating Point Types & Arithmetic (Single, Double, IEEE-754)")
         Else
-            puts CPtr(Pointer To Byte, "[FAIL] Floating Point Types & Arithmetic")
+            puts CPtr(Pointer To Byte, "Test 15 > [FAIL] Floating Point Types & Arithmetic")
             Main = 1
             Exit Function
         End If
 
         ' 16. Line Continuation & Declare Lib
         If TestLineContinuation() = 60 Then
-            putsLib CPtr(Pointer To Byte, "[PASS] Line Continuation (_) & Declare Function Lib Alias (putsLib)")
+            putsLib CPtr(Pointer To Byte, "Test 16 > [PASS] Line Continuation (_) & Declare Function Lib Alias (putsLib)")
         Else
-            puts CPtr(Pointer To Byte, "[FAIL] Line Continuation & Declare Lib")
+            puts CPtr(Pointer To Byte, "Test 16 > [FAIL] Line Continuation & Declare Lib")
             Main = 1
             Exit Function
         End If
 
         ' 17. String Intrinsics Library
         If TestStringLibrary() Then
-            puts CPtr(Pointer To Byte, "[PASS] String Intrinsics Library (Len, Mid, Left, Right, InStr, Trim, Asc, Chr)")
+            puts CPtr(Pointer To Byte, "Test 17 > [PASS] String Intrinsics Library (Len, Mid, Left, Right, InStr, Trim, Asc, Chr)")
         Else
-            puts CPtr(Pointer To Byte, "[FAIL] String Intrinsics Library")
+            puts CPtr(Pointer To Byte, "Test 17 > [FAIL] String Intrinsics Library")
             Main = 1
             Exit Function
         End If
 
         ' 18. Type Conversions
         If TestTypeConversions() Then
-            puts CPtr(Pointer To Byte, "[PASS] Type Conversion Functions (Val, CStr, CInt, CLng, CDbl)")
+            puts CPtr(Pointer To Byte, "Test 18 > [PASS] Type Conversion Functions (Val, CStr, CInt, CLng, CDbl)")
         Else
-            puts CPtr(Pointer To Byte, "[FAIL] Type Conversion Functions")
+            puts CPtr(Pointer To Byte, "Test 18 > [FAIL] Type Conversion Functions")
             Main = 1
             Exit Function
         End If
 
         ' 19. Console I/O
         If TestConsolePrint() Then
-            puts CPtr(Pointer To Byte, "[PASS] Console I/O (Print expr; expr, expr)")
+            puts CPtr(Pointer To Byte, "Test 19 > [PASS] Console I/O (Print expr; expr, expr)")
         Else
-            puts CPtr(Pointer To Byte, "[FAIL] Console I/O")
+            puts CPtr(Pointer To Byte, "Test 19 > [FAIL] Console I/O")
             Main = 1
             Exit Function
         End If
 
         ' 20. Type ... End Type (VB6 UDT)
         If TestTypeUDT() Then
-            puts CPtr(Pointer To Byte, "[PASS] Type ... End Type (VB6 User Defined Type Structure)")
+            puts CPtr(Pointer To Byte, "Test 20 > [PASS] Type ... End Type (VB6 User Defined Type Structure)")
         Else
-            puts CPtr(Pointer To Byte, "[FAIL] Type ... End Type (VB6 UDT)")
+            puts CPtr(Pointer To Byte, "Test 20 > [FAIL] Type ... End Type (VB6 UDT)")
             Main = 1
             Exit Function
         End If
 
         ' 21. Optional Parameters with Defaults
         If TestOptionalParameters() Then
-            puts CPtr(Pointer To Byte, "[PASS] Optional Parameters (Optional ByVal x As T = Default)")
+            puts CPtr(Pointer To Byte, "Test 21 > [PASS] Optional Parameters (Optional ByVal x As T = Default)")
         Else
-            puts CPtr(Pointer To Byte, "[FAIL] Optional Parameters")
+            puts CPtr(Pointer To Byte, "Test 21 > [FAIL] Optional Parameters")
             Main = 1
             Exit Function
         End If
 
         ' 22. AddressOf Operator
         If TestAddressOf() Then
-            puts CPtr(Pointer To Byte, "[PASS] AddressOf Operator (Function pointer resolution)")
+            puts CPtr(Pointer To Byte, "Test 22 > [PASS] AddressOf Operator (Function pointer resolution)")
         Else
-            puts CPtr(Pointer To Byte, "[FAIL] AddressOf Operator")
+            puts CPtr(Pointer To Byte, "Test 22 > [FAIL] AddressOf Operator")
             Main = 1
             Exit Function
         End If
 
         ' 23. PrintLine & PrintFormat Convenience Wrappers
         If TestPrintLineAndFormat() Then
-            puts CPtr(Pointer To Byte, "[PASS] Console Helpers (PrintLine, PrintFormat / PrintF)")
+            puts CPtr(Pointer To Byte, "Test 23 > [PASS] Console Helpers (PrintLine, PrintFormat / PrintF)")
         Else
-            puts CPtr(Pointer To Byte, "[FAIL] Console Helpers")
+            puts CPtr(Pointer To Byte, "Test 23 > [FAIL] Console Helpers")
             Main = 1
             Exit Function
         End If
 
         ' 24. Math Library Intrinsics
         If TestMathIntrinsics() Then
-            puts CPtr(Pointer To Byte, "[PASS] Math Intrinsics Library (Abs, Sgn, Sqrt, Int)")
+            puts CPtr(Pointer To Byte, "Test 24 > [PASS] Math Intrinsics Library (Abs, Sgn, Sqrt, Int)")
         Else
-            puts CPtr(Pointer To Byte, "[FAIL] Math Intrinsics Library")
+            puts CPtr(Pointer To Byte, "Test 24 > [FAIL] Math Intrinsics Library")
             Main = 1
             Exit Function
         End If
 
         ' 25. TypeAlias Declarations
         If TestTypeAlias() Then
-            puts CPtr(Pointer To Byte, "[PASS] Type Alias Declarations (TypeAlias X = Y)")
+            puts CPtr(Pointer To Byte, "Test 25 > [PASS] Type Alias Declarations (TypeAlias X = Y)")
         Else
-            puts CPtr(Pointer To Byte, "[FAIL] Type Alias Declarations")
+            puts CPtr(Pointer To Byte, "Test 25 > [FAIL] Type Alias Declarations")
             Main = 1
             Exit Function
         End If
 
         ' 26. Multidimensional Arrays & Matrices
         If TestMultidimensionalArrays() Then
-            puts CPtr(Pointer To Byte, "[PASS] Multidimensional Arrays & Matrices (matrix(r, c) & UBound)")
+            puts CPtr(Pointer To Byte, "Test 26 > [PASS] Multidimensional Arrays & Matrices (matrix(r, c) & UBound)")
         Else
-            puts CPtr(Pointer To Byte, "[FAIL] Multidimensional Arrays & Matrices")
+            puts CPtr(Pointer To Byte, "Test 26 > [FAIL] Multidimensional Arrays & Matrices")
             Main = 1
             Exit Function
         End If
 
         ' 27. Key-Value Map & Dictionary
         If TestMapAndDictionary() Then
-            puts CPtr(Pointer To Byte, "[PASS] Key-Value Map & Dictionary (map(key) & MapHas)")
+            puts CPtr(Pointer To Byte, "Test 27 > [PASS] Key-Value Map & Dictionary (map(key) & MapHas)")
         Else
-            puts CPtr(Pointer To Byte, "[FAIL] Key-Value Map & Dictionary")
+            puts CPtr(Pointer To Byte, "Test 27 > [FAIL] Key-Value Map & Dictionary")
             Main = 1
             Exit Function
         End If
 
         ' 28. Standalone Open-Addressing HashMap
         If TestStandaloneHashMap() Then
-            puts CPtr(Pointer To Byte, "[PASS] Standalone Open-Addressing HashMap (Freestanding Structure)")
+            puts CPtr(Pointer To Byte, "Test 28 > [PASS] Standalone Open-Addressing HashMap (Freestanding Structure)")
         Else
-            puts CPtr(Pointer To Byte, "[FAIL] Standalone Open-Addressing HashMap")
+            puts CPtr(Pointer To Byte, "Test 28 > [FAIL] Standalone Open-Addressing HashMap")
             Main = 1
             Exit Function
         End If
 
         ' 29. Freestanding Dynamic ArrayList
         If TestArrayList() Then
-            puts CPtr(Pointer To Byte, "[PASS] Freestanding Dynamic ArrayList (Growable List with Indexing)")
+            puts CPtr(Pointer To Byte, "Test 29 > [PASS] Freestanding Dynamic ArrayList (Growable List with Indexing)")
         Else
-            puts CPtr(Pointer To Byte, "[FAIL] Freestanding Dynamic ArrayList")
+            puts CPtr(Pointer To Byte, "Test 29 > [FAIL] Freestanding Dynamic ArrayList")
             Main = 1
             Exit Function
         End If
 
         ' 30. Property Accessors (Property Get & Property Let)
         If TestPropertyAccessors() Then
-            puts CPtr(Pointer To Byte, "[PASS] Class & Module Property Accessors (Property Get / Let)")
+            puts CPtr(Pointer To Byte, "Test 30 > [PASS] Class & Module Property Accessors (Property Get / Let)")
         Else
-            puts CPtr(Pointer To Byte, "[FAIL] Class & Module Property Accessors")
+            puts CPtr(Pointer To Byte, "Test 30 > [FAIL] Class & Module Property Accessors")
             Main = 1
             Exit Function
         End If
 
         ' 31. For Each / Collection Iterators
         If TestForEachIterators() Then
-            puts CPtr(Pointer To Byte, "[PASS] Collection Iterators (For Each elem In collection)")
+            puts CPtr(Pointer To Byte, "Test 31 > [PASS] Collection Iterators (For Each elem In collection)")
         Else
-            puts CPtr(Pointer To Byte, "[FAIL] Collection Iterators")
+            puts CPtr(Pointer To Byte, "Test 31 > [FAIL] Collection Iterators")
             Main = 1
             Exit Function
         End If
 
         ' 32. Nested Arrays & Multi-Level Chained Indexing
         If TestNestedArrays() Then
-            puts CPtr(Pointer To Byte, "[PASS] Nested Arrays & Multi-Level Chained Indexing")
+            puts CPtr(Pointer To Byte, "Test 32 > [PASS] Nested Arrays & Multi-Level Chained Indexing")
         Else
-            puts CPtr(Pointer To Byte, "[FAIL] Nested Arrays & Multi-Level Chained Indexing")
+            puts CPtr(Pointer To Byte, "Test 32 > [FAIL] Nested Arrays & Multi-Level Chained Indexing")
             Main = 1
             Exit Function
         End If
 
         ' 33. Object Lifecycle: Set obj = New ClassName & Delete
         If TestNewObjectLifecycle() Then
-            puts CPtr(Pointer To Byte, "[PASS] Object Lifecycle (New ClassName & Delete)")
+            puts CPtr(Pointer To Byte, "Test 33 > [PASS] Object Lifecycle (New ClassName & Delete)")
         Else
-            puts CPtr(Pointer To Byte, "[FAIL] Object Lifecycle (New ClassName & Delete)")
+            puts CPtr(Pointer To Byte, "Test 33 > [FAIL] Object Lifecycle (New ClassName & Delete)")
             Main = 1
             Exit Function
         End If
 
         ' 34. Dynamic Array Resizing (ReDim & ReDim Preserve)
         If TestReDim() Then
-            puts CPtr(Pointer To Byte, "[PASS] Dynamic Array Resizing (ReDim & ReDim Preserve)")
+            puts CPtr(Pointer To Byte, "Test 34 > [PASS] Dynamic Array Resizing (ReDim & ReDim Preserve)")
         Else
-            puts CPtr(Pointer To Byte, "[FAIL] Dynamic Array Resizing (ReDim & ReDim Preserve)")
+            puts CPtr(Pointer To Byte, "Test 34 > [FAIL] Dynamic Array Resizing (ReDim & ReDim Preserve)")
             Main = 1
             Exit Function
         End If
 
         ' 35. Is / Nothing Operator
         If TestIsNothingOperator() Then
-            puts CPtr(Pointer To Byte, "[PASS] Is / Nothing Pointer Null Operators")
+            puts CPtr(Pointer To Byte, "Test 35 > [PASS] Is / Nothing Pointer Null Operators")
         Else
-            puts CPtr(Pointer To Byte, "[FAIL] Is / Nothing Pointer Null Operators")
+            puts CPtr(Pointer To Byte, "Test 35 > [FAIL] Is / Nothing Pointer Null Operators")
             Main = 1
             Exit Function
         End If
 
         ' 36. Erase Statement (Fixed arrays & Dynamic pointers)
         If TestEraseStatement() Then
-            puts CPtr(Pointer To Byte, "[PASS] Erase Statement (Fixed Array Zeroing & Pointer Clearing)")
+            puts CPtr(Pointer To Byte, "Test 36 > [PASS] Erase Statement (Fixed Array Zeroing & Pointer Clearing)")
         Else
-            puts CPtr(Pointer To Byte, "[FAIL] Erase Statement")
+            puts CPtr(Pointer To Byte, "Test 36 > [FAIL] Erase Statement")
             Main = 1
             Exit Function
         End If
 
         ' 37. StrComp Function (Classic VB6 string comparison)
         If TestStrCompFunction() Then
-            puts CPtr(Pointer To Byte, "[PASS] StrComp Function (Three-way String Comparison)")
+            puts CPtr(Pointer To Byte, "Test 37 > [PASS] StrComp Function (Three-way String Comparison)")
         Else
-            puts CPtr(Pointer To Byte, "[FAIL] StrComp Function")
+            puts CPtr(Pointer To Byte, "Test 37 > [FAIL] StrComp Function")
             Main = 1
             Exit Function
         End If
 
         ' 38. GoTo & Label Jumps
         If TestGoToLabels() Then
-            puts CPtr(Pointer To Byte, "[PASS] Unconditional Jumps (GoTo <Label> & <Label>:)")
+            puts CPtr(Pointer To Byte, "Test 38 > [PASS] Unconditional Jumps (GoTo <Label> & <Label>:)")
         Else
-            puts CPtr(Pointer To Byte, "[FAIL] Unconditional Jumps (GoTo)")
+            puts CPtr(Pointer To Byte, "Test 38 > [FAIL] Unconditional Jumps (GoTo)")
             Main = 1
             Exit Function
         End If
 
         ' 39. Structured Exception Handling (Try ... Catch ... Finally)
         If TestTryCatchFinally() Then
-            puts CPtr(Pointer To Byte, "[PASS] Structured Error Handling (Try ... Catch ... Finally)")
+            puts CPtr(Pointer To Byte, "Test 39 > [PASS] Structured Error Handling (Try ... Catch ... Finally)")
         Else
-            puts CPtr(Pointer To Byte, "[FAIL] Structured Error Handling (Try ... Catch ... Finally)")
+            puts CPtr(Pointer To Byte, "Test 39 > [FAIL] Structured Error Handling (Try ... Catch ... Finally)")
             Main = 1
             Exit Function
         End If
 
         ' 40. ParamArray (Variadic Arguments)
         If TestParamArray() Then
-            puts CPtr(Pointer To Byte, "[PASS] Variadic Arguments (ParamArray args() As Type)")
+            puts CPtr(Pointer To Byte, "Test 40 > [PASS] Variadic Arguments (ParamArray args() As Type)")
         Else
-            puts CPtr(Pointer To Byte, "[FAIL] Variadic Arguments (ParamArray)")
+            puts CPtr(Pointer To Byte, "Test 40 > [FAIL] Variadic Arguments (ParamArray)")
             Main = 1
             Exit Function
         End If
 
         ' 41. Named Arguments
         If TestNamedArguments() Then
-            puts CPtr(Pointer To Byte, "[PASS] Call-Site Named Arguments (name := expr)")
+            puts CPtr(Pointer To Byte, "Test 41 > [PASS] Call-Site Named Arguments (name := expr)")
         Else
-            puts CPtr(Pointer To Byte, "[FAIL] Call-Site Named Arguments")
+            puts CPtr(Pointer To Byte, "Test 41 > [FAIL] Call-Site Named Arguments")
             Main = 1
             Exit Function
         End If
 
         ' 42. Like String Pattern Matching
         If TestLikeOperator() Then
-            puts CPtr(Pointer To Byte, "[PASS] String Pattern Matching (Like operator with * and ?)")
+            puts CPtr(Pointer To Byte, "Test 42 > [PASS] String Pattern Matching (Like operator with * and ?)")
         Else
-            puts CPtr(Pointer To Byte, "[FAIL] String Pattern Matching (Like)")
+            puts CPtr(Pointer To Byte, "Test 42 > [FAIL] String Pattern Matching (Like)")
             Main = 1
             Exit Function
         End If
 
         ' 43. Unsigned vs Signed Distinctions
         If TestUnsignedOperations() Then
-            puts CPtr(Pointer To Byte, "[PASS] Unsigned Operations (UDiv, URem, Logical RShift, Unsigned Cmp)")
+            puts CPtr(Pointer To Byte, "Test 43 > [PASS] Unsigned Operations (UDiv, URem, Logical RShift, Unsigned Cmp)")
         Else
-            puts CPtr(Pointer To Byte, "[FAIL] Unsigned Operations")
+            puts CPtr(Pointer To Byte, "Test 43 > [FAIL] Unsigned Operations")
             Main = 1
             Exit Function
         End If
 
         ' 44. Union Types (Overlapping memory layout)
         If TestUnionTypes() Then
-            puts CPtr(Pointer To Byte, "[PASS] Union Types (Overlapping memory layout & member aliasing)")
+            puts CPtr(Pointer To Byte, "Test 44 > [PASS] Union Types (Overlapping memory layout & member aliasing)")
         Else
-            puts CPtr(Pointer To Byte, "[FAIL] Union Types")
+            puts CPtr(Pointer To Byte, "Test 44 > [FAIL] Union Types")
             Main = 1
             Exit Function
         End If
 
         ' 45. Memory Runtime Intrinsics (ZeroMemory, FillMemory, CopyMemory)
         If TestMemoryIntrinsics() Then
-            puts CPtr(Pointer To Byte, "[PASS] Memory Intrinsics (CopyMemory, ZeroMemory, FillMemory)")
+            puts CPtr(Pointer To Byte, "Test 45 > [PASS] Memory Intrinsics (CopyMemory, ZeroMemory, FillMemory)")
         Else
-            puts CPtr(Pointer To Byte, "[FAIL] Memory Intrinsics")
+            puts CPtr(Pointer To Byte, "Test 45 > [FAIL] Memory Intrinsics")
             Main = 1
             Exit Function
         End If
 
         ' 46. TypeOf ... Is ... Operator
         If TestTypeOfIsOperator() Then
-            puts CPtr(Pointer To Byte, "[PASS] Runtime Type Testing (TypeOf expr Is [Not] Type)")
+            puts CPtr(Pointer To Byte, "Test 46 > [PASS] Runtime Type Testing (TypeOf expr Is [Not] Type)")
         Else
-            puts CPtr(Pointer To Byte, "[FAIL] Runtime Type Testing (TypeOf)")
+            puts CPtr(Pointer To Byte, "Test 46 > [FAIL] Runtime Type Testing (TypeOf)")
             Main = 1
             Exit Function
         End If
 
         ' 47. Shared Library FFI Binding (Declare ... Lib "SharedLib")
         If TestDeclareSharedLibrary() Then
-            puts CPtr(Pointer To Byte, "[PASS] Shared Library Binding (Declare Function ... Lib SharedLib)")
+            puts CPtr(Pointer To Byte, "Test 47 > [PASS] Shared Library Binding (Declare Function ... Lib SharedLib)")
         Else
-            puts CPtr(Pointer To Byte, "[FAIL] Shared Library Binding")
+            puts CPtr(Pointer To Byte, "Test 47 > [FAIL] Shared Library Binding")
             Main = 1
             Exit Function
         End If
 
         ' 48. Memory Safety & Bounds-Checked Array Access
         If TestBoundsChecking() Then
-            puts CPtr(Pointer To Byte, "[PASS] Memory Safety & Array Bounds Validation")
+            puts CPtr(Pointer To Byte, "Test 48 > [PASS] Memory Safety & Array Bounds Validation")
         Else
-            puts CPtr(Pointer To Byte, "[FAIL] Memory Safety & Array Bounds Validation")
+            puts CPtr(Pointer To Byte, "Test 48 > [FAIL] Memory Safety & Array Bounds Validation")
             Main = 1
             Exit Function
         End If
 
         ' 49. File I/O Primitives (Open, Close, Print #, Line Input #, EOF, LOF)
         If TestFileIO() Then
-            puts CPtr(Pointer To Byte, "[PASS] File I/O Primitives (Open, Close, Print #, Line Input #, EOF, LOF)")
+            puts CPtr(Pointer To Byte, "Test 49 > [PASS] File I/O Primitives (Open, Close, Print #, Line Input #, EOF, LOF)")
         Else
-            puts CPtr(Pointer To Byte, "[FAIL] File I/O Primitives")
+            puts CPtr(Pointer To Byte, "Test 49 > [FAIL] File I/O Primitives")
             Main = 1
             Exit Function
         End If
 
         ' 50. Module Imports & Multi-File Dependency Resolution
         If TestImports() Then
-            puts CPtr(Pointer To Byte, "[PASS] Module Imports & Multi-File Dependency Resolution")
+            puts CPtr(Pointer To Byte, "Test 50 > [PASS] Module Imports & Multi-File Dependency Resolution")
         Else
-            puts CPtr(Pointer To Byte, "[FAIL] Module Imports & Dependency Resolution")
+            puts CPtr(Pointer To Byte, "Test 50 > [FAIL] Module Imports & Dependency Resolution")
             Main = 1
             Exit Function
         End If
 
         ' 51. Conditional Compilation Directives (#Const, #If, #ElseIf, #Else, #End If)
         If TestConditionalCompilation() Then
-            puts CPtr(Pointer To Byte, "[PASS] Conditional Compilation (#Const, #If, #ElseIf, #Else, #End If)")
+            puts CPtr(Pointer To Byte, "Test 51 > [PASS] Conditional Compilation (#Const, #If, #ElseIf, #Else, #End If)")
         Else
-            puts CPtr(Pointer To Byte, "[FAIL] Conditional Compilation Directives")
+            puts CPtr(Pointer To Byte, "Test 51 > [FAIL] Conditional Compilation Directives")
             Main = 1
             Exit Function
         End If
 
         ' 52. Static Library Archiving & Linking (.a / -static)
         If TestStaticLibraryArchive() Then
-            puts CPtr(Pointer To Byte, "[PASS] Static Library Archiving & Symbol Resolution (libStaticMath.a)")
+            puts CPtr(Pointer To Byte, "Test 52 > [PASS] Static Library Archiving & Symbol Resolution (libStaticMath.a)")
         Else
-            puts CPtr(Pointer To Byte, "[FAIL] Static Library Archiving & Linking")
+            puts CPtr(Pointer To Byte, "Test 52 > [FAIL] Static Library Archiving & Linking")
             Main = 1
             Exit Function
         End If
 
         ' 53. DWARF Debug Information Emission (-g metadata)
         If TestDebugInfoEmission() Then
-            puts CPtr(Pointer To Byte, "[PASS] DWARF Debug Information & Source Locations (-g)")
+            puts CPtr(Pointer To Byte, "Test 53 > [PASS] DWARF Debug Information & Source Locations (-g)")
         Else
-            puts CPtr(Pointer To Byte, "[FAIL] DWARF Debug Information Emission")
+            puts CPtr(Pointer To Byte, "Test 53 > [FAIL] DWARF Debug Information Emission")
             Main = 1
             Exit Function
         End If
 
         ' 54. Advanced Type System & Procedure Attributes (<Inline>, Currency, Short, UShort, ULong)
         If TestTypeSystemAndAttributes() Then
-            puts CPtr(Pointer To Byte, "[PASS] Type System & Procedure Attributes (<Inline>, Currency, UShort, ULong)")
+            puts CPtr(Pointer To Byte, "Test 54 > [PASS] Type System & Procedure Attributes (<Inline>, Currency, UShort, ULong)")
         Else
-            puts CPtr(Pointer To Byte, "[FAIL] Type System & Procedure Attributes")
+            puts CPtr(Pointer To Byte, "Test 54 > [FAIL] Type System & Procedure Attributes")
             Main = 1
             Exit Function
         End If
 
         ' 55. Modern Features: Closures/Lambdas, Result(T, E) Sum Types, Namespaces
         If TestModernLanguageFeatures() Then
-            puts CPtr(Pointer To Byte, "[PASS] Modern Language Features (Lambdas =>, Result(T, E) Sum Types, Namespaces)")
+            puts CPtr(Pointer To Byte, "Test 55 > [PASS] Modern Language Features (Lambdas =>, Result(T, E) Sum Types, Namespaces)")
         Else
-            puts CPtr(Pointer To Byte, "[FAIL] Modern Language Features")
+            puts CPtr(Pointer To Byte, "Test 55 > [FAIL] Modern Language Features")
+            Main = 1
+            Exit Function
+        End If
+
+        ' 56. Deterministic Scoped Cleanup (Using ... End Using)
+        If TestUsingScopedCleanup() Then
+            puts CPtr(Pointer To Byte, "Test 56 > [PASS] Deterministic Scoped Cleanup (Using ... End Using with .Dispose())")
+        Else
+            puts CPtr(Pointer To Byte, "Test 56 > [FAIL] Deterministic Scoped Cleanup (Using)")
+            Main = 1
+            Exit Function
+        End If
+
+        ' 57. Algebraic Pattern Matching (Match ... Case ... End Match)
+        If TestPatternMatching() Then
+            puts CPtr(Pointer To Byte, "Test 57 > [PASS] Algebraic Pattern Matching (Match ... Case with Ok(v), Err(e), and Ranges)")
+        Else
+            puts CPtr(Pointer To Byte, "Test 57 > [FAIL] Algebraic Pattern Matching (Match)")
             Main = 1
             Exit Function
         End If
 
         puts CPtr(Pointer To Byte, "================================================")
-        puts CPtr(Pointer To Byte, "   ALL 55 TEST SUITES PASSED SUCCESSFULLY!      ")
+        puts CPtr(Pointer To Byte, "   ALL 57 TEST SUITES PASSED SUCCESSFULLY!      ")
         puts CPtr(Pointer To Byte, "================================================")
 
         Main = 0

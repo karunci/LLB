@@ -35,7 +35,9 @@ public:
         const std::string& outputFile,
         const std::string& linkerScript = "",
         bool isShared = false,
-        bool isFreestanding = false
+        bool isFreestanding = false,
+        const std::string& targetTriple = "",
+        const std::string& sysroot = ""
     );
 
     static bool createStaticArchive(

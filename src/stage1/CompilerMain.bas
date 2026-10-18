@@ -26,7 +26,7 @@ Module CompilerMain
         Dim inputPath As Pointer To Byte
         inputPath = argv(1)
 
-        printf CPtr(Pointer To Byte, "[llbc-stage1] Target source file: %s\n"), inputPath
+        printf(CPtr(Pointer To Byte, "[llbc-stage1] Target source file: %s\n"), inputPath)
         puts CPtr(Pointer To Byte, "[llbc-stage1] LLVM-C API bindings not yet implemented. Exiting.")
 
         ' Return success

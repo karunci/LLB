@@ -27,7 +27,8 @@ public:
 
     bool emitModule(const ModuleNode& moduleNode);
     void registerExternalProcedure(const std::string& name, const TypeSpec& retType, const std::vector<TypeSpec>& paramTypes, const std::string& aliasName = "");
-    llvm::Function* emitProcedure(const ProcedureNode& procNode, const std::string& className = "");
+    llvm::Function* emitProcedure(const ProcedureNode& procNode, const std::string& className = "", const std::vector<std::unique_ptr<ASTNode>>* bodyStatements = nullptr);
+
     void emitStructure(const StructureNode& structNode);
     void emitStatement(ASTNode* stmt);
     void emitDimStatement(const DimStmtNode& dimNode);
@@ -41,6 +42,7 @@ public:
     void emitWhileStatement(const WhileStmtNode& whileNode);
     void emitExitStatement(const ExitStmtNode& exitNode);
     void emitSelectStatement(const SelectStmtNode& selectNode);
+    void emitMatchStatement(const MatchStmtNode& matchNode);
     void emitAsmStatement(const AsmStmtNode& asmNode);
     void emitEnum(const EnumNode& enumNode);
     void emitWithStatement(const WithStmtNode& withNode);
@@ -57,6 +59,7 @@ public:
     void emitLabelStatement(const LabelStmtNode& labelNode);
     void emitGoToStatement(const GoToStmtNode& gotoNode);
     void emitTryStatement(const TryStmtNode& tryNode);
+    void emitUsingStatement(const UsingStmtNode& usingNode);
 
     llvm::Value* emitExpression(ExprASTNode* expr);
     llvm::Value* coerceType(llvm::Value* val, llvm::Type* targetType);
@@ -94,6 +97,9 @@ private:
     llvm::Function* getOrCreateFileEof();
     llvm::Function* getOrCreateFileLof();
     llvm::GlobalVariable* getOrCreateFileTable();
+    llvm::GlobalVariable* getOrCreateErrNumber();
+    llvm::GlobalVariable* getOrCreateErrSource();
+    llvm::GlobalVariable* getOrCreateErrDescription();
     llvm::Value* convertToString(llvm::Value* val);
     llvm::Value* concatStrings(llvm::Value* s1, llvm::Value* s2);
     bool isUnsignedExpr(ExprASTNode* expr);
@@ -118,6 +124,14 @@ private:
     std::unordered_map<std::string, std::vector<ExprASTNode*>> m_procDefaults;
     std::unordered_map<std::string, std::vector<std::string>> m_procParamNames;
     std::unordered_map<std::string, bool> m_procParamArray;
+    std::unordered_map<std::string, const StructureNode*> m_genericStructTemplates;
+    std::unordered_map<std::string, const ProcedureNode*> m_genericProcTemplates;
+
+
+    std::string instantiateGenericStruct(const TypeSpec& typeSpec);
+    std::string instantiateGenericProcedure(const std::string& baseName, const std::vector<TypeSpec>& typeArgs);
+    TypeSpec substituteTypeSpec(const TypeSpec& spec, const std::unordered_map<std::string, TypeSpec>& typeMap);
+
     std::vector<std::pair<llvm::Value*, TypeSpec>> m_withStack;
 
     llvm::BasicBlock* m_exitBlock{nullptr};
@@ -126,6 +140,7 @@ private:
     std::vector<llvm::BasicBlock*> m_continueStack;
     std::unordered_map<std::string, llvm::BasicBlock*> m_labels;
     std::vector<llvm::BasicBlock*> m_catchStack;
+    std::vector<llvm::AllocaInst*> m_tryErrAllocaStack;
     bool m_currentProcIsUnsafe{false};
 
     // DWARF Debug Information Generation (-g)

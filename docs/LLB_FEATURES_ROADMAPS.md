@@ -73,7 +73,8 @@ LLB fuses the safety and performance of modern systems languages with the approa
 | `UBound` / `LBound` | ✅ | Dimension-aware array bounds intrinsics (`UBound(arr, dim)`) |
 | Union types (`Union ... End Union`) | ✅ | Overlapping memory layout with offset-0 member aliasing for registers & hardware protocols |
 | Nullable / Optional types | ❌ | `T?` or `Maybe T` |
-| Generics / Templates | ❌ | Parameterized types |
+| Generics / Templates | ✅ | Parameterized templates (`Structure Box(Of T)`, `Function Min(Of T)`) with on-demand monomorphization |
+
 | Type aliases (`TypeAlias X = Y`) | ✅ | Named type synonyms for primitives, pointers, and UDTs |
 | Signed vs Unsigned distinction in ops | ✅ | `UDiv`, `URem`, `LShr`, and unsigned comparisons (`ULT`, `ULE`, `UGT`, `UGE`) for unsigned operands |
 
@@ -95,7 +96,7 @@ LLB fuses the safety and performance of modern systems languages with the approa
 | Null-pointer safety checks | ✅ | Zero-address null guard insertion before pointer dereferences, zero-cost bypassable via `Unsafe` |
 | Stack buffer overflow protection | ✅ | Stack canary protection via LLVM `StackProtectStrong` attribute |
 | Ownership / Borrow checker | ❌ | Rust-style memory safety (aspirational) |
-| `Dispose` / RAII cleanup | ❌ | Deterministic resource cleanup |
+| `Dispose` / RAII cleanup | ✅ | Deterministic scoped resource management with `Using ... End Using` calling `.Dispose()` |
 | `GC` (garbage collection) | ❌ | Not planned for systems language |
 
 ---
@@ -112,7 +113,7 @@ LLB fuses the safety and performance of modern systems languages with the approa
 | I/O library (`Open`, `Print #`, `Line Input #`, `Input #`, `Close`, `EOF`, `LOF`) | ✅ | Full file stream I/O with multiple file numbers (1..255), reading, writing, and file status |
 | Console I/O (`Print`, `PrintLine`, `PrintFormat`/`PrintF`, `Input`) | ✅ | Both statement form and built-in call wrappers |
 | Date/Time library (`Now`, `DateDiff`, `Format`) | ❌ | Calendar operations |
-| Error runtime (`Err.Number`, `Err.Description`) | ❌ | Error info structure |
+| Error runtime (`Err.Number`, `Err.Description`) | ✅ | Full VB6 `Err` runtime singleton with `Err.Number`, `Err.Source`, `Err.Description`, `Err.Raise`, and `Err.Clear` |
 | Collection runtime (`Dictionary`, `Map`, `HashMap`, `ArrayList`) | ✅ | ODR open-addressing hash table runtime (`map("k") = v`), intrinsics (`MapCreate`, `MapHas`, `MapGet`), and freestanding `HashMap` & `ArrayList` UDTs |
 | Memory runtime (`CopyMemory`, `ZeroMemory`, `FillMemory`) | ✅ | Direct lowering to native freestanding LLVM `llvm.memcpy` & `llvm.memset` intrinsics |
 
@@ -133,7 +134,7 @@ LLB fuses the safety and performance of modern systems languages with the approa
 | `Import` / `#include` system | ✅ | Modular import resolution: `Import ModuleName`, `Import Mod.Sym`, `Import In "path"` |
 | Optimization passes (`-O0` to `-O3`) | ✅ | Full LLVM PassBuilder pipeline integration |
 | Debug info emission (`-g`, DWARF) | ✅ | Source-level DWARF v4 debugging symbols & subprogram line/col mappings |
-| Cross-compilation (`--target=`) | 🔧 | Triple in `.llbproj`, not CLI |
+| Cross-compilation (`--target=`) | ✅ | Full CLI `--target=<triple>`, `--sysroot=<path>`, and `--nostdlib` toolchain cross-compilation with LLD emulation mapping |
 | Incremental / parallel builds | ❌ | Recompile-only-changed |
 | Package manager | ❌ | Dependency resolution |
 | LSP / IDE integration | ❌ | Language server protocol |
@@ -165,7 +166,7 @@ LLB fuses the safety and performance of modern systems languages with the approa
 | MMIO volatile pointers | ✅ | `Volatile Pointer To T` |
 | Hardware descriptor annotations | ✅ | `<Packed>`, `<Align(N)>` |
 | First-class closures / lambdas | ✅ | Anonymous functions with `Function(...) [As Type] => expr` lowering to internal functions & pointers |
-| Pattern matching (`Match ... End Match`) | ❌ | Algebraic pattern decomposition |
+| Pattern matching (`Match ... End Match`) | ✅ | Full algebraic pattern matching with `Ok(v)`, `Err(e)`, ranges `min To max`, values, and wildcards |
 | Async / Await | ❌ | Cooperative async I/O |
 | Interfaces / Traits / Protocols | ✅ | `Interface ... End Interface`, `Implements` contracts & vtable definitions |
 | Operator overloading | ❌ | Custom `+`, `-`, `=`, etc. |
@@ -205,8 +206,15 @@ LLB fuses the safety and performance of modern systems languages with the approa
 ### Phase 4: Modern Language Power
 17. ~~`New` / `Delete` + heap object lifecycle~~ — **Done** ✅
 18. ~~Interfaces / Traits / Protocols~~ — **Done** ✅
-19. ❌ Generics / Templates
+19. ~~Generics / Parameterized Templates (`Structure Box(Of T)`, `Function Min(Of T)`)~~ — **Done** ✅
 20. ~~First-class function pointers / `AddressOf`~~ — **Done** ✅
 21. ~~First-class closures / lambdas~~ — **Done** ✅
 22. ~~Result / Error sum types (`Result`, `Ok`, `Err`)~~ — **Done** ✅
 23. ~~Namespaces / Module nesting (`Namespace ... End Namespace`)~~ — **Done** ✅
+24. ~~VB6 `Err` Object Runtime (`Err.Number`, `Err.Description`, `Err.Source`, `Err.Clear`, `Err.Raise`)~~ — **Done** ✅
+25. ~~Toolchain CLI Cross-Compilation (`--target=<triple>`, `--nostdlib`, `--sysroot`)~~ — **Done** ✅
+26. ~~Deterministic Scoped Cleanup (`Using ... End Using`)~~ — **Done** ✅
+27. ~~Algebraic Pattern Matching (`Match ... Case ... End Match`)~~ — **Done** ✅
+28. ~~Self-Hosting Bootstrap: `stage1` Compiler Architecture (`src/stage1/`, `llbc.llbproj`)~~ — **Done** ✅
+
+

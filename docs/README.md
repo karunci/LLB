@@ -68,8 +68,17 @@ Pointer      To           Volatile     Unsafe       Optional     CPtr
 CType        Import       Asm          Do           Loop         While
 For          To           Step         Next         If           Then
 ElseIf       Else         Exit         Select       Case         Me
-
+Const        Enum         With         Declare      Lib          Alias
+Print        Input        Type         AddressOf    Property     Get
+Let          Set          Each         In           New          Delete
+ReDim        Preserve     Is           Nothing      Erase        GoTo
+Try          Catch        Finally      ParamArray   Like         Union
+TypeOf       Open         Close        Output       Append       Binary
+Line         EOF          LOF          Interface    Implements   Namespace
+And          Or           Xor          Not          LShift       RShift
+Mod
 ```
+
 
 ---
 
@@ -91,6 +100,15 @@ LLB replaces dynamic typing with explicit fixed-width static primitive types and
 | `String` | Pointer | Pointer-based freestanding null-terminated C string |
 | `Pointer To T` | 32/64-bit | Direct memory address referencing type `T` |
 | `Volatile Pointer To T` | 32/64-bit | MMIO address pointer exempt from compiler optimization |
+| `Result` | Struct | Built-in sum type `{ is_ok As Boolean, err_code As Int32, value As Int64 }` |
+
+#### Compound & User-Defined Types
+
+* **User-Defined Types (`Structure` / `Type`):** Byte-aligned or packed compound structures.
+* **Unions (`Union`):** Overlapping memory layouts at offset 0 for registers, protocols, and raw bitfields.
+* **Fixed & Multidimensional Arrays:** Stack-allocated row-major arrays (`Dim matrix(3, 3) As Int32`).
+* **Type Aliases (`TypeAlias X = Y`):** Strongly checked type nicknames for primitives and pointers.
+
 
 #### Type Conversions & Casting
 
@@ -192,7 +210,82 @@ Public Sub ExternalHook()
 End Sub
 ```
 
-#### 5. High-Signal Compiler Diagnostics
+#### 5. Interfaces & Dynamic Dispatch (`Interface` / `Implements`)
+
+LLB supports decoupled polymorphism through interface contracts and virtual method table (vtable) dispatch:
+
+```vb
+Interface IGreeter
+    Sub Greet(ByVal name As String)
+    Function GetCode() As Int32
+End Interface
+
+Class ConsoleGreeter
+    Implements IGreeter
+
+    Public Sub Greet(ByVal name As String)
+        PrintLine "Hello, " & name & "!"
+    End Sub
+
+    Public Function GetCode() As Int32
+        GetCode = 42
+    End Function
+End Class
+```
+
+#### 6. Namespaces & Hierarchical Organization (`Namespace`)
+
+Modules, classes, and subroutines can be encapsulated inside hierarchical namespaces. Identifiers within namespaces are resolved with standard dotted access:
+
+```vb
+Namespace Core.Algorithms
+
+    Public Function ComputeHash(ByVal seed As Int32) As Int32
+        ComputeHash = seed Xor &H5A5A5A5A
+    End Function
+
+End Namespace
+
+' Usage in another compilation unit:
+Dim h As Int32 = Core.Algorithms.ComputeHash(1234)
+```
+
+#### 7. Modern Functional Lambdas (`=>`) & First-Class Function Pointers
+
+Inline functions and closures can be defined concisely using fat-arrow syntax (`=>`) and passed as first-class function pointers:
+
+```vb
+' Lambda assigned to function pointer variable
+Dim multiplier As Pointer
+multiplier = Function(x As Int32) As Int32 => x * 3
+
+' Indirect call
+Dim ans As Int32 = multiplier(14) ' ans = 42
+```
+
+#### 8. Result / Error Handling (`Result(T, E)`)
+
+Freestanding sum types provide zero-exception error handling via `Result`, `Ok(value)`, `Err(code)`, and `IsOk(result)`:
+
+```vb
+Public Function SafeDivide(ByVal a As Int32, ByVal b As Int32) As Result
+    If b = 0 Then
+        SafeDivide = Err(101)
+    Else
+        SafeDivide = Ok(a / b)
+    End If
+End Function
+
+Dim res As Result = SafeDivide(100, 5)
+If IsOk(res) Then
+    PrintLine "Value: " & res.value
+Else
+    PrintLine "Failed with code: " & res.err_code
+End If
+```
+
+#### 9. High-Signal Compiler Diagnostics
+
 
 The `llbc` compiler provides ANSI-colored diagnostic messages automatically when run in a terminal or console:
 ```

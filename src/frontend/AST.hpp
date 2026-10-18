@@ -152,6 +152,13 @@ public:
         : targetExpr(std::move(expr)), targetType(std::move(type)), isNot(notFlag) {}
 };
 
+class LambdaExprASTNode : public ExprASTNode {
+public:
+    std::vector<ParameterNode> parameters;
+    TypeSpec returnType;
+    std::unique_ptr<ExprASTNode> bodyExpr;
+};
+
 // --- Statements ---
 
 class DimStmtNode : public ASTNode {
@@ -419,11 +426,27 @@ struct ImportDirective {
     std::string filePath;
 };
 
+struct InterfaceMethod {
+    std::string name;
+    bool isFunction{false};
+    TypeSpec returnType;
+    std::vector<ParameterNode> parameters;
+};
+
+class InterfaceNode : public ASTNode {
+public:
+    std::string name;
+    bool isPublic{true};
+    std::vector<InterfaceMethod> methods;
+};
+
 class ModuleNode : public ASTNode {
 public:
     std::string name;
     std::string sourceFilePath;
     bool isClass{false};
+    bool isInterface{false};
+    std::vector<std::string> implementsInterfaces;
     std::vector<ImportDirective> imports;
     std::vector<std::unique_ptr<ASTNode>> members;
 };

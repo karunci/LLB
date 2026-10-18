@@ -69,6 +69,7 @@ private:
     std::unique_ptr<StructureNode> parseUnion(bool isPacked = false, int alignment = 0);
     std::unique_ptr<ConstStmtNode> parseConstStatement(bool isPublic = false);
     std::unique_ptr<EnumNode> parseEnum(bool isPublic = true);
+    std::unique_ptr<InterfaceNode> parseInterface(bool isPublic = true);
     void parseTypeAlias();
     ImportDirective parseImportStatement();
 

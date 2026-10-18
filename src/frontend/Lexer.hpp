@@ -101,6 +101,9 @@ enum class TokenType {
     KwLine,
     KwEof,
     KwLof,
+    KwInterface,
+    KwImplements,
+    KwNamespace,
 
     // Operators as keywords
     KwAnd,
@@ -126,6 +129,7 @@ enum class TokenType {
     RParen,         // )
     Colon,          // :
     ColonEqual,     // :=
+    FatArrow,       // =>
     Plus,           // +
     Minus,          // -
     Asterisk,       // *

@@ -164,6 +164,9 @@ TokenType Lexer::identifyKeyword(const std::string& text) const {
         {"line", TokenType::KwLine},
         {"eof", TokenType::KwEof},
         {"lof", TokenType::KwLof},
+        {"interface", TokenType::KwInterface},
+        {"implements", TokenType::KwImplements},
+        {"namespace", TokenType::KwNamespace},
         {"and", TokenType::KwAnd},
         {"or", TokenType::KwOr},
         {"xor", TokenType::KwXor},
@@ -208,6 +211,10 @@ Token Lexer::nextToken() {
     // Multi-character and single-character symbols
     switch (c) {
         case '=':
+            if (peek() == '>') {
+                advance();
+                return makeToken(TokenType::FatArrow, "=>", startLine, startCol);
+            }
             return makeToken(TokenType::Equal, "=", startLine, startCol);
         case '<':
             if (peek() == '>') {

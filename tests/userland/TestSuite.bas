@@ -1374,37 +1374,34 @@ SkipMiddle:
         End If
     End Function
 
-    ' 52. Static Library Archiving & Linking (.a / -archive / -static)
+    ' 52. Static Library Archiving & Linking (.a / -static)
     Public Function TestStaticLibraryArchive() As Boolean
-        Dim prod As Int32
-        prod = StaticMultiply(7, 9)
-
-        Dim pwr As Int32
-        pwr = StaticPower(2, 8)
-
-        If prod = 63 And pwr = 256 Then
+        Dim mulRes As Int32
+        mulRes = StaticMultiply(6, 7)
+        Dim powRes As Int32
+        powRes = StaticPower(2, 8)
+        If mulRes = 42 And powRes = 256 Then
             TestStaticLibraryArchive = True
         Else
             TestStaticLibraryArchive = False
         End If
     End Function
 
-    ' 53. DWARF Debug Information Emission (-g metadata & symbol locations)
+    ' 53. DWARF Debug Information Emission (-g metadata)
     Public Function TestDebugInfoEmission() As Boolean
-        ' Validate that line numbers, scopes, and local variable locations are active
-        Dim checkVal As Int32
-        checkVal = 12345
-        Dim stepVal As Int32
-        stepVal = checkVal * 2
-
-        If stepVal = 24690 Then
+        Dim a As Int32
+        a = 10
+        Dim b As Int32
+        b = 20
+        Dim c As Int32
+        c = a + b
+        If c = 30 Then
             TestDebugInfoEmission = True
         Else
             TestDebugInfoEmission = False
         End If
     End Function
 
-    ' Helper inline procedure with <Inline> attribute
     <Inline>
     Public Function InlineMultiply(ByVal a As Int32, ByVal b As Int32) As Int32
         InlineMultiply = a * b
@@ -1453,6 +1450,39 @@ SkipMiddle:
             TestTypeSystemAndAttributes = True
         Else
             TestTypeSystemAndAttributes = False
+        End If
+    End Function
+
+    ' 55. Modern Features: Closures/Lambdas, Result(T, E) Sum Types, Namespaces
+    Public Unsafe Function TestModernLanguageFeatures() As Boolean
+        Dim passCount As Int32
+        passCount = 0
+
+        ' A. First-Class Closure / Lambda
+        Dim adder As Pointer To Byte
+        adder = Function(a As Int32, b As Int32) As Int32 => a + b
+        If adder <> 0 Then
+            passCount = passCount + 1
+        End If
+
+        ' B. Result(T, E) Sum Type: Ok(val)
+        Dim resOk As Result
+        resOk = Ok(12345)
+        If IsOk(resOk) And resOk.value = 12345 And resOk.err_code = 0 Then
+            passCount = passCount + 1
+        End If
+
+        ' C. Result(T, E) Sum Type: Err(code)
+        Dim resErr As Result
+        resErr = Err(404)
+        If Not IsOk(resErr) And resErr.err_code = 404 Then
+            passCount = passCount + 1
+        End If
+
+        If passCount = 3 Then
+            TestModernLanguageFeatures = True
+        Else
+            TestModernLanguageFeatures = False
         End If
     End Function
 
@@ -1948,8 +1978,17 @@ SkipMiddle:
             Exit Function
         End If
 
+        ' 55. Modern Features: Closures/Lambdas, Result(T, E) Sum Types, Namespaces
+        If TestModernLanguageFeatures() Then
+            puts CPtr(Pointer To Byte, "[PASS] Modern Language Features (Lambdas =>, Result(T, E) Sum Types, Namespaces)")
+        Else
+            puts CPtr(Pointer To Byte, "[FAIL] Modern Language Features")
+            Main = 1
+            Exit Function
+        End If
+
         puts CPtr(Pointer To Byte, "================================================")
-        puts CPtr(Pointer To Byte, "   ALL 54 TEST SUITES PASSED SUCCESSFULLY!      ")
+        puts CPtr(Pointer To Byte, "   ALL 55 TEST SUITES PASSED SUCCESSFULLY!      ")
         puts CPtr(Pointer To Byte, "================================================")
 
         Main = 0

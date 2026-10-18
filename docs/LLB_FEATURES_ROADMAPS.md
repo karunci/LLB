@@ -164,17 +164,17 @@ LLB fuses the safety and performance of modern systems languages with the approa
 | Freestanding / bare-metal target | ✅ | `--nostdlib`, custom linker scripts |
 | MMIO volatile pointers | ✅ | `Volatile Pointer To T` |
 | Hardware descriptor annotations | ✅ | `<Packed>`, `<Align(N)>` |
-| First-class closures / lambdas | ❌ | Anonymous functions with captures |
+| First-class closures / lambdas | ✅ | Anonymous functions with `Function(...) [As Type] => expr` lowering to internal functions & pointers |
 | Pattern matching (`Match ... End Match`) | ❌ | Algebraic pattern decomposition |
 | Async / Await | ❌ | Cooperative async I/O |
-| Interfaces / Traits / Protocols | ❌ | Abstract method contracts |
+| Interfaces / Traits / Protocols | ✅ | `Interface ... End Interface`, `Implements` contracts & vtable definitions |
 | Operator overloading | ❌ | Custom `+`, `-`, `=`, etc. |
 | Iterators / Generators (`Yield`) | ❌ | Lazy sequence production |
-| Namespaces / Module nesting | ❌ | Hierarchical scope organization |
+| Namespaces / Module nesting | ✅ | `Namespace Name ... End Namespace` hierarchical scope organization with dotted symbol normalization |
 | Compile-time evaluation (`Const` expressions) | ✅ | Compile-time constant evaluation in preprocessor |
 | Conditional compilation (`#If`, `#Else`, `#End If`) | ✅ | Full preprocessor directives (`#Const`, `#If`, `#ElseIf`, `#Else`, `#End If`) with `-D` flags |
 | Attributes / Annotations beyond `<Packed>` | ✅ | `<Inline>` (AlwaysInline), `<NoReturn>`, `<Export>`, `<Packed>`, `<Align(N)>` |
-| Result / Error return types | ❌ | `Result(T, E)` sum types |
+| Result / Error return types | ✅ | Native `Result` sum type `{ is_ok, err_code, value }` with `Ok(val)`, `Err(code)`, and `IsOk(res)` intrinsics |
 
 ---
 
@@ -189,22 +189,24 @@ LLB fuses the safety and performance of modern systems languages with the approa
 6. ~~`With ... End With`~~ — **Done** ✅
 7. ~~Line continuation (`_`)~~ — **Done** ✅
 
-### Phase 2: Standard Library & Runtime
+### Phase 2: Standard Library & Runtime — COMPLETE ✅
 8. ~~String library (`Len`, `Mid`, `Left`, `Right`, `InStr`, `Trim`, `Asc`, `Chr`)~~ — **Done** ✅
 9. ~~Type conversion functions (`CStr`, `CInt`, `CLng`, `CDbl`, `Val`)~~ — **Done** ✅
 10. ~~Console I/O (`Print`, `Input`)~~ — **Done** ✅
 11. ~~File I/O (`Open`, `Close`, `Print #`, `Line Input #`, `EOF`, `LOF`)~~ — **Done** ✅
 
-### Phase 3: Toolchain Hardening
+### Phase 3: Toolchain Hardening — COMPLETE ✅
 12. ~~LLVM optimization passes (`-O1`, `-O2`, `-O3` via PassBuilder)~~ — **Done** ✅
-13. ❌ Debug info emission (DWARF `-g`) — **In Progress** 🎯
+13. ~~Debug info emission (DWARF `-g`)~~ — **Done** ✅
 14. ~~`Import` / module dependency resolution~~ — **Done** ✅
 15. ~~Static library output (`.a`)~~ — **Done** ✅
 16. ~~Conditional compilation (`#If`)~~ — **Done** ✅
 
 ### Phase 4: Modern Language Power
 17. ~~`New` / `Delete` + heap object lifecycle~~ — **Done** ✅
-18. ❌ Interfaces / Traits
+18. ~~Interfaces / Traits / Protocols~~ — **Done** ✅
 19. ❌ Generics / Templates
 20. ~~First-class function pointers / `AddressOf`~~ — **Done** ✅
-21. ❌ Closures / Lambdas
+21. ~~First-class closures / lambdas~~ — **Done** ✅
+22. ~~Result / Error sum types (`Result`, `Ok`, `Err`)~~ — **Done** ✅
+23. ~~Namespaces / Module nesting (`Namespace ... End Namespace`)~~ — **Done** ✅

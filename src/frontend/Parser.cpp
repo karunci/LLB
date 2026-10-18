@@ -340,10 +340,13 @@ TypeSpec Parser::parseTypeSpec() {
         consume();
         if (m_currentToken.type == TokenType::KwTo || checkKeyword("To")) {
             consume();
+            spec.pointerDepth++;
         } else {
-            throw std::runtime_error("Expected 'To' after 'Pointer' at line " + std::to_string(m_currentToken.line));
+            // Bare 'Pointer' (opaque pointer / void* / ptr)
+            spec.pointerDepth++;
+            spec.name = "Byte";
+            return spec;
         }
-        spec.pointerDepth++;
     }
 
     if (m_currentToken.type == TokenType::Identifier || 
@@ -1591,6 +1594,50 @@ std::unique_ptr<ExprASTNode> Parser::parsePrimaryExpr() {
         return node;
     }
 
+    // Lambda Expression: Function([params]) [As Type] => Expr
+    if (m_currentToken.type == TokenType::KwFunction || checkKeyword("Function")) {
+        consume();
+        auto lambdaNode = std::make_unique<LambdaExprASTNode>();
+        if (match(TokenType::LParen)) {
+            if (!check(TokenType::RParen)) {
+                do {
+                    ParameterNode param;
+                    if (m_currentToken.type == TokenType::KwByVal || checkKeyword("ByVal")) {
+                        consume();
+                        param.isByRef = false;
+                    } else if (m_currentToken.type == TokenType::KwByRef || checkKeyword("ByRef")) {
+                        consume();
+                        param.isByRef = true;
+                    }
+                    param.name = m_currentToken.text;
+                    expect(TokenType::Identifier, "Expected parameter name in lambda");
+                    if (m_currentToken.type == TokenType::KwAs || checkKeyword("As")) {
+                        consume();
+                    }
+                    param.type = parseTypeSpec();
+                    lambdaNode->parameters.push_back(std::move(param));
+                } while (match(TokenType::Comma));
+            }
+            expect(TokenType::RParen, "Expected ')' after lambda parameter list");
+        }
+
+        if (m_currentToken.type == TokenType::KwAs || checkKeyword("As")) {
+            consume();
+            lambdaNode->returnType = parseTypeSpec();
+        } else {
+            lambdaNode->returnType = TypeSpec{"Int32"};
+        }
+
+        if (m_currentToken.type == TokenType::FatArrow) {
+            consume();
+        } else {
+            expect(TokenType::FatArrow, "Expected '=>' after lambda signature");
+        }
+
+        lambdaNode->bodyExpr = parseExpression();
+        return lambdaNode;
+    }
+
     // Identifier, 'Me', or built-in File Functions (EOF, LOF)
     if (m_currentToken.type == TokenType::Identifier || 
         m_currentToken.type == TokenType::KwMe || checkKeyword("Me") ||
@@ -1991,6 +2038,78 @@ std::unique_ptr<EnumNode> Parser::parseEnum(bool isPublic) {
     return enumNode;
 }
 
+std::unique_ptr<InterfaceNode> Parser::parseInterface(bool isPublic) {
+    auto iface = std::make_unique<InterfaceNode>();
+    iface->isPublic = isPublic;
+    iface->line = m_currentToken.line;
+    iface->column = m_currentToken.column;
+    iface->name = m_currentToken.text;
+    expect(TokenType::Identifier, "Expected interface name");
+
+    while (m_currentToken.type != TokenType::Eof) {
+        while (match(TokenType::Colon)) {}
+
+        if (m_currentToken.type == TokenType::KwEnd || checkKeyword("End")) {
+            consume();
+            if (m_currentToken.type == TokenType::KwInterface || checkKeyword("Interface")) {
+                consume();
+                break;
+            }
+        }
+
+        InterfaceMethod method;
+        if (m_currentToken.type == TokenType::KwSub || checkKeyword("Sub")) {
+            consume();
+            method.isFunction = false;
+        } else if (m_currentToken.type == TokenType::KwFunction || checkKeyword("Function")) {
+            consume();
+            method.isFunction = true;
+        } else {
+            consume();
+            continue;
+        }
+
+        method.name = m_currentToken.text;
+        expect(TokenType::Identifier, "Expected procedure name in interface");
+
+        if (match(TokenType::LParen)) {
+            if (!check(TokenType::RParen)) {
+                do {
+                    ParameterNode param;
+                    if (m_currentToken.type == TokenType::KwByVal || checkKeyword("ByVal")) {
+                        consume();
+                        param.isByRef = false;
+                    } else if (m_currentToken.type == TokenType::KwByRef || checkKeyword("ByRef")) {
+                        consume();
+                        param.isByRef = true;
+                    }
+                    param.name = m_currentToken.text;
+                    expect(TokenType::Identifier, "Expected parameter name in interface method");
+                    if (m_currentToken.type == TokenType::KwAs || checkKeyword("As")) {
+                        consume();
+                    }
+                    param.type = parseTypeSpec();
+                    method.parameters.push_back(std::move(param));
+                } while (match(TokenType::Comma));
+            }
+            expect(TokenType::RParen, "Expected ')' after interface method parameters");
+        }
+
+        if (method.isFunction) {
+            if (m_currentToken.type == TokenType::KwAs || checkKeyword("As")) {
+                consume();
+            }
+            method.returnType = parseTypeSpec();
+        } else {
+            method.returnType = TypeSpec{"void"};
+        }
+
+        iface->methods.push_back(std::move(method));
+    }
+
+    return iface;
+}
+
 std::unique_ptr<ModuleNode> Parser::parseModule() {
     auto moduleNode = std::make_unique<ModuleNode>();
 
@@ -2000,8 +2119,14 @@ std::unique_ptr<ModuleNode> Parser::parseModule() {
     } else if (m_currentToken.type == TokenType::KwClass || checkKeyword("Class")) {
         consume();
         moduleNode->isClass = true;
+    } else if (m_currentToken.type == TokenType::KwInterface || checkKeyword("Interface")) {
+        consume();
+        moduleNode->isInterface = true;
+    } else if (m_currentToken.type == TokenType::KwNamespace || checkKeyword("Namespace")) {
+        consume();
+        moduleNode->isClass = false;
     } else {
-        throw std::runtime_error("Source file must begin with 'Module' or 'Class'");
+        throw std::runtime_error("Source file must begin with 'Module', 'Class', 'Interface', or 'Namespace'");
     }
 
     std::string modName = m_currentToken.text;
@@ -2021,14 +2146,36 @@ std::unique_ptr<ModuleNode> Parser::parseModule() {
             continue;
         }
 
-        // Check for 'End Module' or 'End Class'
+        // Check for 'End Module', 'End Class', 'End Interface', or 'End Namespace'
         if (m_currentToken.type == TokenType::KwEnd || checkKeyword("End")) {
             consume();
             if ((moduleNode->isClass && (m_currentToken.type == TokenType::KwClass || checkKeyword("Class"))) ||
-                (!moduleNode->isClass && (m_currentToken.type == TokenType::KwModule || checkKeyword("Module")))) {
+                (moduleNode->isInterface && (m_currentToken.type == TokenType::KwInterface || checkKeyword("Interface"))) ||
+                (!moduleNode->isClass && (m_currentToken.type == TokenType::KwModule || checkKeyword("Module") || 
+                                          m_currentToken.type == TokenType::KwNamespace || checkKeyword("Namespace")))) {
                 consume();
                 break;
             }
+        }
+
+        // Implements InterfaceName (inside Class)
+        if (m_currentToken.type == TokenType::KwImplements || checkKeyword("Implements")) {
+            consume();
+            std::string ifaceName = m_currentToken.text;
+            expect(TokenType::Identifier, "Expected interface identifier after 'Implements'");
+            while (match(TokenType::Dot)) {
+                ifaceName += "." + m_currentToken.text;
+                expect(TokenType::Identifier, "Expected identifier after '.' in interface name");
+            }
+            moduleNode->implementsInterfaces.push_back(ifaceName);
+            continue;
+        }
+
+        // Interface Definition inside Module/Namespace
+        if (m_currentToken.type == TokenType::KwInterface || checkKeyword("Interface")) {
+            consume();
+            moduleNode->members.push_back(parseInterface(true));
+            continue;
         }
 
         // Check for attribute annotations: <Packed>, <Align(N)>, <Inline>, <NoReturn>, <Export>

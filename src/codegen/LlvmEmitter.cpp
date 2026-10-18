@@ -91,6 +91,29 @@ llvm::Type* LlvmEmitter::getLlvmType(const TypeSpec& typeSpec) {
         baseType = llvm::PointerType::get(*m_context, 0);
     } else if (typeName == "void") {
         baseType = llvm::Type::getVoidTy(*m_context);
+    } else if (typeName == "result" || typeName.rfind("result_", 0) == 0) {
+        // Built-in Result sum type: { i1 is_ok, i32 err_code, i64 value }
+        auto resIt = m_structTypes.find("Result");
+        if (resIt != m_structTypes.end()) {
+            baseType = resIt->second;
+        } else {
+            llvm::StructType* resSt = llvm::StructType::create(*m_context, "Result");
+            resSt->setBody({
+                llvm::Type::getInt1Ty(*m_context),  // is_ok
+                llvm::Type::getInt32Ty(*m_context), // err_code
+                llvm::Type::getInt64Ty(*m_context)  // value
+            }, /*isPacked=*/false);
+            m_structTypes["Result"] = resSt;
+            m_structTypes["result"] = resSt;
+            m_structFieldIndices["Result"] = {{"is_ok", 0}, {"isok", 0}, {"ok", 0}, {"err_code", 1}, {"errcode", 1}, {"error", 1}, {"value", 2}, {"val", 2}};
+            m_structFieldIndices["result"] = m_structFieldIndices["Result"];
+            TypeSpec bSpec{"Boolean"};
+            TypeSpec iSpec{"Int32"};
+            TypeSpec vSpec{"Int64"};
+            m_structFieldTypes["Result"] = {{"is_ok", bSpec}, {"isok", bSpec}, {"ok", bSpec}, {"err_code", iSpec}, {"errcode", iSpec}, {"error", iSpec}, {"value", vSpec}, {"val", vSpec}};
+            m_structFieldTypes["result"] = m_structFieldTypes["Result"];
+            baseType = resSt;
+        }
     } else {
         auto it = m_structTypes.find(typeSpec.name);
         if (it != m_structTypes.end()) {
@@ -428,6 +451,16 @@ TypeSpec LlvmEmitter::deduceExprType(ExprASTNode* expr) {
             return elemType;
         }
         std::string lowerCall = toLower(call->funcName);
+        if (lowerCall == "ok" || lowerCall == "err") {
+            TypeSpec r;
+            r.name = "Result";
+            return r;
+        }
+        if (lowerCall == "isok") {
+            TypeSpec b;
+            b.name = "Boolean";
+            return b;
+        }
         if (lowerCall == "eof") {
             TypeSpec b;
             b.name = "Boolean";
@@ -440,6 +473,12 @@ TypeSpec LlvmEmitter::deduceExprType(ExprASTNode* expr) {
         }
         auto pIt = m_procReturnTypes.find(lowerCall);
         if (pIt != m_procReturnTypes.end()) return pIt->second;
+    }
+    if (auto lambda = dynamic_cast<LambdaExprASTNode*>(expr)) {
+        TypeSpec fnPtrSpec;
+        fnPtrSpec.name = "Pointer";
+        fnPtrSpec.pointerDepth = 1;
+        return fnPtrSpec;
     }
     if (auto idx = dynamic_cast<IndexExprASTNode*>(expr)) {
         TypeSpec elemType = deduceExprType(idx->base.get());
@@ -4441,6 +4480,59 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
             return llvm::ConstantInt::get(llvm::Type::getInt32Ty(*m_context), 0);
         }
 
+        // Built-in Result Type Intrinsics: Ok(val), Err(code), IsOk(result)
+        if (lowerFn == "ok" || lowerFn == "err" || lowerFn == "isok") {
+            TypeSpec resSpec{"Result"};
+            llvm::Type* resTy = getLlvmType(resSpec);
+            if (lowerFn == "ok") {
+                llvm::Value* val = nullptr;
+                if (!call->args.empty()) {
+                    val = emitExpression(call->args[0].get());
+                    val = coerceType(val, llvm::Type::getInt64Ty(*m_context));
+                } else {
+                    val = llvm::ConstantInt::get(llvm::Type::getInt64Ty(*m_context), 0);
+                }
+                llvm::Value* resAlloca = m_builder->CreateAlloca(resTy, nullptr, "res.ok");
+                llvm::Value* okGep = m_builder->CreateStructGEP(resTy, resAlloca, 0, "ok.gep");
+                m_builder->CreateStore(llvm::ConstantInt::get(llvm::Type::getInt1Ty(*m_context), 1), okGep);
+                llvm::Value* errGep = m_builder->CreateStructGEP(resTy, resAlloca, 1, "err.gep");
+                m_builder->CreateStore(llvm::ConstantInt::get(llvm::Type::getInt32Ty(*m_context), 0), errGep);
+                llvm::Value* valGep = m_builder->CreateStructGEP(resTy, resAlloca, 2, "val.gep");
+                m_builder->CreateStore(val, valGep);
+                return m_builder->CreateLoad(resTy, resAlloca, "res.ok.val");
+            }
+            if (lowerFn == "err") {
+                llvm::Value* codeVal = nullptr;
+                if (!call->args.empty()) {
+                    codeVal = emitExpression(call->args[0].get());
+                    codeVal = coerceType(codeVal, llvm::Type::getInt32Ty(*m_context));
+                } else {
+                    codeVal = llvm::ConstantInt::get(llvm::Type::getInt32Ty(*m_context), 1);
+                }
+                llvm::Value* resAlloca = m_builder->CreateAlloca(resTy, nullptr, "res.err");
+                llvm::Value* okGep = m_builder->CreateStructGEP(resTy, resAlloca, 0, "ok.gep");
+                m_builder->CreateStore(llvm::ConstantInt::get(llvm::Type::getInt1Ty(*m_context), 0), okGep);
+                llvm::Value* errGep = m_builder->CreateStructGEP(resTy, resAlloca, 1, "err.gep");
+                m_builder->CreateStore(codeVal, errGep);
+                llvm::Value* valGep = m_builder->CreateStructGEP(resTy, resAlloca, 2, "val.gep");
+                m_builder->CreateStore(llvm::ConstantInt::get(llvm::Type::getInt64Ty(*m_context), 0), valGep);
+                return m_builder->CreateLoad(resTy, resAlloca, "res.err.val");
+            }
+            if (lowerFn == "isok") {
+                if (!call->args.empty()) {
+                    llvm::Value* rVal = emitExpression(call->args[0].get());
+                    if (rVal && rVal->getType() == resTy) {
+                        return m_builder->CreateExtractValue(rVal, 0, "isok.val");
+                    }
+                    if (rVal && rVal->getType()->isPointerTy()) {
+                        llvm::Value* okGep = m_builder->CreateStructGEP(resTy, rVal, 0, "isok.gep");
+                        return m_builder->CreateLoad(llvm::Type::getInt1Ty(*m_context), okGep, "isok.load");
+                    }
+                }
+                return llvm::ConstantInt::get(llvm::Type::getInt1Ty(*m_context), 0);
+            }
+        }
+
         // Built-in LLB Print(msg) / PrintLine(msg) intrinsics
         if (lowerFn == "print" || lowerFn == "println" || lowerFn == "printline") {
             llvm::Function* printStrFn = getOrCreatePrintStr();
@@ -4558,6 +4650,49 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
         }
 
         if (!callee) {
+            // Check if targetFuncName contains '.' (e.g. MathOps.Add or Core.IO.Write)
+            size_t dotPos = targetFuncName.find('.');
+            if (dotPos != std::string::npos) {
+                std::string altName = targetFuncName;
+                for (auto& ch : altName) {
+                    if (ch == '.') ch = '_';
+                }
+                callee = findFunctionCaseInsensitive(m_module.get(), altName);
+            }
+        }
+
+        if (!callee) {
+            // Indirect function pointer call: e.g. fnPtr(arg1, arg2)
+            llvm::Value* fnPtrVal = nullptr;
+            auto it = m_namedValues.find(targetFuncName);
+            if (it != m_namedValues.end()) {
+                fnPtrVal = m_builder->CreateLoad(it->second->getAllocatedType(), it->second, targetFuncName + ".fnptr");
+            } else if (call->calleeExpr) {
+                fnPtrVal = emitExpression(call->calleeExpr.get());
+            }
+
+            if (fnPtrVal && fnPtrVal->getType()->isPointerTy()) {
+                std::vector<llvm::Value*> args;
+                std::vector<llvm::Type*> paramTypes;
+                for (const auto& a : call->args) {
+                    llvm::Value* argVal = emitExpression(a.get());
+                    args.push_back(argVal);
+                    paramTypes.push_back(argVal->getType());
+                }
+                llvm::Type* retType = llvm::Type::getInt32Ty(*m_context);
+                auto pIt = m_procReturnTypes.find(targetFuncName);
+                if (pIt != m_procReturnTypes.end()) {
+                    retType = getLlvmType(pIt->second);
+                } else {
+                    auto pItLower = m_procReturnTypes.find(toLower(targetFuncName));
+                    if (pItLower != m_procReturnTypes.end()) {
+                        retType = getLlvmType(pItLower->second);
+                    }
+                }
+                llvm::FunctionType* fnTy = llvm::FunctionType::get(retType, paramTypes, false);
+                return m_builder->CreateCall(fnTy, fnPtrVal, args, "indirect.call");
+            }
+
             return nullptr;
         }
 
@@ -4902,6 +5037,72 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
         return llvm::ConstantInt::get(llvm::Type::getInt1Ty(*m_context), matches ? 1 : 0);
     }
 
+    // First-Class Lambda / Closure Expression: Function(params) [As Type] => expr
+    if (auto lambda = dynamic_cast<LambdaExprASTNode*>(expr)) {
+        static size_t lambdaCounter = 0;
+        std::string lambdaName = "__llbc_lambda_" + std::to_string(++lambdaCounter);
+
+        llvm::Type* retTy = getLlvmType(lambda->returnType);
+        std::vector<llvm::Type*> paramTypes;
+        for (const auto& p : lambda->parameters) {
+            paramTypes.push_back(getLlvmType(p.type));
+        }
+
+        llvm::FunctionType* fnTy = llvm::FunctionType::get(retTy, paramTypes, false);
+        llvm::Function* lambdaFn = llvm::Function::Create(
+            fnTy,
+            llvm::Function::InternalLinkage,
+            lambdaName,
+            m_module.get()
+        );
+
+        // Save current builder context
+        auto prevBB = m_builder->GetInsertBlock();
+        auto prevPoint = m_builder->GetInsertPoint();
+        auto savedNamedValues = m_namedValues;
+        auto savedVariableTypes = m_variableTypes;
+
+        llvm::BasicBlock* entryBB = llvm::BasicBlock::Create(*m_context, "entry", lambdaFn);
+        m_builder->SetInsertPoint(entryBB);
+
+        size_t pIdx = 0;
+        for (auto& arg : lambdaFn->args()) {
+            if (pIdx < lambda->parameters.size()) {
+                const auto& param = lambda->parameters[pIdx];
+                arg.setName(param.name);
+                llvm::AllocaInst* pAlloca = m_builder->CreateAlloca(arg.getType(), nullptr, param.name);
+                m_builder->CreateStore(&arg, pAlloca);
+                m_namedValues[param.name] = pAlloca;
+                m_namedValues[toLower(param.name)] = pAlloca;
+                m_variableTypes[param.name] = param.type;
+                m_variableTypes[toLower(param.name)] = param.type;
+            }
+            pIdx++;
+        }
+
+        llvm::Value* bodyVal = emitExpression(lambda->bodyExpr.get());
+        if (bodyVal) {
+            bodyVal = coerceType(bodyVal, retTy);
+            m_builder->CreateRet(bodyVal);
+        } else {
+            if (retTy->isVoidTy()) {
+                m_builder->CreateRetVoid();
+            } else {
+                m_builder->CreateRet(llvm::Constant::getNullValue(retTy));
+            }
+        }
+
+        // Restore outer function context
+        m_namedValues = savedNamedValues;
+        m_variableTypes = savedVariableTypes;
+        if (prevBB) {
+            m_builder->SetInsertPoint(prevBB, prevPoint);
+        }
+
+        // Return lambda function pointer as opaque pointer
+        return m_builder->CreatePointerCast(lambdaFn, llvm::PointerType::get(*m_context, 0), "lambda.ptr");
+    }
+
     return nullptr;
 }
 
@@ -5130,6 +5331,27 @@ bool LlvmEmitter::emitModule(const ModuleNode& moduleNode) {
         }
     }
 
+    // 1.5 Emit Interfaces
+    for (const auto& member : moduleNode.members) {
+        if (auto iface = dynamic_cast<const InterfaceNode*>(member.get())) {
+            std::vector<llvm::Type*> methodPtrTys;
+            for (size_t mi = 0; mi < iface->methods.size(); ++mi) {
+                methodPtrTys.push_back(llvm::PointerType::get(*m_context, 0));
+            }
+            if (methodPtrTys.empty()) {
+                methodPtrTys.push_back(llvm::PointerType::get(*m_context, 0));
+            }
+            llvm::StructType* ifaceSt = llvm::StructType::create(*m_context, iface->name);
+            ifaceSt->setBody(methodPtrTys, false);
+            m_structTypes[iface->name] = ifaceSt;
+            m_structTypes[toLower(iface->name)] = ifaceSt;
+            for (size_t mi = 0; mi < iface->methods.size(); ++mi) {
+                m_structFieldIndices[iface->name][toLower(iface->methods[mi].name)] = mi;
+                m_structFieldIndices[toLower(iface->name)][toLower(iface->methods[mi].name)] = mi;
+            }
+        }
+    }
+
     // 2. Emit Structures
     for (const auto& member : moduleNode.members) {
         if (auto st = dynamic_cast<const StructureNode*>(member.get())) {
@@ -5151,6 +5373,15 @@ bool LlvmEmitter::emitModule(const ModuleNode& moduleNode) {
                 initVal,
                 dim->varName
             );
+        }
+    }
+
+    // Determine normalized module/namespace prefix
+    std::string modulePrefix = "";
+    if (moduleNode.name.find('.') != std::string::npos) {
+        modulePrefix = moduleNode.name;
+        for (auto& ch : modulePrefix) {
+            if (ch == '.') ch = '_';
         }
     }
 
@@ -5178,6 +5409,9 @@ bool LlvmEmitter::emitModule(const ModuleNode& moduleNode) {
                 } else {
                     mangledName = className + "_" + proc->name;
                 }
+            } else if (!modulePrefix.empty()) {
+                mangledName = modulePrefix + "_" + proc->name;
+                m_funcAliases[moduleNode.name + "." + proc->name] = mangledName;
             } else {
                 if (proc->propertyKind == ProcedureNode::PropertyKind::Get) {
                     mangledName = "get_" + proc->name;
@@ -5217,7 +5451,8 @@ bool LlvmEmitter::emitModule(const ModuleNode& moduleNode) {
     // 5. Emit Procedure Bodies
     for (const auto& member : moduleNode.members) {
         if (auto proc = dynamic_cast<const ProcedureNode*>(member.get())) {
-            emitProcedure(*proc, moduleNode.isClass ? moduleNode.name : "");
+            std::string scopeName = moduleNode.isClass ? moduleNode.name : (!modulePrefix.empty() ? modulePrefix : "");
+            emitProcedure(*proc, scopeName);
         }
     }
 

@@ -2000,6 +2000,9 @@ std::unique_ptr<StructureNode> Parser::parseStructure(bool isPacked, int alignme
         } else if (m_currentToken.type == TokenType::KwPrivate || checkKeyword("Private")) {
             consume();
             isFieldPublic = false;
+        } else if (m_currentToken.type == TokenType::KwDim || checkKeyword("Dim")) {
+            consume();
+            isFieldPublic = true;
         }
 
         StructureField field;
@@ -2083,6 +2086,9 @@ std::unique_ptr<StructureNode> Parser::parseUnion(bool isPacked, int alignment) 
         } else if (m_currentToken.type == TokenType::KwPrivate || checkKeyword("Private")) {
             consume();
             isFieldPublic = false;
+        } else if (m_currentToken.type == TokenType::KwDim || checkKeyword("Dim")) {
+            consume();
+            isFieldPublic = true;
         }
 
         StructureField field;
@@ -2510,6 +2516,10 @@ std::unique_ptr<ModuleNode> Parser::parseModule() {
                 dimNode->type.isArray = isArray;
                 dimNode->type.arraySize = arraySize;
                 dimNode->type.dimensions = dimensions;
+
+                if (match(TokenType::Equal)) {
+                    dimNode->initValue = parseExpression();
+                }
 
                 moduleNode->members.push_back(std::move(dimNode));
                 continue;

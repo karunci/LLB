@@ -214,16 +214,25 @@ llvm::Value* LlvmEmitter::getPointerToExpr(ExprASTNode* expr) {
 
     if (auto var = dynamic_cast<VariableExprASTNode*>(expr)) {
         auto it = m_namedValues.find(var->name);
+        if (it == m_namedValues.end()) {
+            it = m_namedValues.find(toLower(var->name));
+        }
         if (it != m_namedValues.end()) {
             auto tIt = m_variableTypes.find(var->name);
+            if (tIt == m_variableTypes.end()) {
+                tIt = m_variableTypes.find(toLower(var->name));
+            }
             if (tIt != m_variableTypes.end()) {
-                if (tIt->second.pointerDepth > 0) {
+                if (tIt->second.pointerDepth > 0 || m_byRefParams.count(var->name) || m_byRefParams.count(toLower(var->name))) {
                     return m_builder->CreateLoad(it->second->getAllocatedType(), it->second, var->name);
                 }
             }
             return it->second;
         }
         llvm::GlobalVariable* gVar = m_module->getGlobalVariable(var->name);
+        if (!gVar) {
+            gVar = findGlobalCaseInsensitive(m_module.get(), var->name);
+        }
         if (gVar) {
             return gVar;
         }
@@ -2508,7 +2517,7 @@ llvm::GlobalVariable* LlvmEmitter::getOrCreateErrNumber() {
             *m_module,
             llvm::Type::getInt32Ty(*m_context),
             false,
-            llvm::GlobalValue::InternalLinkage,
+            llvm::GlobalValue::LinkOnceODRLinkage,
             llvm::ConstantInt::get(llvm::Type::getInt32Ty(*m_context), 0),
             "__llbc_err_number"
         );
@@ -2523,7 +2532,7 @@ llvm::GlobalVariable* LlvmEmitter::getOrCreateErrSource() {
             *m_module,
             llvm::PointerType::get(*m_context, 0),
             false,
-            llvm::GlobalValue::InternalLinkage,
+            llvm::GlobalValue::LinkOnceODRLinkage,
             llvm::ConstantPointerNull::get(llvm::PointerType::get(*m_context, 0)),
             "__llbc_err_source"
         );
@@ -2538,7 +2547,7 @@ llvm::GlobalVariable* LlvmEmitter::getOrCreateErrDescription() {
             *m_module,
             llvm::PointerType::get(*m_context, 0),
             false,
-            llvm::GlobalValue::InternalLinkage,
+            llvm::GlobalValue::LinkOnceODRLinkage,
             llvm::ConstantPointerNull::get(llvm::PointerType::get(*m_context, 0)),
             "__llbc_err_description"
         );
@@ -2883,6 +2892,19 @@ void LlvmEmitter::emitAssignStatement(const AssignStmtNode& assignNode) {
                 targetAlloca = itRestored->second;
             }
             if (val && targetAlloca) {
+                if (m_byRefParams.count(var->name) || m_byRefParams.count(toLower(var->name))) {
+                    auto tIt = m_variableTypes.find(var->name);
+                    if (tIt == m_variableTypes.end()) {
+                        tIt = m_variableTypes.find(toLower(var->name));
+                    }
+                    if (tIt != m_variableTypes.end() && tIt->second.pointerDepth == 0) {
+                        llvm::Value* ptrVal = m_builder->CreateLoad(targetAlloca->getAllocatedType(), targetAlloca, var->name + ".ptr");
+                        llvm::Type* valTy = getLlvmType(tIt->second);
+                        val = coerceType(val, valTy);
+                        m_builder->CreateStore(val, ptrVal);
+                        return;
+                    }
+                }
                 val = coerceType(val, targetAlloca->getAllocatedType());
                 m_builder->CreateStore(val, targetAlloca);
             }
@@ -3846,7 +3868,8 @@ void LlvmEmitter::emitTryStatement(const TryStmtNode& tryNode) {
     llvm::AllocaInst* errCodeAlloca = entryBuilder.CreateAlloca(llvm::Type::getInt32Ty(*m_context), nullptr, "err.code");
     m_builder->CreateStore(llvm::ConstantInt::get(llvm::Type::getInt32Ty(*m_context), 0), errCodeAlloca);
 
-    llvm::BasicBlock* catchBB = !tryNode.catchBody.empty() ? llvm::BasicBlock::Create(*m_context, "try.catch", currentFunc) : nullptr;
+    bool hasCatch = !tryNode.catchBody.empty() || !tryNode.catchVarName.empty();
+    llvm::BasicBlock* catchBB = hasCatch ? llvm::BasicBlock::Create(*m_context, "try.catch", currentFunc) : nullptr;
     llvm::BasicBlock* finallyBB = !tryNode.finallyBody.empty() ? llvm::BasicBlock::Create(*m_context, "try.finally", currentFunc) : nullptr;
     llvm::BasicBlock* contBB = llvm::BasicBlock::Create(*m_context, "try.cont");
 
@@ -3875,9 +3898,18 @@ void LlvmEmitter::emitTryStatement(const TryStmtNode& tryNode) {
     // 2. Emit Catch Block (if present)
     if (catchBB) {
         m_builder->SetInsertPoint(catchBB);
+        llvm::Value* curErr = m_builder->CreateLoad(llvm::Type::getInt32Ty(*m_context), getOrCreateErrNumber(), "err.val");
+        llvm::Value* isErrZero = m_builder->CreateICmpEQ(curErr, llvm::ConstantInt::get(llvm::Type::getInt32Ty(*m_context), 0));
+        llvm::Value* localErr = m_builder->CreateLoad(llvm::Type::getInt32Ty(*m_context), errCodeAlloca, "local.err");
+        curErr = m_builder->CreateSelect(isErrZero, localErr, curErr, "final.err");
+        m_builder->CreateStore(curErr, getOrCreateErrNumber());
+
         if (!tryNode.catchVarName.empty()) {
             // Allocate or store into catch variable
             auto it = m_namedValues.find(tryNode.catchVarName);
+            if (it == m_namedValues.end()) {
+                it = m_namedValues.find(toLower(tryNode.catchVarName));
+            }
             llvm::AllocaInst* catchVarAlloca = nullptr;
             if (it != m_namedValues.end()) {
                 catchVarAlloca = it->second;
@@ -3885,14 +3917,12 @@ void LlvmEmitter::emitTryStatement(const TryStmtNode& tryNode) {
                 llvm::IRBuilder<> tmpBuilder(&currentFunc->getEntryBlock(), currentFunc->getEntryBlock().begin());
                 catchVarAlloca = tmpBuilder.CreateAlloca(llvm::Type::getInt32Ty(*m_context), nullptr, tryNode.catchVarName);
                 m_namedValues[tryNode.catchVarName] = catchVarAlloca;
+                m_namedValues[toLower(tryNode.catchVarName)] = catchVarAlloca;
                 TypeSpec intType;
                 intType.name = "Int32";
                 m_variableTypes[tryNode.catchVarName] = intType;
+                m_variableTypes[toLower(tryNode.catchVarName)] = intType;
             }
-            llvm::Value* curErr = m_builder->CreateLoad(llvm::Type::getInt32Ty(*m_context), getOrCreateErrNumber(), "err.val");
-            llvm::Value* isErrZero = m_builder->CreateICmpEQ(curErr, llvm::ConstantInt::get(llvm::Type::getInt32Ty(*m_context), 0));
-            llvm::Value* localErr = m_builder->CreateLoad(llvm::Type::getInt32Ty(*m_context), errCodeAlloca, "local.err");
-            curErr = m_builder->CreateSelect(isErrZero, localErr, curErr, "final.err");
             m_builder->CreateStore(curErr, catchVarAlloca);
         }
 
@@ -4325,7 +4355,14 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
             if (tIt != m_variableTypes.end() && tIt->second.isArray) {
                 return it->second;
             }
-            return m_builder->CreateLoad(it->second->getAllocatedType(), it->second, var->name);
+            llvm::Value* val = m_builder->CreateLoad(it->second->getAllocatedType(), it->second, var->name);
+            if (m_byRefParams.count(var->name) || m_byRefParams.count(toLower(var->name))) {
+                if (tIt != m_variableTypes.end() && tIt->second.pointerDepth == 0) {
+                    llvm::Type* valTy = getLlvmType(tIt->second);
+                    val = m_builder->CreateLoad(valTy, val, var->name + ".deref");
+                }
+            }
+            return val;
         }
         auto enumIt = m_enumConstants.find(var->name);
         if (enumIt == m_enumConstants.end()) {
@@ -5159,6 +5196,15 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
         }
 
         if (isErrObj) {
+            if (errMethod == "number") {
+                return m_builder->CreateLoad(llvm::Type::getInt32Ty(*m_context), getOrCreateErrNumber(), "err.number");
+            }
+            if (errMethod == "source") {
+                return m_builder->CreateLoad(llvm::PointerType::get(*m_context, 0), getOrCreateErrSource(), "err.source");
+            }
+            if (errMethod == "description") {
+                return m_builder->CreateLoad(llvm::PointerType::get(*m_context, 0), getOrCreateErrDescription(), "err.description");
+            }
             if (errMethod == "clear") {
                 m_builder->CreateStore(llvm::ConstantInt::get(llvm::Type::getInt32Ty(*m_context), 0), getOrCreateErrNumber());
                 m_builder->CreateStore(llvm::ConstantPointerNull::get(llvm::PointerType::get(*m_context, 0)), getOrCreateErrSource());
@@ -5429,7 +5475,13 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
                 }
                 llvm::Value* aVal = nullptr;
                 if (exprNode) {
-                    aVal = emitExpression(exprNode);
+                    llvm::Type* pTy = callee->getFunctionType()->getParamType(p);
+                    if (pTy->isPointerTy()) {
+                        aVal = getPointerToExpr(exprNode);
+                    }
+                    if (!aVal) {
+                        aVal = emitExpression(exprNode);
+                    }
                 }
                 if (!aVal) {
                     llvm::Type* pTy = callee->getFunctionType()->getParamType(p);
@@ -5486,8 +5538,17 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
                 args.push_back(typedBuf);
             } else {
                 for (size_t i = 0; i < call->args.size(); ++i) {
-                    llvm::Value* argVal = emitExpression(call->args[i].get());
+                    llvm::Value* argVal = nullptr;
                     size_t paramIdx = args.size();
+                    if (paramIdx < callee->getFunctionType()->getNumParams()) {
+                        llvm::Type* pTy = callee->getFunctionType()->getParamType(paramIdx);
+                        if (pTy->isPointerTy()) {
+                            argVal = getPointerToExpr(call->args[i].get());
+                        }
+                    }
+                    if (!argVal) {
+                        argVal = emitExpression(call->args[i].get());
+                    }
                     if (paramIdx < callee->getFunctionType()->getNumParams()) {
                         argVal = coerceType(argVal, callee->getFunctionType()->getParamType(paramIdx));
                     }
@@ -5925,6 +5986,7 @@ llvm::Function* LlvmEmitter::emitProcedure(const ProcedureNode& procNode, const 
 
     m_labels.clear();
     m_catchStack.clear();
+    m_byRefParams.clear();
 
     // DWARF DISubprogram for procedure
     llvm::DISubprogram* diSubprogram = nullptr;
@@ -5965,6 +6027,10 @@ llvm::Function* LlvmEmitter::emitProcedure(const ProcedureNode& procNode, const 
         m_namedValues[toLower(paramNode.name)] = alloca;
         m_variableTypes[paramNode.name] = paramNode.type;
         m_variableTypes[toLower(paramNode.name)] = paramNode.type;
+        if (paramNode.isByRef) {
+            m_byRefParams.insert(paramNode.name);
+            m_byRefParams.insert(toLower(paramNode.name));
+        }
     }
 
     // 6. Unified Exit Block & Return Value Alloca
@@ -6081,6 +6147,15 @@ bool LlvmEmitter::emitModule(const ModuleNode& moduleNode) {
         if (auto dim = dynamic_cast<const DimStmtNode*>(member.get())) {
             llvm::Type* varType = getLlvmType(dim->type);
             llvm::Constant* initVal = llvm::Constant::getNullValue(varType);
+            if (dim->initValue) {
+                if (auto num = dynamic_cast<const NumberExprASTNode*>(dim->initValue.get())) {
+                    if (num->isFloat && varType->isFloatingPointTy()) {
+                        initVal = llvm::ConstantFP::get(varType, num->floatVal);
+                    } else if (varType->isIntegerTy()) {
+                        initVal = llvm::ConstantInt::get(varType, num->val);
+                    }
+                }
+            }
             llvm::GlobalValue::LinkageTypes linkage = llvm::GlobalValue::InternalLinkage;
             new llvm::GlobalVariable(
                 *m_module,

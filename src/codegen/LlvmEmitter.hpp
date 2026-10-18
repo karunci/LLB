@@ -141,6 +141,7 @@ private:
     std::unordered_map<std::string, llvm::BasicBlock*> m_labels;
     std::vector<llvm::BasicBlock*> m_catchStack;
     std::vector<llvm::AllocaInst*> m_tryErrAllocaStack;
+    std::unordered_set<std::string> m_byRefParams;
     bool m_currentProcIsUnsafe{false};
 
     // DWARF Debug Information Generation (-g)

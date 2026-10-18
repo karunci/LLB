@@ -625,6 +625,7 @@ Module TestSuite
         If myScore = 95 And loc.Altitude = 100 Then
             TestTypeAlias = True
         Else
+            Print "  [Test 25 Debug] myScore=", myScore, ", loc.Altitude=", loc.Altitude
             TestTypeAlias = False
         End If
     End Function
@@ -652,6 +653,7 @@ Module TestSuite
         If val0 = 10 And val1 = 12 And val2 = 23 And rowsBound = 2 And colsBound = 3 Then
             TestMultidimensionalArrays = True
         Else
+            Print "  [Test 26 Debug] val0=", val0, ", val1=", val1, ", val2=", val2, ", rowsBound=", rowsBound, ", colsBound=", colsBound
             TestMultidimensionalArrays = False
         End If
     End Function
@@ -683,6 +685,7 @@ Module TestSuite
         If p = 8080 And m = 500 And t = 30 And hasPort = True And hasMissing = False Then
             TestMapAndDictionary = True
         Else
+            Print "  [Test 27 Debug] p=", p, ", m=", m, ", t=", t, ", hasPort=", hasPort, ", hasMissing=", hasMissing
             TestMapAndDictionary = False
         End If
     End Function
@@ -745,21 +748,25 @@ Module TestSuite
         isOcc2 = entriesPtr(slot2).Occupied
 
         If map.Count <> 2 Then
+            Print "  [Test 28 Debug] map.Count=", map.Count, " (expected 2)"
             TestStandaloneHashMap = False
             Exit Function
         End If
 
         If val1 <> 115200 Then
+            Print "  [Test 28 Debug] val1=", val1, " (expected 115200)"
             TestStandaloneHashMap = False
             Exit Function
         End If
 
         If val2 <> 8 Then
+            Print "  [Test 28 Debug] val2=", val2, " (expected 8)"
             TestStandaloneHashMap = False
             Exit Function
         End If
 
         If isOcc1 <> 1 Or isOcc2 <> 1 Then
+            Print "  [Test 28 Debug] isOcc1=", isOcc1, ", isOcc2=", isOcc2
             TestStandaloneHashMap = False
             Exit Function
         End If
@@ -798,6 +805,7 @@ Module TestSuite
         If list.Count = 3 And firstItem = 100 And secondItem = 200 And thirdItem = 300 Then
             TestArrayList = True
         Else
+            Print "  [Test 29 Debug] list.Count=", list.Count, ", first=", firstItem, ", second=", secondItem, ", third=", thirdItem
             TestArrayList = False
         End If
     End Function
@@ -819,6 +827,7 @@ Module TestSuite
         Dim initialRate As Int32
         initialRate = BaudRate()
         If initialRate <> 9600 Then
+            Print "  [Test 30 Debug] initialRate=", initialRate, " (expected 9600)"
             TestPropertyAccessors = False
             Exit Function
         End If
@@ -827,6 +836,7 @@ Module TestSuite
         Dim updatedRate As Int32
         updatedRate = BaudRate()
         If updatedRate <> 115200 Then
+            Print "  [Test 30 Debug] updatedRate=", updatedRate, " (expected 115200)"
             TestPropertyAccessors = False
             Exit Function
         End If
@@ -1081,6 +1091,7 @@ SkipMiddle:
         If executedTry = 100 And executedFinally = 200 And catchCode = 404 And catchErrNum = 404 And finallyRan = 1 And clearedNum = 0 Then
             TestTryCatchFinally = True
         Else
+            Print "  [Test 39 Debug] executedTry=", executedTry, " (expected 100), executedFinally=", executedFinally, " (expected 200), catchCode=", catchCode, " (expected 404), catchErrNum=", catchErrNum, " (expected 404), finallyRan=", finallyRan, " (expected 1), clearedNum=", clearedNum, " (expected 0)"
             TestTryCatchFinally = False
         End If
     End Function
@@ -1570,7 +1581,7 @@ SkipMiddle:
     Public g_disposeTracker As Int32 = 0
 
     Public Structure ScopedResource
-        Dim HandleId As Int32
+        Public HandleId As Int32
     End Structure
 
     Public Sub ScopedResource_Dispose(ByRef r As ScopedResource)
@@ -1588,6 +1599,7 @@ SkipMiddle:
         If g_disposeTracker = 142 Then
             TestUsingScopedCleanup = True
         Else
+            Print "  [Test 56 Debug] g_disposeTracker=", g_disposeTracker, " (expected 142)"
             TestUsingScopedCleanup = False
         End If
     End Function
@@ -1629,6 +1641,7 @@ SkipMiddle:
         If category = 2 And extractedVal = 1234 And extractedErr = 404 Then
             TestPatternMatching = True
         Else
+            Print "  [Test 57 Debug] category=", category, " (expected 2), extractedVal=", extractedVal, " (expected 1234), extractedErr=", extractedErr, " (expected 404)"
             TestPatternMatching = False
         End If
     End Function
@@ -1640,13 +1653,14 @@ SkipMiddle:
         puts CPtr(Pointer To Byte, "    RUNNING LOW-LEVEL BASIC COMPREHENSIVE SUITE ")
         puts CPtr(Pointer To Byte, "================================================")
 
+        Dim failCount As Int32 = 0
+
         ' 1. Arithmetic
         If TestArithmetic() Then
             puts CPtr(Pointer To Byte, "Test 1 > [PASS] Arithmetic & Modulo Operations")
         Else
             puts CPtr(Pointer To Byte, "Test 1 > [FAIL] Arithmetic & Modulo Operations")
-            Main = 1
-            Exit Function
+            failCount = failCount + 1
         End If
 
         ' 2. Bitwise
@@ -1654,8 +1668,7 @@ SkipMiddle:
             puts CPtr(Pointer To Byte, "Test 2 > [PASS] Bitwise & Shift Operations (And, Or, Xor, LShift, RShift)")
         Else
             puts CPtr(Pointer To Byte, "Test 2 > [FAIL] Bitwise & Shift Operations")
-            Main = 1
-            Exit Function
+            failCount = failCount + 1
         End If
 
         ' 3. Nested If-Else
@@ -1663,8 +1676,7 @@ SkipMiddle:
             puts CPtr(Pointer To Byte, "Test 3 > [PASS] Nested If / ElseIf / Else Control Flow")
         Else
             puts CPtr(Pointer To Byte, "Test 3 > [FAIL] Nested If / ElseIf / Else Control Flow")
-            Main = 1
-            Exit Function
+            failCount = failCount + 1
         End If
 
         ' 4. For Loop
@@ -1672,8 +1684,7 @@ SkipMiddle:
             puts CPtr(Pointer To Byte, "Test 4 > [PASS] For-Next Loops with Step")
         Else
             puts CPtr(Pointer To Byte, "Test 4 > [FAIL] For-Next Loops with Step")
-            Main = 1
-            Exit Function
+            failCount = failCount + 1
         End If
 
         ' 5. Do Loops
@@ -1681,8 +1692,7 @@ SkipMiddle:
             puts CPtr(Pointer To Byte, "Test 5 > [PASS] Do-Loop & Exit Do")
         Else
             puts CPtr(Pointer To Byte, "Test 5 > [FAIL] Do-Loop & Exit Do")
-            Main = 1
-            Exit Function
+            failCount = failCount + 1
         End If
 
         ' 6. While Loop
@@ -1690,8 +1700,7 @@ SkipMiddle:
             puts CPtr(Pointer To Byte, "Test 6 > [PASS] While-Wend Loop")
         Else
             puts CPtr(Pointer To Byte, "Test 6 > [FAIL] While-Wend Loop")
-            Main = 1
-            Exit Function
+            failCount = failCount + 1
         End If
 
         ' 7. Recursion
@@ -1699,8 +1708,7 @@ SkipMiddle:
             puts CPtr(Pointer To Byte, "Test 7 > [PASS] Recursive Function Calls (Factorial 5! = 120)")
         Else
             puts CPtr(Pointer To Byte, "Test 7 > [FAIL] Recursive Function Calls")
-            Main = 1
-            Exit Function
+            failCount = failCount + 1
         End If
 
         ' 8. Pointer Indexing
@@ -1708,8 +1716,7 @@ SkipMiddle:
             puts CPtr(Pointer To Byte, "Test 8 > [PASS] Pointer Casting (CPtr) & Indexing (ptr(i))")
         Else
             puts CPtr(Pointer To Byte, "Test 8 > [FAIL] Pointer Casting & Indexing")
-            Main = 1
-            Exit Function
+            failCount = failCount + 1
         End If
 
         ' 9. Structures
@@ -1717,8 +1724,7 @@ SkipMiddle:
             puts CPtr(Pointer To Byte, "Test 9 > [PASS] Structure Declaration & Field Access")
         Else
             puts CPtr(Pointer To Byte, "Test 9 > [FAIL] Structure Declaration & Field Access")
-            Main = 1
-            Exit Function
+            failCount = failCount + 1
         End If
 
         ' 10. Select Case
@@ -1726,8 +1732,7 @@ SkipMiddle:
             puts CPtr(Pointer To Byte, "Test 10 > [PASS] Select Case Statement & Multi-Branch Dispatch")
         Else
             puts CPtr(Pointer To Byte, "Test 10 > [FAIL] Select Case Statement")
-            Main = 1
-            Exit Function
+            failCount = failCount + 1
         End If
 
         ' 11. Pointer Arithmetic
@@ -1735,8 +1740,7 @@ SkipMiddle:
             puts CPtr(Pointer To Byte, "Test 11 > [PASS] Low-Level Pointer Arithmetic (ptr + offset)")
         Else
             puts CPtr(Pointer To Byte, "Test 11 > [FAIL] Low-Level Pointer Arithmetic")
-            Main = 1
-            Exit Function
+            failCount = failCount + 1
         End If
 
         ' 12. String Concatenation & Conversion
@@ -1744,8 +1748,7 @@ SkipMiddle:
             puts CPtr(Pointer To Byte, "Test 12 > [PASS] VB6 String Concatenation & Conversion (""+" & """ and ""&"")")
         Else
             puts CPtr(Pointer To Byte, "Test 12 > [FAIL] VB6 String Concatenation & Conversion")
-            Main = 1
-            Exit Function
+            failCount = failCount + 1
         End If
 
         ' 13. Enum Declarations & Values
@@ -1753,8 +1756,7 @@ SkipMiddle:
             puts CPtr(Pointer To Byte, "Test 13 > [PASS] Enum Declarations & Member Constants (TrafficLight.Yellow)")
         Else
             puts CPtr(Pointer To Byte, "Test 13 > [FAIL] Enum Declarations & Member Constants")
-            Main = 1
-            Exit Function
+            failCount = failCount + 1
         End If
 
         ' 14. With Statement
@@ -1762,8 +1764,7 @@ SkipMiddle:
             puts CPtr(Pointer To Byte, "Test 14 > [PASS] With Statement (.X, .Y implicit target binding)")
         Else
             puts CPtr(Pointer To Byte, "Test 14 > [FAIL] With Statement")
-            Main = 1
-            Exit Function
+            failCount = failCount + 1
         End If
 
         ' 15. Floating Point Operations
@@ -1771,8 +1772,7 @@ SkipMiddle:
             puts CPtr(Pointer To Byte, "Test 15 > [PASS] Floating Point Types & Arithmetic (Single, Double, IEEE-754)")
         Else
             puts CPtr(Pointer To Byte, "Test 15 > [FAIL] Floating Point Types & Arithmetic")
-            Main = 1
-            Exit Function
+            failCount = failCount + 1
         End If
 
         ' 16. Line Continuation & Declare Lib
@@ -1780,8 +1780,7 @@ SkipMiddle:
             putsLib CPtr(Pointer To Byte, "Test 16 > [PASS] Line Continuation (_) & Declare Function Lib Alias (putsLib)")
         Else
             puts CPtr(Pointer To Byte, "Test 16 > [FAIL] Line Continuation & Declare Lib")
-            Main = 1
-            Exit Function
+            failCount = failCount + 1
         End If
 
         ' 17. String Intrinsics Library
@@ -1789,8 +1788,7 @@ SkipMiddle:
             puts CPtr(Pointer To Byte, "Test 17 > [PASS] String Intrinsics Library (Len, Mid, Left, Right, InStr, Trim, Asc, Chr)")
         Else
             puts CPtr(Pointer To Byte, "Test 17 > [FAIL] String Intrinsics Library")
-            Main = 1
-            Exit Function
+            failCount = failCount + 1
         End If
 
         ' 18. Type Conversions
@@ -1798,8 +1796,7 @@ SkipMiddle:
             puts CPtr(Pointer To Byte, "Test 18 > [PASS] Type Conversion Functions (Val, CStr, CInt, CLng, CDbl)")
         Else
             puts CPtr(Pointer To Byte, "Test 18 > [FAIL] Type Conversion Functions")
-            Main = 1
-            Exit Function
+            failCount = failCount + 1
         End If
 
         ' 19. Console I/O
@@ -1807,8 +1804,7 @@ SkipMiddle:
             puts CPtr(Pointer To Byte, "Test 19 > [PASS] Console I/O (Print expr; expr, expr)")
         Else
             puts CPtr(Pointer To Byte, "Test 19 > [FAIL] Console I/O")
-            Main = 1
-            Exit Function
+            failCount = failCount + 1
         End If
 
         ' 20. Type ... End Type (VB6 UDT)
@@ -1816,8 +1812,7 @@ SkipMiddle:
             puts CPtr(Pointer To Byte, "Test 20 > [PASS] Type ... End Type (VB6 User Defined Type Structure)")
         Else
             puts CPtr(Pointer To Byte, "Test 20 > [FAIL] Type ... End Type (VB6 UDT)")
-            Main = 1
-            Exit Function
+            failCount = failCount + 1
         End If
 
         ' 21. Optional Parameters with Defaults
@@ -1825,8 +1820,7 @@ SkipMiddle:
             puts CPtr(Pointer To Byte, "Test 21 > [PASS] Optional Parameters (Optional ByVal x As T = Default)")
         Else
             puts CPtr(Pointer To Byte, "Test 21 > [FAIL] Optional Parameters")
-            Main = 1
-            Exit Function
+            failCount = failCount + 1
         End If
 
         ' 22. AddressOf Operator
@@ -1834,8 +1828,7 @@ SkipMiddle:
             puts CPtr(Pointer To Byte, "Test 22 > [PASS] AddressOf Operator (Function pointer resolution)")
         Else
             puts CPtr(Pointer To Byte, "Test 22 > [FAIL] AddressOf Operator")
-            Main = 1
-            Exit Function
+            failCount = failCount + 1
         End If
 
         ' 23. PrintLine & PrintFormat Convenience Wrappers
@@ -1843,8 +1836,7 @@ SkipMiddle:
             puts CPtr(Pointer To Byte, "Test 23 > [PASS] Console Helpers (PrintLine, PrintFormat / PrintF)")
         Else
             puts CPtr(Pointer To Byte, "Test 23 > [FAIL] Console Helpers")
-            Main = 1
-            Exit Function
+            failCount = failCount + 1
         End If
 
         ' 24. Math Library Intrinsics
@@ -1852,8 +1844,7 @@ SkipMiddle:
             puts CPtr(Pointer To Byte, "Test 24 > [PASS] Math Intrinsics Library (Abs, Sgn, Sqrt, Int)")
         Else
             puts CPtr(Pointer To Byte, "Test 24 > [FAIL] Math Intrinsics Library")
-            Main = 1
-            Exit Function
+            failCount = failCount + 1
         End If
 
         ' 25. TypeAlias Declarations
@@ -1861,8 +1852,7 @@ SkipMiddle:
             puts CPtr(Pointer To Byte, "Test 25 > [PASS] Type Alias Declarations (TypeAlias X = Y)")
         Else
             puts CPtr(Pointer To Byte, "Test 25 > [FAIL] Type Alias Declarations")
-            Main = 1
-            Exit Function
+            failCount = failCount + 1
         End If
 
         ' 26. Multidimensional Arrays & Matrices
@@ -1870,8 +1860,7 @@ SkipMiddle:
             puts CPtr(Pointer To Byte, "Test 26 > [PASS] Multidimensional Arrays & Matrices (matrix(r, c) & UBound)")
         Else
             puts CPtr(Pointer To Byte, "Test 26 > [FAIL] Multidimensional Arrays & Matrices")
-            Main = 1
-            Exit Function
+            failCount = failCount + 1
         End If
 
         ' 27. Key-Value Map & Dictionary
@@ -1879,8 +1868,7 @@ SkipMiddle:
             puts CPtr(Pointer To Byte, "Test 27 > [PASS] Key-Value Map & Dictionary (map(key) & MapHas)")
         Else
             puts CPtr(Pointer To Byte, "Test 27 > [FAIL] Key-Value Map & Dictionary")
-            Main = 1
-            Exit Function
+            failCount = failCount + 1
         End If
 
         ' 28. Standalone Open-Addressing HashMap
@@ -1888,8 +1876,7 @@ SkipMiddle:
             puts CPtr(Pointer To Byte, "Test 28 > [PASS] Standalone Open-Addressing HashMap (Freestanding Structure)")
         Else
             puts CPtr(Pointer To Byte, "Test 28 > [FAIL] Standalone Open-Addressing HashMap")
-            Main = 1
-            Exit Function
+            failCount = failCount + 1
         End If
 
         ' 29. Freestanding Dynamic ArrayList
@@ -1897,8 +1884,7 @@ SkipMiddle:
             puts CPtr(Pointer To Byte, "Test 29 > [PASS] Freestanding Dynamic ArrayList (Growable List with Indexing)")
         Else
             puts CPtr(Pointer To Byte, "Test 29 > [FAIL] Freestanding Dynamic ArrayList")
-            Main = 1
-            Exit Function
+            failCount = failCount + 1
         End If
 
         ' 30. Property Accessors (Property Get & Property Let)
@@ -1906,8 +1892,7 @@ SkipMiddle:
             puts CPtr(Pointer To Byte, "Test 30 > [PASS] Class & Module Property Accessors (Property Get / Let)")
         Else
             puts CPtr(Pointer To Byte, "Test 30 > [FAIL] Class & Module Property Accessors")
-            Main = 1
-            Exit Function
+            failCount = failCount + 1
         End If
 
         ' 31. For Each / Collection Iterators
@@ -1915,8 +1900,7 @@ SkipMiddle:
             puts CPtr(Pointer To Byte, "Test 31 > [PASS] Collection Iterators (For Each elem In collection)")
         Else
             puts CPtr(Pointer To Byte, "Test 31 > [FAIL] Collection Iterators")
-            Main = 1
-            Exit Function
+            failCount = failCount + 1
         End If
 
         ' 32. Nested Arrays & Multi-Level Chained Indexing
@@ -1924,8 +1908,7 @@ SkipMiddle:
             puts CPtr(Pointer To Byte, "Test 32 > [PASS] Nested Arrays & Multi-Level Chained Indexing")
         Else
             puts CPtr(Pointer To Byte, "Test 32 > [FAIL] Nested Arrays & Multi-Level Chained Indexing")
-            Main = 1
-            Exit Function
+            failCount = failCount + 1
         End If
 
         ' 33. Object Lifecycle: Set obj = New ClassName & Delete
@@ -1933,8 +1916,7 @@ SkipMiddle:
             puts CPtr(Pointer To Byte, "Test 33 > [PASS] Object Lifecycle (New ClassName & Delete)")
         Else
             puts CPtr(Pointer To Byte, "Test 33 > [FAIL] Object Lifecycle (New ClassName & Delete)")
-            Main = 1
-            Exit Function
+            failCount = failCount + 1
         End If
 
         ' 34. Dynamic Array Resizing (ReDim & ReDim Preserve)
@@ -1942,8 +1924,7 @@ SkipMiddle:
             puts CPtr(Pointer To Byte, "Test 34 > [PASS] Dynamic Array Resizing (ReDim & ReDim Preserve)")
         Else
             puts CPtr(Pointer To Byte, "Test 34 > [FAIL] Dynamic Array Resizing (ReDim & ReDim Preserve)")
-            Main = 1
-            Exit Function
+            failCount = failCount + 1
         End If
 
         ' 35. Is / Nothing Operator
@@ -1951,8 +1932,7 @@ SkipMiddle:
             puts CPtr(Pointer To Byte, "Test 35 > [PASS] Is / Nothing Pointer Null Operators")
         Else
             puts CPtr(Pointer To Byte, "Test 35 > [FAIL] Is / Nothing Pointer Null Operators")
-            Main = 1
-            Exit Function
+            failCount = failCount + 1
         End If
 
         ' 36. Erase Statement (Fixed arrays & Dynamic pointers)
@@ -1960,8 +1940,7 @@ SkipMiddle:
             puts CPtr(Pointer To Byte, "Test 36 > [PASS] Erase Statement (Fixed Array Zeroing & Pointer Clearing)")
         Else
             puts CPtr(Pointer To Byte, "Test 36 > [FAIL] Erase Statement")
-            Main = 1
-            Exit Function
+            failCount = failCount + 1
         End If
 
         ' 37. StrComp Function (Classic VB6 string comparison)
@@ -1969,8 +1948,7 @@ SkipMiddle:
             puts CPtr(Pointer To Byte, "Test 37 > [PASS] StrComp Function (Three-way String Comparison)")
         Else
             puts CPtr(Pointer To Byte, "Test 37 > [FAIL] StrComp Function")
-            Main = 1
-            Exit Function
+            failCount = failCount + 1
         End If
 
         ' 38. GoTo & Label Jumps
@@ -1978,8 +1956,7 @@ SkipMiddle:
             puts CPtr(Pointer To Byte, "Test 38 > [PASS] Unconditional Jumps (GoTo <Label> & <Label>:)")
         Else
             puts CPtr(Pointer To Byte, "Test 38 > [FAIL] Unconditional Jumps (GoTo)")
-            Main = 1
-            Exit Function
+            failCount = failCount + 1
         End If
 
         ' 39. Structured Exception Handling (Try ... Catch ... Finally)
@@ -1987,8 +1964,7 @@ SkipMiddle:
             puts CPtr(Pointer To Byte, "Test 39 > [PASS] Structured Error Handling (Try ... Catch ... Finally)")
         Else
             puts CPtr(Pointer To Byte, "Test 39 > [FAIL] Structured Error Handling (Try ... Catch ... Finally)")
-            Main = 1
-            Exit Function
+            failCount = failCount + 1
         End If
 
         ' 40. ParamArray (Variadic Arguments)
@@ -1996,8 +1972,7 @@ SkipMiddle:
             puts CPtr(Pointer To Byte, "Test 40 > [PASS] Variadic Arguments (ParamArray args() As Type)")
         Else
             puts CPtr(Pointer To Byte, "Test 40 > [FAIL] Variadic Arguments (ParamArray)")
-            Main = 1
-            Exit Function
+            failCount = failCount + 1
         End If
 
         ' 41. Named Arguments
@@ -2005,8 +1980,7 @@ SkipMiddle:
             puts CPtr(Pointer To Byte, "Test 41 > [PASS] Call-Site Named Arguments (name := expr)")
         Else
             puts CPtr(Pointer To Byte, "Test 41 > [FAIL] Call-Site Named Arguments")
-            Main = 1
-            Exit Function
+            failCount = failCount + 1
         End If
 
         ' 42. Like String Pattern Matching
@@ -2014,8 +1988,7 @@ SkipMiddle:
             puts CPtr(Pointer To Byte, "Test 42 > [PASS] String Pattern Matching (Like operator with * and ?)")
         Else
             puts CPtr(Pointer To Byte, "Test 42 > [FAIL] String Pattern Matching (Like)")
-            Main = 1
-            Exit Function
+            failCount = failCount + 1
         End If
 
         ' 43. Unsigned vs Signed Distinctions
@@ -2023,8 +1996,7 @@ SkipMiddle:
             puts CPtr(Pointer To Byte, "Test 43 > [PASS] Unsigned Operations (UDiv, URem, Logical RShift, Unsigned Cmp)")
         Else
             puts CPtr(Pointer To Byte, "Test 43 > [FAIL] Unsigned Operations")
-            Main = 1
-            Exit Function
+            failCount = failCount + 1
         End If
 
         ' 44. Union Types (Overlapping memory layout)
@@ -2032,8 +2004,7 @@ SkipMiddle:
             puts CPtr(Pointer To Byte, "Test 44 > [PASS] Union Types (Overlapping memory layout & member aliasing)")
         Else
             puts CPtr(Pointer To Byte, "Test 44 > [FAIL] Union Types")
-            Main = 1
-            Exit Function
+            failCount = failCount + 1
         End If
 
         ' 45. Memory Runtime Intrinsics (ZeroMemory, FillMemory, CopyMemory)
@@ -2041,8 +2012,7 @@ SkipMiddle:
             puts CPtr(Pointer To Byte, "Test 45 > [PASS] Memory Intrinsics (CopyMemory, ZeroMemory, FillMemory)")
         Else
             puts CPtr(Pointer To Byte, "Test 45 > [FAIL] Memory Intrinsics")
-            Main = 1
-            Exit Function
+            failCount = failCount + 1
         End If
 
         ' 46. TypeOf ... Is ... Operator
@@ -2050,8 +2020,7 @@ SkipMiddle:
             puts CPtr(Pointer To Byte, "Test 46 > [PASS] Runtime Type Testing (TypeOf expr Is [Not] Type)")
         Else
             puts CPtr(Pointer To Byte, "Test 46 > [FAIL] Runtime Type Testing (TypeOf)")
-            Main = 1
-            Exit Function
+            failCount = failCount + 1
         End If
 
         ' 47. Shared Library FFI Binding (Declare ... Lib "SharedLib")
@@ -2059,8 +2028,7 @@ SkipMiddle:
             puts CPtr(Pointer To Byte, "Test 47 > [PASS] Shared Library Binding (Declare Function ... Lib SharedLib)")
         Else
             puts CPtr(Pointer To Byte, "Test 47 > [FAIL] Shared Library Binding")
-            Main = 1
-            Exit Function
+            failCount = failCount + 1
         End If
 
         ' 48. Memory Safety & Bounds-Checked Array Access
@@ -2068,8 +2036,7 @@ SkipMiddle:
             puts CPtr(Pointer To Byte, "Test 48 > [PASS] Memory Safety & Array Bounds Validation")
         Else
             puts CPtr(Pointer To Byte, "Test 48 > [FAIL] Memory Safety & Array Bounds Validation")
-            Main = 1
-            Exit Function
+            failCount = failCount + 1
         End If
 
         ' 49. File I/O Primitives (Open, Close, Print #, Line Input #, EOF, LOF)
@@ -2077,8 +2044,7 @@ SkipMiddle:
             puts CPtr(Pointer To Byte, "Test 49 > [PASS] File I/O Primitives (Open, Close, Print #, Line Input #, EOF, LOF)")
         Else
             puts CPtr(Pointer To Byte, "Test 49 > [FAIL] File I/O Primitives")
-            Main = 1
-            Exit Function
+            failCount = failCount + 1
         End If
 
         ' 50. Module Imports & Multi-File Dependency Resolution
@@ -2086,8 +2052,7 @@ SkipMiddle:
             puts CPtr(Pointer To Byte, "Test 50 > [PASS] Module Imports & Multi-File Dependency Resolution")
         Else
             puts CPtr(Pointer To Byte, "Test 50 > [FAIL] Module Imports & Dependency Resolution")
-            Main = 1
-            Exit Function
+            failCount = failCount + 1
         End If
 
         ' 51. Conditional Compilation Directives (#Const, #If, #ElseIf, #Else, #End If)
@@ -2095,8 +2060,7 @@ SkipMiddle:
             puts CPtr(Pointer To Byte, "Test 51 > [PASS] Conditional Compilation (#Const, #If, #ElseIf, #Else, #End If)")
         Else
             puts CPtr(Pointer To Byte, "Test 51 > [FAIL] Conditional Compilation Directives")
-            Main = 1
-            Exit Function
+            failCount = failCount + 1
         End If
 
         ' 52. Static Library Archiving & Linking (.a / -static)
@@ -2104,8 +2068,7 @@ SkipMiddle:
             puts CPtr(Pointer To Byte, "Test 52 > [PASS] Static Library Archiving & Symbol Resolution (libStaticMath.a)")
         Else
             puts CPtr(Pointer To Byte, "Test 52 > [FAIL] Static Library Archiving & Linking")
-            Main = 1
-            Exit Function
+            failCount = failCount + 1
         End If
 
         ' 53. DWARF Debug Information Emission (-g metadata)
@@ -2113,8 +2076,7 @@ SkipMiddle:
             puts CPtr(Pointer To Byte, "Test 53 > [PASS] DWARF Debug Information & Source Locations (-g)")
         Else
             puts CPtr(Pointer To Byte, "Test 53 > [FAIL] DWARF Debug Information Emission")
-            Main = 1
-            Exit Function
+            failCount = failCount + 1
         End If
 
         ' 54. Advanced Type System & Procedure Attributes (<Inline>, Currency, Short, UShort, ULong)
@@ -2122,8 +2084,7 @@ SkipMiddle:
             puts CPtr(Pointer To Byte, "Test 54 > [PASS] Type System & Procedure Attributes (<Inline>, Currency, UShort, ULong)")
         Else
             puts CPtr(Pointer To Byte, "Test 54 > [FAIL] Type System & Procedure Attributes")
-            Main = 1
-            Exit Function
+            failCount = failCount + 1
         End If
 
         ' 55. Modern Features: Closures/Lambdas, Result(T, E) Sum Types, Namespaces
@@ -2131,8 +2092,7 @@ SkipMiddle:
             puts CPtr(Pointer To Byte, "Test 55 > [PASS] Modern Language Features (Lambdas =>, Result(T, E) Sum Types, Namespaces)")
         Else
             puts CPtr(Pointer To Byte, "Test 55 > [FAIL] Modern Language Features")
-            Main = 1
-            Exit Function
+            failCount = failCount + 1
         End If
 
         ' 56. Deterministic Scoped Cleanup (Using ... End Using)
@@ -2140,8 +2100,7 @@ SkipMiddle:
             puts CPtr(Pointer To Byte, "Test 56 > [PASS] Deterministic Scoped Cleanup (Using ... End Using with .Dispose())")
         Else
             puts CPtr(Pointer To Byte, "Test 56 > [FAIL] Deterministic Scoped Cleanup (Using)")
-            Main = 1
-            Exit Function
+            failCount = failCount + 1
         End If
 
         ' 57. Algebraic Pattern Matching (Match ... Case ... End Match)
@@ -2149,15 +2108,19 @@ SkipMiddle:
             puts CPtr(Pointer To Byte, "Test 57 > [PASS] Algebraic Pattern Matching (Match ... Case with Ok(v), Err(e), and Ranges)")
         Else
             puts CPtr(Pointer To Byte, "Test 57 > [FAIL] Algebraic Pattern Matching (Match)")
-            Main = 1
-            Exit Function
+            failCount = failCount + 1
         End If
 
         puts CPtr(Pointer To Byte, "================================================")
-        puts CPtr(Pointer To Byte, "   ALL 57 TEST SUITES PASSED SUCCESSFULLY!      ")
-        puts CPtr(Pointer To Byte, "================================================")
-
-        Main = 0
+        If failCount = 0 Then
+            puts CPtr(Pointer To Byte, "   ALL 57 TEST SUITES PASSED SUCCESSFULLY!      ")
+            puts CPtr(Pointer To Byte, "================================================")
+            Main = 0
+        Else
+            Print "   TEST SUITE FINISHED WITH ", failCount, " FAILURE(S) OUT OF 57"
+            puts CPtr(Pointer To Byte, "================================================")
+            Main = 1
+        End If
     End Function
 
 End Module

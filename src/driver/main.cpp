@@ -169,7 +169,7 @@ static std::string compileSourceFile(
         return "";
     }
 
-    llbc::LlvmEmitter irEmitter(moduleAST->name, enableDebugInfo);
+    llbc::LlvmEmitter irEmitter(moduleAST->name, enableDebugInfo, targetTriple);
 
     // Inject exported symbols from all imported modules into this emitter
     for (const auto& imp : moduleAST->imports) {

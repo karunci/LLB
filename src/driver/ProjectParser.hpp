@@ -54,11 +54,14 @@ public:
                 std::string key = line.substr(0, eqPos);
                 std::string value = line.substr(eqPos + 1);
 
-                // Trim spaces & quotes
-                key.erase(0, key.find_first_not_of(" \t"));
-                key.erase(key.find_last_not_of(" \t") + 1);
-                value.erase(0, value.find_first_not_of(" \t\""));
-                value.erase(value.find_last_not_of(" \t\"") + 1);
+                // Trim spaces, quotes & carriage return
+                key.erase(0, key.find_first_not_of(" \t\r\n"));
+                auto lastKey = key.find_last_not_of(" \t\r\n");
+                if (lastKey != std::string::npos) key.erase(lastKey + 1);
+
+                value.erase(0, value.find_first_not_of(" \t\r\n\""));
+                auto lastVal = value.find_last_not_of(" \t\r\n\"");
+                if (lastVal != std::string::npos) value.erase(lastVal + 1);
 
                 if (key == "Name") config.name = value;
                 else if (key == "Type") {

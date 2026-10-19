@@ -11,12 +11,30 @@
 .align 8
 
 /* ============================================================================
- * MULTIBOOT2 HEADER SPECIFICATION
+ * MULTIBOOT 1 HEADER (For QEMU -kernel direct boot)
+ * ============================================================================ */
+#define MULTIBOOT_HEADER_MAGIC      0x1BADB002
+#define MULTIBOOT_HEADER_FLAGS      0x00010003 /* ALIGN + MEMINFO + AOUT_KLUDGE */
+
+.align 4
+multiboot1_header:
+    .long MULTIBOOT_HEADER_MAGIC
+    .long MULTIBOOT_HEADER_FLAGS
+    .long -(MULTIBOOT_HEADER_MAGIC + MULTIBOOT_HEADER_FLAGS)
+    .long multiboot1_header /* header_addr */
+    .long 0x100000          /* load_addr */
+    .long 0                 /* load_end_addr */
+    .long 0                 /* bss_end_addr */
+    .long _start            /* entry_addr */
+
+/* ============================================================================
+ * MULTIBOOT 2 HEADER SPECIFICATION
  * ============================================================================ */
 #define MULTIBOOT2_HEADER_MAGIC     0xe85250d6
 #define MULTIBOOT_ARCHITECTURE_I386 0
 #define MULTIBOOT_HEADER_TAG_END    0
 
+.align 8
 header_start:
     .long MULTIBOOT2_HEADER_MAGIC
     .long MULTIBOOT_ARCHITECTURE_I386

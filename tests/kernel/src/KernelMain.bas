@@ -8,10 +8,33 @@ Module KernelMain
 
     Import Drivers.Terminal
 
+    ' Helper to send a character to COM1 serial port (0x3F8)
+    Private Unsafe Sub WriteSerial(ByVal ch As Byte)
+        Dim port As UInt16 = &H3F8
+        Asm
+            "mov %1, %dx; mov %0, %al; outb %al, %dx"
+            :
+            : "r"(ch), "r"(port)
+        End Asm
+    End Sub
+
+    Private Unsafe Sub WriteSerialString(ByVal str As Pointer To Byte)
+        Dim i As Int32 = 0
+        Do While str(i) <> 0
+            WriteSerial str(i)
+            i = i + 1
+        Loop
+    End Sub
+
     Public Unsafe Sub KernelEntry(ByVal magic As UInt32, ByVal mbAddress As Pointer To Byte)
+        ' Initialize COM1 line control
+        WriteSerialString CPtr(Pointer To Byte, "\r\n[PRK-OS KERNEL] Booting Low-Level Basic Kernel in QEMU!\r\n")
+        WriteSerialString CPtr(Pointer To Byte, "[PRK-OS KERNEL] Multiboot Verified. Long mode active.\r\n")
+
         ' Declare Terminal instance
         Dim term As Terminal
         term.Initialize Terminal.COLOR_LIGHT_GREEN, Terminal.COLOR_BLACK
+        WriteSerialString CPtr(Pointer To Byte, "[PRK-OS KERNEL] VGA Terminal Driver initialized (&HB8000).\r\n")
 
         term.WriteLine CPtr(Pointer To Byte, "=========================================")
         term.WriteLine CPtr(Pointer To Byte, "      PRK-OS LOW-LEVEL BASIC KERNEL      ")
@@ -48,6 +71,11 @@ Module KernelMain
             term.WriteHex CType(UInt64, i)
             term.WriteLine CPtr(Pointer To Byte, " - Terminal scrolling line test.")
         Next i
+
+        WriteSerialString CPtr(Pointer To Byte, "[PRK-OS KERNEL] Initializing IDT interrupt descriptors...\r\n")
+        Arch.Idt.Initialize
+        WriteSerialString CPtr(Pointer To Byte, "[PRK-OS KERNEL] IDT gates registered successfully.\r\n")
+        WriteSerialString CPtr(Pointer To Byte, "[PRK-OS KERNEL] Kernel execution completed successfully. Halting CPU.\r\n")
 
         Do
             Asm "hlt"

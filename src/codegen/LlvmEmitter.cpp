@@ -2313,15 +2313,40 @@ llvm::Function* LlvmEmitter::getOrCreateFileLineInput() {
     m_builder->SetInsertPoint(entryBB);
     llvm::Argument* numArg = func->getArg(0);
 
+    // If fileNum == 0, use standard stdin
+    llvm::BasicBlock* checkZeroBB = llvm::BasicBlock::Create(*m_context, "check.zero", func);
+    llvm::BasicBlock* tableLookupBB = llvm::BasicBlock::Create(*m_context, "table.lookup", func);
+
+    llvm::Value* isZero = m_builder->CreateICmpEQ(numArg, llvm::ConstantInt::get(llvm::Type::getInt32Ty(*m_context), 0));
+    m_builder->CreateCondBr(isZero, checkZeroBB, tableLookupBB);
+
+    m_builder->SetInsertPoint(checkZeroBB);
+    llvm::GlobalVariable* stdinVar = m_module->getGlobalVariable("stdin");
+    if (!stdinVar) {
+        stdinVar = new llvm::GlobalVariable(
+            *m_module,
+            llvm::PointerType::get(*m_context, 0),
+            false,
+            llvm::GlobalValue::ExternalLinkage,
+            nullptr,
+            "stdin"
+        );
+    }
+    llvm::Value* stdinVal = m_builder->CreateLoad(llvm::PointerType::get(*m_context, 0), stdinVar, "stdin.load");
+    m_builder->CreateCondBr(m_builder->CreateIsNull(stdinVal), nullRetBB, readBB);
+
+    m_builder->SetInsertPoint(tableLookupBB);
     llvm::GlobalVariable* table = getOrCreateFileTable();
     llvm::Value* num64 = m_builder->CreateZExt(numArg, llvm::Type::getInt64Ty(*m_context));
     llvm::Value* zero64 = llvm::ConstantInt::get(llvm::Type::getInt64Ty(*m_context), 0);
     llvm::Value* slotGEP = m_builder->CreateGEP(table->getValueType(), table, {zero64, num64});
-    llvm::Value* fp = m_builder->CreateLoad(llvm::PointerType::get(*m_context, 0), slotGEP, "fp");
-    llvm::Value* isFpNull = m_builder->CreateIsNull(fp);
-    m_builder->CreateCondBr(isFpNull, nullRetBB, readBB);
+    llvm::Value* fpLoaded = m_builder->CreateLoad(llvm::PointerType::get(*m_context, 0), slotGEP, "fp");
+    m_builder->CreateCondBr(m_builder->CreateIsNull(fpLoaded), nullRetBB, readBB);
 
     m_builder->SetInsertPoint(readBB);
+    llvm::PHINode* fp = m_builder->CreatePHI(llvm::PointerType::get(*m_context, 0), 2, "fp");
+    fp->addIncoming(stdinVal, checkZeroBB);
+    fp->addIncoming(fpLoaded, tableLookupBB);
     llvm::Function* mallocFn = getOrCreateMalloc();
     // Allocate a 4096-byte line buffer
     llvm::Value* bufSize = llvm::ConstantInt::get(llvm::Type::getInt64Ty(*m_context), 4096);

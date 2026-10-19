@@ -256,6 +256,16 @@ llvm::Value* LlvmEmitter::getPointerToExpr(ExprASTNode* expr) {
                 } else {
                     baseVal = m_builder->CreateLoad(it->second->getAllocatedType(), it->second, varBase->name);
                 }
+            } else {
+                llvm::GlobalVariable* gVar = m_module->getGlobalVariable(varBase->name);
+                if (!gVar) gVar = findGlobalCaseInsensitive(m_module.get(), varBase->name);
+                if (gVar) {
+                    baseVal = gVar;
+                    if (baseType.name.empty()) {
+                        baseType.name = gVar->getValueType()->isStructTy() ? gVar->getValueType()->getStructName().str() : "";
+                        baseType.isArray = true;
+                    }
+                }
             }
         }
         if (!baseVal) {
@@ -2876,7 +2886,50 @@ void LlvmEmitter::emitDimStatement(const DimStmtNode& dimNode) {
     }
 }
 
+void LlvmEmitter::declareConstant(const ConstStmtNode& constNode, const std::string& prefix) {
+    std::string baseName = constNode.name;
+    std::string fullName = !prefix.empty() ? (prefix + "." + baseName) : baseName;
+    std::string mangledName = !prefix.empty() ? (prefix + "_" + baseName) : baseName;
+    for (auto& ch : mangledName) {
+        if (ch == '.') ch = '_';
+    }
+
+    if (constNode.value) {
+        if (auto num = dynamic_cast<const NumberExprASTNode*>(constNode.value.get())) {
+            m_enumConstants[baseName] = num->val;
+            m_enumConstants[toLower(baseName)] = num->val;
+            m_enumConstants[fullName] = num->val;
+            m_enumConstants[toLower(fullName)] = num->val;
+            m_enumConstants[mangledName] = num->val;
+            m_enumConstants[toLower(mangledName)] = num->val;
+        }
+    }
+
+    llvm::Type* constType = getLlvmType(constNode.type);
+    if (!findGlobalCaseInsensitive(m_module.get(), baseName)) {
+        new llvm::GlobalVariable(
+            *m_module,
+            constType,
+            true, // isConstant
+            llvm::GlobalValue::ExternalLinkage,
+            nullptr, // external declaration
+            baseName
+        );
+    }
+    if (!prefix.empty() && !findGlobalCaseInsensitive(m_module.get(), mangledName)) {
+        new llvm::GlobalVariable(
+            *m_module,
+            constType,
+            true,
+            llvm::GlobalValue::ExternalLinkage,
+            nullptr,
+            mangledName
+        );
+    }
+}
+
 void LlvmEmitter::emitConstStatement(const ConstStmtNode& constNode) {
+    if (!m_builder->GetInsertBlock()) return;
     llvm::Function* currentFunc = m_builder->GetInsertBlock()->getParent();
     llvm::Type* constType = getLlvmType(constNode.type);
 
@@ -2989,6 +3042,11 @@ void LlvmEmitter::emitAssignStatement(const AssignStmtNode& assignNode) {
                     baseVal = it->second;
                 } else {
                     baseVal = m_builder->CreateLoad(it->second->getAllocatedType(), it->second, var->name);
+                }
+            } else {
+                llvm::GlobalVariable* gVar = findGlobalCaseInsensitive(m_module.get(), var->name);
+                if (gVar) {
+                    baseVal = gVar;
                 }
             }
         }
@@ -3251,7 +3309,24 @@ void LlvmEmitter::emitForStatement(const ForStmtNode& forNode) {
     llvm::Value* curVal = m_builder->CreateLoad(loopVarAlloca->getAllocatedType(), loopVarAlloca, forNode.varName);
     llvm::Value* endVal = emitExpression(forNode.endExpr.get());
     endVal = coerceType(endVal, loopVarAlloca->getAllocatedType());
-    llvm::Value* cond = m_builder->CreateICmpSLE(curVal, endVal, "for.cmp");
+
+    llvm::Value* stepVal = nullptr;
+    bool isNegativeStep = false;
+    if (forNode.stepExpr) {
+        stepVal = emitExpression(forNode.stepExpr.get());
+        stepVal = coerceType(stepVal, loopVarAlloca->getAllocatedType());
+        if (auto num = dynamic_cast<NumberExprASTNode*>(forNode.stepExpr.get())) {
+            if (num->val < 0) isNegativeStep = true;
+        } else if (auto un = dynamic_cast<UnaryExprASTNode*>(forNode.stepExpr.get())) {
+            if (un->op == "-") isNegativeStep = true;
+        }
+    } else {
+        stepVal = llvm::ConstantInt::get(loopVarAlloca->getAllocatedType(), 1);
+    }
+
+    llvm::Value* cond = isNegativeStep 
+        ? m_builder->CreateICmpSGE(curVal, endVal, "for.cmp")
+        : m_builder->CreateICmpSLE(curVal, endVal, "for.cmp");
     m_builder->CreateCondBr(cond, bodyBB, afterBB);
 
     // Body BB
@@ -3272,14 +3347,8 @@ void LlvmEmitter::emitForStatement(const ForStmtNode& forNode) {
 
     // Inc BB
     m_builder->SetInsertPoint(incBB);
-    llvm::Value* stepVal = nullptr;
-    if (forNode.stepExpr) {
-        stepVal = emitExpression(forNode.stepExpr.get());
-        stepVal = coerceType(stepVal, loopVarAlloca->getAllocatedType());
-    } else {
-        stepVal = llvm::ConstantInt::get(loopVarAlloca->getAllocatedType(), 1);
-    }
-    llvm::Value* nextVal = m_builder->CreateAdd(curVal, stepVal, "for.nextval");
+    llvm::Value* curValInc = m_builder->CreateLoad(loopVarAlloca->getAllocatedType(), loopVarAlloca, forNode.varName);
+    llvm::Value* nextVal = m_builder->CreateAdd(curValInc, stepVal, "for.nextval");
     m_builder->CreateStore(nextVal, loopVarAlloca);
     m_builder->CreateBr(condBB);
 
@@ -4420,6 +4489,11 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
         // Check module-level global variable (including typed Const globals)
         llvm::GlobalVariable* gVar = findGlobalCaseInsensitive(m_module.get(), var->name);
         if (gVar) {
+            auto tIt = m_variableTypes.find(var->name);
+            if (tIt == m_variableTypes.end()) tIt = m_variableTypes.find(toLower(var->name));
+            if (gVar->getValueType()->isArrayTy() || (tIt != m_variableTypes.end() && tIt->second.isArray)) {
+                return gVar;
+            }
             return m_builder->CreateLoad(gVar->getValueType(), gVar, var->name);
         }
 
@@ -4461,12 +4535,24 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
 
     // AddressOf targetName (Function pointer / procedure address)
     if (auto addrOf = dynamic_cast<AddressOfExprASTNode*>(expr)) {
+        if (addrOf->targetExpr) {
+            llvm::Value* ptr = getPointerToExpr(addrOf->targetExpr.get());
+            if (ptr) return ptr;
+            return emitExpression(addrOf->targetExpr.get());
+        }
         std::string targetName = addrOf->targetName;
         auto aliasIt = m_funcAliases.find(targetName);
         if (aliasIt != m_funcAliases.end()) {
             targetName = aliasIt->second;
         }
         llvm::Function* callee = findFunctionCaseInsensitive(m_module.get(), targetName);
+        if (!callee && m_module && m_module->getName().str().find('.') != std::string::npos) {
+            std::string modPref = m_module->getName().str();
+            for (auto& ch : modPref) {
+                if (ch == '.') ch = '_';
+            }
+            callee = findFunctionCaseInsensitive(m_module.get(), modPref + "_" + targetName);
+        }
         if (callee) {
             return callee;
         }
@@ -4474,6 +4560,11 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
         auto localIt = m_namedValues.find(addrOf->targetName);
         if (localIt != m_namedValues.end()) {
             return localIt->second;
+        }
+        // Try looking up in global variables
+        llvm::GlobalVariable* gVar = findGlobalCaseInsensitive(m_module.get(), addrOf->targetName);
+        if (gVar) {
+            return gVar;
         }
         return nullptr;
     }
@@ -4509,6 +4600,40 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
                     if (mIt != eIt->second.end()) {
                         return llvm::ConstantInt::get(llvm::Type::getInt32Ty(*m_context), mIt->second);
                     }
+                }
+            }
+        }
+
+        // 3. Check if base.member is a qualified global constant or variable (e.g. Drivers.Terminal.COLOR_WHITE)
+        {
+            std::function<std::string(ExprASTNode*)> getDottedName = [&](ExprASTNode* e) -> std::string {
+                if (auto v = dynamic_cast<VariableExprASTNode*>(e)) return v->name;
+                if (auto m = dynamic_cast<MemberAccessExprASTNode*>(e)) {
+                    std::string p = getDottedName(m->base.get());
+                    return p.empty() ? m->memberName : (p + "." + m->memberName);
+                }
+                return "";
+            };
+            std::string dotted = getDottedName(member->base.get());
+            if (!dotted.empty()) {
+                std::string fullQual = dotted + "." + member->memberName;
+                std::string mangled = fullQual;
+                for (auto& c : mangled) {
+                    if (c == '.') c = '_';
+                }
+                auto enumIt = m_enumConstants.find(fullQual);
+                if (enumIt == m_enumConstants.end()) enumIt = m_enumConstants.find(toLower(fullQual));
+                if (enumIt == m_enumConstants.end()) enumIt = m_enumConstants.find(member->memberName);
+                if (enumIt == m_enumConstants.end()) enumIt = m_enumConstants.find(toLower(member->memberName));
+                if (enumIt != m_enumConstants.end()) {
+                    return llvm::ConstantInt::get(llvm::Type::getInt32Ty(*m_context), enumIt->second);
+                }
+
+                llvm::GlobalVariable* gVar = findGlobalCaseInsensitive(m_module.get(), fullQual);
+                if (!gVar) gVar = findGlobalCaseInsensitive(m_module.get(), mangled);
+                if (!gVar) gVar = findGlobalCaseInsensitive(m_module.get(), member->memberName);
+                if (gVar) {
+                    return m_builder->CreateLoad(gVar->getValueType(), gVar, member->memberName);
                 }
             }
         }
@@ -4618,12 +4743,18 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
         if (auto var = dynamic_cast<VariableExprASTNode*>(idx->base.get())) {
             auto it = m_namedValues.find(var->name);
             auto tIt = m_variableTypes.find(var->name);
+            if (tIt == m_variableTypes.end()) tIt = m_variableTypes.find(toLower(var->name));
             if (tIt != m_variableTypes.end()) baseType = tIt->second;
             if (it != m_namedValues.end()) {
                 if (baseType.isArray) {
                     baseVal = it->second;
                 } else {
                     baseVal = m_builder->CreateLoad(it->second->getAllocatedType(), it->second, var->name);
+                }
+            } else {
+                llvm::GlobalVariable* gVar = findGlobalCaseInsensitive(m_module.get(), var->name);
+                if (gVar) {
+                    baseVal = gVar;
                 }
             }
         }
@@ -4665,17 +4796,30 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
 
     // Function Calls and Indexing Fallback
     if (auto call = dynamic_cast<CallExprASTNode*>(expr)) {
-        // Check if funcName is actually a local variable/parameter in m_namedValues (e.g. arr(i) or matrix(r, c))
+        // Check if funcName is actually a local variable/parameter in m_namedValues or global array (e.g. arr(i) or matrix(r, c))
         if (!call->calleeExpr && !call->args.empty()) {
             auto it = m_namedValues.find(call->funcName);
-            if (it != m_namedValues.end()) {
-                TypeSpec baseType = m_variableTypes[call->funcName];
+            auto tIt = m_variableTypes.find(call->funcName);
+            if (tIt == m_variableTypes.end()) tIt = m_variableTypes.find(toLower(call->funcName));
+            llvm::GlobalVariable* gVar = nullptr;
+            if (it == m_namedValues.end()) {
+                gVar = findGlobalCaseInsensitive(m_module.get(), call->funcName);
+            }
+            if (it != m_namedValues.end() || gVar) {
+                TypeSpec baseType = (tIt != m_variableTypes.end()) ? tIt->second : TypeSpec();
+                if (gVar && baseType.name.empty() && gVar->getValueType()->isArrayTy()) {
+                    baseType.isArray = true;
+                }
                 if (baseType.pointerDepth > 0 || baseType.isArray || toLower(baseType.name) == "string") {
                     llvm::Value* baseVal = nullptr;
-                    if (baseType.isArray) {
-                        baseVal = it->second;
-                    } else {
-                        baseVal = m_builder->CreateLoad(it->second->getAllocatedType(), it->second, call->funcName);
+                    if (it != m_namedValues.end()) {
+                        if (baseType.isArray) {
+                            baseVal = it->second;
+                        } else {
+                            baseVal = m_builder->CreateLoad(it->second->getAllocatedType(), it->second, call->funcName);
+                        }
+                    } else if (gVar) {
+                        baseVal = gVar;
                     }
 
                     // Compute flat index: for 2D matrix(rows, cols), idx = r * cols + c
@@ -5382,17 +5526,39 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
         }
 
         std::string targetFuncName = call->funcName;
+        bool isQualifiedModuleCall = false;
+        // If calleeExpr is a chain of identifiers (e.g. Drivers.Terminal), reconstruct the qualified name
+        if (call->calleeExpr) {
+            std::function<std::string(ExprASTNode*)> getDottedPrefix = [&](ExprASTNode* e) -> std::string {
+                if (auto v = dynamic_cast<VariableExprASTNode*>(e)) return v->name;
+                if (auto m = dynamic_cast<MemberAccessExprASTNode*>(e)) {
+                    std::string p = getDottedPrefix(m->base.get());
+                    return p.empty() ? m->memberName : (p + "." + m->memberName);
+                }
+                return "";
+            };
+            std::string dotted = getDottedPrefix(call->calleeExpr.get());
+            if (!dotted.empty()) {
+                // If dotted prefix is NOT a local variable or struct instance, treat as qualified module call
+                if (m_namedValues.find(dotted) == m_namedValues.end() && 
+                    m_namedValues.find(dotted.substr(0, dotted.find('.'))) == m_namedValues.end()) {
+                    targetFuncName = dotted + "." + call->funcName;
+                    isQualifiedModuleCall = true;
+                }
+            }
+        }
+
         if (!call->typeArgs.empty()) {
-            targetFuncName = instantiateGenericProcedure(call->funcName, call->typeArgs);
-        } else if (m_genericProcTemplates.find(call->funcName) != m_genericProcTemplates.end() ||
-                   m_genericProcTemplates.find(toLower(call->funcName)) != m_genericProcTemplates.end()) {
+            targetFuncName = instantiateGenericProcedure(targetFuncName, call->typeArgs);
+        } else if (m_genericProcTemplates.find(targetFuncName) != m_genericProcTemplates.end() ||
+                   m_genericProcTemplates.find(toLower(targetFuncName)) != m_genericProcTemplates.end()) {
             // Infer type arguments from call arguments if not explicitly provided
             std::vector<TypeSpec> inferredTypeArgs;
             for (const auto& a : call->args) {
                 inferredTypeArgs.push_back(deduceExprType(a.get()));
             }
             if (!inferredTypeArgs.empty()) {
-                targetFuncName = instantiateGenericProcedure(call->funcName, inferredTypeArgs);
+                targetFuncName = instantiateGenericProcedure(targetFuncName, inferredTypeArgs);
             }
         }
 
@@ -5444,6 +5610,13 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
                     if (ch == '.') ch = '_';
                 }
                 callee = findFunctionCaseInsensitive(m_module.get(), altName);
+            } else if (m_module && m_module->getName().str().find('.') != std::string::npos) {
+                // Intra-module call in dotted module (e.g. MakeAttribute in Drivers.Terminal -> Drivers_Terminal_MakeAttribute)
+                std::string modPref = m_module->getName().str();
+                for (auto& ch : modPref) {
+                    if (ch == '.') ch = '_';
+                }
+                callee = findFunctionCaseInsensitive(m_module.get(), modPref + "_" + targetFuncName);
             }
         }
 
@@ -5483,7 +5656,7 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
         }
 
         std::vector<llvm::Value*> args;
-        if (call->calleeExpr && callee->getFunctionType()->getNumParams() == call->args.size() + 1) {
+        if (!isQualifiedModuleCall && call->calleeExpr && callee->getFunctionType()->getNumParams() == call->args.size() + 1) {
             llvm::Value* thisPtr = getPointerToExpr(call->calleeExpr.get());
             args.push_back(thisPtr);
         }
@@ -5907,12 +6080,19 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
     return nullptr;
 }
 
-void LlvmEmitter::registerExternalProcedure(const std::string& name, const TypeSpec& retType, const std::vector<TypeSpec>& paramTypes, const std::string& aliasName) {
+void LlvmEmitter::registerExternalProcedure(const std::string& name, const TypeSpec& retType, const std::vector<TypeSpec>& paramTypes, const std::string& aliasName, const std::vector<ExprASTNode*>& defExprs) {
     std::string mangledName = aliasName.empty() ? name : aliasName;
     m_procReturnTypes[name] = retType;
     m_procReturnTypes[toLower(name)] = retType;
     m_procReturnTypes[mangledName] = retType;
     m_procReturnTypes[toLower(mangledName)] = retType;
+
+    if (!defExprs.empty()) {
+        m_procDefaults[name] = defExprs;
+        m_procDefaults[toLower(name)] = defExprs;
+        m_procDefaults[mangledName] = defExprs;
+        m_procDefaults[toLower(mangledName)] = defExprs;
+    }
 
     if (!aliasName.empty()) {
         m_funcAliases[name] = aliasName;
@@ -6241,6 +6421,8 @@ bool LlvmEmitter::emitModule(const ModuleNode& moduleNode) {
                     }
                 }
             }
+            m_variableTypes[dim->varName] = dim->type;
+            m_variableTypes[toLower(dim->varName)] = dim->type;
             llvm::GlobalValue::LinkageTypes linkage = llvm::GlobalValue::InternalLinkage;
             new llvm::GlobalVariable(
                 *m_module,
@@ -6280,9 +6462,11 @@ bool LlvmEmitter::emitModule(const ModuleNode& moduleNode) {
             }
             llvm::FunctionType* funcType = llvm::FunctionType::get(retType, paramTypes, false);
             std::string mangledName = proc->name;
-            if (proc->isDeclare && !proc->aliasName.empty()) {
-                mangledName = proc->aliasName;
-                m_funcAliases[proc->name] = proc->aliasName;
+            if (proc->isDeclare) {
+                if (!proc->aliasName.empty()) {
+                    mangledName = proc->aliasName;
+                    m_funcAliases[proc->name] = proc->aliasName;
+                }
             } else if (!className.empty()) {
                 if (proc->propertyKind == ProcedureNode::PropertyKind::Get) {
                     mangledName = className + "_get_" + proc->name;

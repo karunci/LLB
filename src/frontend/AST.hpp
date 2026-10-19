@@ -103,7 +103,9 @@ public:
 class AddressOfExprASTNode : public ExprASTNode {
 public:
     std::string targetName;
+    std::unique_ptr<ExprASTNode> targetExpr;
     explicit AddressOfExprASTNode(std::string name) : targetName(std::move(name)) {}
+    explicit AddressOfExprASTNode(std::unique_ptr<ExprASTNode> expr) : targetExpr(std::move(expr)) {}
 };
 
 class MemberAccessExprASTNode : public ExprASTNode {

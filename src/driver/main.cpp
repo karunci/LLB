@@ -194,6 +194,13 @@ static std::string compileSourceFile(
                     irEmitter.emitStructure(*st);
                 }
             }
+            // Import Constants
+            else if (auto c = dynamic_cast<const llbc::ConstStmtNode*>(member.get())) {
+                if (c->isPublic && (imp.symbolName.empty() || imp.symbolName == c->name)) {
+                    std::string pref = !imp.moduleName.empty() ? imp.moduleName : targetMod->name;
+                    irEmitter.declareConstant(*c, pref);
+                }
+            }
             // Import Procedures (Public Functions & Subs)
             else if (auto proc = dynamic_cast<const llbc::ProcedureNode*>(member.get())) {
                 if (proc->isPublic) {
@@ -206,13 +213,34 @@ static std::string compileSourceFile(
                             pTypes.push_back(pt);
                         }
                         llbc::TypeSpec retType = proc->isFunction ? proc->returnType : llbc::TypeSpec{"void"};
-                        std::string alias = (!imp.aliasName.empty() && !imp.symbolName.empty()) ? imp.aliasName : "";
-                        irEmitter.registerExternalProcedure(proc->name, retType, pTypes, alias);
+
+                        std::vector<llbc::ExprASTNode*> defExprs;
+                        for (const auto& p : proc->parameters) {
+                            defExprs.push_back(p.defaultValue.get());
+                        }
+
+                        // If the procedure comes from a dotted module (e.g., Drivers.Terminal),
+                        // its mangled symbol in the object file is ModulePrefix_ProcName (e.g. Drivers_Terminal_Initialize).
+                        std::string targetPrefix = "";
+                        if (targetMod->name.find('.') != std::string::npos) {
+                            targetPrefix = targetMod->name;
+                            for (auto& ch : targetPrefix) {
+                                if (ch == '.') ch = '_';
+                            }
+                        }
+
+                        std::string symbolMangled = !targetPrefix.empty() ? (targetPrefix + "_" + proc->name) : proc->name;
+                        std::string alias = (!imp.aliasName.empty() && !imp.symbolName.empty()) ? imp.aliasName : symbolMangled;
+                        irEmitter.registerExternalProcedure(proc->name, retType, pTypes, alias, defExprs);
 
                         // If imported as ModuleName.ProcName, also register qualified name
                         if (!imp.moduleName.empty()) {
                             std::string qual = imp.moduleName + "." + proc->name;
-                            irEmitter.registerExternalProcedure(qual, retType, pTypes, proc->name);
+                            irEmitter.registerExternalProcedure(qual, retType, pTypes, symbolMangled, defExprs);
+                        }
+                        if (targetMod->name != imp.moduleName) {
+                            std::string qualTarget = targetMod->name + "." + proc->name;
+                            irEmitter.registerExternalProcedure(qualTarget, retType, pTypes, symbolMangled, defExprs);
                         }
                     }
                 }
@@ -223,6 +251,14 @@ static std::string compileSourceFile(
     if (!irEmitter.emitModule(*moduleAST)) {
         std::cerr << "Error: IR Verification failed for module " << moduleAST->name << "\n";
         return "";
+    }
+
+    {
+        std::error_code ec;
+        llvm::raw_fd_ostream irOut(moduleAST->name + ".ll", ec);
+        if (!ec) {
+            irEmitter.getModule()->print(irOut, nullptr);
+        }
     }
 
     std::string objFilename = moduleAST->name + ".o";

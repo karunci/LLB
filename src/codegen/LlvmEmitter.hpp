@@ -28,7 +28,8 @@ public:
     explicit LlvmEmitter(const std::string& moduleName, bool enableDebugInfo = false, const std::string& targetTriple = "");
 
     bool emitModule(const ModuleNode& moduleNode);
-    void registerExternalProcedure(const std::string& name, const TypeSpec& retType, const std::vector<TypeSpec>& paramTypes, const std::string& aliasName = "");
+    void registerExternalProcedure(const std::string& name, const TypeSpec& retType, const std::vector<TypeSpec>& paramTypes, const std::string& aliasName = "", const std::vector<ExprASTNode*>& defExprs = {});
+    void declareConstant(const ConstStmtNode& constNode, const std::string& prefix = "");
     llvm::Function* emitProcedure(const ProcedureNode& procNode, const std::string& className = "", const std::vector<std::unique_ptr<ASTNode>>* bodyStatements = nullptr);
 
     void emitStructure(const StructureNode& structNode);

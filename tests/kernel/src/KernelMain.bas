@@ -7,6 +7,7 @@
 Module KernelMain
 
     Import Drivers.Terminal
+    Import Arch.Idt
 
     ' Helper to send a character to COM1 serial port (0x3F8)
     Private Unsafe Sub WriteSerial(ByVal ch As Byte)
@@ -31,45 +32,44 @@ Module KernelMain
         WriteSerialString CPtr(Pointer To Byte, "\r\n[PRK-OS KERNEL] Booting Low-Level Basic Kernel in QEMU!\r\n")
         WriteSerialString CPtr(Pointer To Byte, "[PRK-OS KERNEL] Multiboot Verified. Long mode active.\r\n")
 
-        ' Declare Terminal instance
-        Dim term As Terminal
-        term.Initialize Terminal.COLOR_LIGHT_GREEN, Terminal.COLOR_BLACK
+        ' Initialize VGA Terminal Driver
+        Drivers.Terminal.Initialize Drivers.Terminal.COLOR_LIGHT_GREEN, Drivers.Terminal.COLOR_BLACK
         WriteSerialString CPtr(Pointer To Byte, "[PRK-OS KERNEL] VGA Terminal Driver initialized (&HB8000).\r\n")
 
-        term.WriteLine CPtr(Pointer To Byte, "=========================================")
-        term.WriteLine CPtr(Pointer To Byte, "      PRK-OS LOW-LEVEL BASIC KERNEL      ")
-        term.WriteLine CPtr(Pointer To Byte, "=========================================")
-        term.WriteChar 10
+        Drivers.Terminal.WriteLine CPtr(Pointer To Byte, "=========================================")
+        Drivers.Terminal.WriteLine CPtr(Pointer To Byte, "      PRK-OS LOW-LEVEL BASIC KERNEL      ")
+        Drivers.Terminal.WriteLine CPtr(Pointer To Byte, "=========================================")
+        Drivers.Terminal.WriteChar 10
 
         ' Output Multiboot info address in Hex
-        term.SetColor Terminal.COLOR_LIGHT_CYAN
-        term.WriteString CPtr(Pointer To Byte, "Multiboot Magic: ")
-        term.WriteHex CType(UInt64, magic)
-        term.WriteChar 10
+        Drivers.Terminal.SetColor Drivers.Terminal.COLOR_LIGHT_CYAN
+        Drivers.Terminal.WriteString CPtr(Pointer To Byte, "Multiboot Magic: ")
+        Drivers.Terminal.WriteHex CType(UInt64, magic)
+        Drivers.Terminal.WriteChar 10
 
-        term.WriteString CPtr(Pointer To Byte, "Multiboot Info Address: ")
-        term.WriteHex CType(UInt64, mbAddress)
-        term.WriteChar 10
-        term.WriteChar 10
+        Drivers.Terminal.WriteString CPtr(Pointer To Byte, "Multiboot Info Address: ")
+        Drivers.Terminal.WriteHex CType(UInt64, mbAddress)
+        Drivers.Terminal.WriteChar 10
+        Drivers.Terminal.WriteChar 10
 
         ' Demonstrate Color Formatting
-        term.SetColor Terminal.COLOR_LIGHT_RED
-        term.WriteLine CPtr(Pointer To Byte, "[ERROR] Demonstrating red text formatting.")
+        Drivers.Terminal.SetColor Drivers.Terminal.COLOR_LIGHT_RED
+        Drivers.Terminal.WriteLine CPtr(Pointer To Byte, "[ERROR] Demonstrating red text formatting.")
 
-        term.SetColor Terminal.COLOR_LIGHT_MAGENTA
-        term.WriteLine CPtr(Pointer To Byte, "[INFO] Demonstrating magenta text formatting.")
+        Drivers.Terminal.SetColor Drivers.Terminal.COLOR_LIGHT_MAGENTA
+        Drivers.Terminal.WriteLine CPtr(Pointer To Byte, "[INFO] Demonstrating magenta text formatting.")
 
-        term.SetColor Terminal.COLOR_YELLOW
-        term.WriteLine CPtr(Pointer To Byte, "[WARN] Demonstrating auto-scrolling terminal...")
-        term.WriteChar 10
+        Drivers.Terminal.SetColor Drivers.Terminal.COLOR_LIGHT_BROWN
+        Drivers.Terminal.WriteLine CPtr(Pointer To Byte, "[WARN] Demonstrating auto-scrolling terminal...")
+        Drivers.Terminal.WriteChar 10
 
-        ' Force screen scrolling by printing multiple lines
-        term.SetColor Terminal.COLOR_WHITE
+        ' Demonstrate scrolling with a few lines so the banner remains visible
+        Drivers.Terminal.SetColor Drivers.Terminal.COLOR_WHITE
         Dim i As UInt32
-        For i = 1 To 30
-            term.WriteString CPtr(Pointer To Byte, "Log Entry #")
-            term.WriteHex CType(UInt64, i)
-            term.WriteLine CPtr(Pointer To Byte, " - Terminal scrolling line test.")
+        For i = 1 To 16
+            Drivers.Terminal.WriteString CPtr(Pointer To Byte, "Log Entry #")
+            Drivers.Terminal.WriteHex CType(UInt64, i)
+            Drivers.Terminal.WriteLine CPtr(Pointer To Byte, " - Terminal scrolling line test.")
         Next i
 
         WriteSerialString CPtr(Pointer To Byte, "[PRK-OS KERNEL] Initializing IDT interrupt descriptors...\r\n")

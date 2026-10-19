@@ -776,56 +776,127 @@ gdt64_pointer:
 
 ```
 
-#### File 2: `src/drivers/Terminal.cls` (VGA Terminal Class)
+#### File 2: `src/drivers/Terminal.bas` (Freestanding VGA Terminal Driver)
 
 ```vb
 ' Project Name: PRK-OS
-' Filename: src/drivers/Terminal.cls
-' Summary: Low-Level Basic Object-Oriented VGA Driver.
+' Filename: src/drivers/Terminal.bas
+' Summary: High-performance bare-metal VGA text mode (80x25) console driver for x86_64 Long Mode.
 
-Class Drivers.Terminal
+Module Drivers.Terminal
 
-    Private Const VGA_WIDTH As UInt32 = 80
-    Private Const VGA_HEIGHT As UInt32 = 25
-    Private Const VGA_ADDRESS As UInt64 = &HB8000
+    Public Const VGA_WIDTH As UInt32 = 80
+    Public Const VGA_HEIGHT As UInt32 = 25
+    Public Const VGA_MEMORY_ADDRESS As UInt64 = &HB8000
 
-    Private buffer As Volatile Pointer To UInt16
+    Public Const COLOR_BLACK As Byte = 0
+    Public Const COLOR_BLUE As Byte = 1
+    Public Const COLOR_GREEN As Byte = 2
+    Public Const COLOR_CYAN As Byte = 3
+    Public Const COLOR_RED As Byte = 4
+    Public Const COLOR_MAGENTA As Byte = 5
+    Public Const COLOR_BROWN As Byte = 6
+    Public Const COLOR_LIGHT_GREY As Byte = 7
+    Public Const COLOR_DARK_GREY As Byte = 8
+    Public Const COLOR_LIGHT_BLUE As Byte = 9
+    Public Const COLOR_LIGHT_GREEN As Byte = 10
+    Public Const COLOR_LIGHT_CYAN As Byte = 11
+    Public Const COLOR_LIGHT_RED As Byte = 12
+    Public Const COLOR_LIGHT_MAGENTA As Byte = 13
+    Public Const COLOR_LIGHT_BROWN As Byte = 14
+    Public Const COLOR_WHITE As Byte = 15
+
     Private cursorX As UInt32
     Private cursorY As UInt32
-    Private attribute As Byte
+    Private currentAttribute As Byte
 
-    Public Unsafe Sub Initialize(ByVal fg As Byte, ByVal bg As Byte)
-        Me.buffer = CPtr(Volatile Pointer To UInt16, VGA_ADDRESS)
-        Me.attribute = fg Or (bg LShift 4)
-        Me.cursorX = 0
-        Me.cursorY = 0
-        Me.Clear
+    Private Function MakeAttribute(ByVal fg As Byte, ByVal bg As Byte) As Byte
+        MakeAttribute = fg Or (bg LShift 4)
+    End Function
+
+    Private Function MakeVgaEntry(ByVal ch As Byte, ByVal attr As Byte) As UInt16
+        MakeVgaEntry = CType(UInt16, ch) Or (CType(UInt16, attr) LShift 8)
+    End Function
+
+    Public Unsafe Sub Initialize(Optional ByVal fg As Byte = COLOR_WHITE, Optional ByVal bg As Byte = COLOR_BLACK)
+        cursorX = 0
+        cursorY = 0
+        currentAttribute = MakeAttribute(fg, bg)
+        Clear
+    End Sub
+
+    Public Sub SetColor(ByVal fg As Byte, Optional ByVal bg As Byte = COLOR_BLACK)
+        currentAttribute = MakeAttribute(fg, bg)
     End Sub
 
     Public Unsafe Sub Clear()
-        Dim blank As UInt16
-        blank = CType(UInt16, 32) Or (CType(UInt16, Me.attribute) LShift 8)
+        Dim vgaBuf As Volatile Pointer To UInt16
+        vgaBuf = CPtr(Volatile Pointer To UInt16, VGA_MEMORY_ADDRESS)
+
+        Dim blankEntry As UInt16
+        blankEntry = MakeVgaEntry(32, currentAttribute)
 
         Dim i As UInt32
         For i = 0 To (VGA_WIDTH * VGA_HEIGHT) - 1
-            Me.buffer(i) = blank
+            vgaBuf(i) = blankEntry
         Next i
+
+        cursorX = 0
+        cursorY = 0
+    End Sub
+
+    Public Unsafe Private Sub Scroll()
+        Dim vgaBuf As Volatile Pointer To UInt16
+        vgaBuf = CPtr(Volatile Pointer To UInt16, VGA_MEMORY_ADDRESS)
+
+        Dim row As UInt32
+        Dim col As UInt32
+        Dim destOffset As UInt32
+        Dim srcOffset As UInt32
+
+        For row = 1 To VGA_HEIGHT - 1
+            For col = 0 To VGA_WIDTH - 1
+                destOffset = ((row - 1) * VGA_WIDTH) + col
+                srcOffset = (row * VGA_WIDTH) + col
+                vgaBuf(destOffset) = vgaBuf(srcOffset)
+            Next col
+        Next row
+
+        Dim blankEntry As UInt16
+        blankEntry = MakeVgaEntry(32, currentAttribute)
+        Dim bottomRowOffset As UInt32
+        bottomRowOffset = (VGA_HEIGHT - 1) * VGA_WIDTH
+
+        For col = 0 To VGA_WIDTH - 1
+            vgaBuf(bottomRowOffset + col) = blankEntry
+        Next col
+
+        cursorY = VGA_HEIGHT - 1
     End Sub
 
     Public Unsafe Sub WriteChar(ByVal ch As Byte)
+        Dim vgaBuf As Volatile Pointer To UInt16
+        vgaBuf = CPtr(Volatile Pointer To UInt16, VGA_MEMORY_ADDRESS)
+
         If ch = 10 Then
-            Me.cursorX = 0
-            Me.cursorY = Me.cursorY + 1
+            cursorX = 0
+            cursorY = cursorY + 1
+        ElseIf ch = 13 Then
+            cursorX = 0
         Else
-            Dim offset As UInt32
-            offset = (Me.cursorY * VGA_WIDTH) + Me.cursorX
-            Me.buffer(offset) = CType(UInt16, ch) Or (CType(UInt16, Me.attribute) LShift 8)
-            Me.cursorX = Me.cursorX + 1
+            Dim charOffset As UInt32
+            charOffset = (cursorY * VGA_WIDTH) + cursorX
+            vgaBuf(charOffset) = MakeVgaEntry(ch, currentAttribute)
+            cursorX = cursorX + 1
         End If
 
-        If Me.cursorX >= VGA_WIDTH Then
-            Me.cursorX = 0
-            Me.cursorY = Me.cursorY + 1
+        If cursorX >= VGA_WIDTH Then
+            cursorX = 0
+            cursorY = cursorY + 1
+        End If
+
+        If cursorY >= VGA_HEIGHT Then
+            Scroll
         End If
     End Sub
 
@@ -833,13 +904,17 @@ Class Drivers.Terminal
         Dim i As UInt64
         i = 0
         Do While strPtr(i) <> 0
-            Me.WriteChar strPtr(i)
+            WriteChar strPtr(i)
             i = i + 1
         Loop
     End Sub
 
-End Class
+    Public Unsafe Sub WriteLine(ByVal strPtr As Pointer To Byte)
+        WriteString strPtr
+        WriteChar 10
+    End Sub
 
+End Module
 ```
 
 #### File 3: `src/KernelMain.bas` (Kernel Entry Point)
@@ -852,13 +927,28 @@ End Class
 Module KernelMain
 
     Import Drivers.Terminal
+    Import Arch.Idt
 
     Public Unsafe Sub KernelEntry(ByVal magic As UInt32, ByVal mbAddress As Pointer To Byte)
-        Dim term As Terminal
-        term.Initialize 10, 0 ' Light Green on Black
+        ' Initialize VGA Terminal Driver (Light Green on Black)
+        Drivers.Terminal.Initialize Drivers.Terminal.COLOR_LIGHT_GREEN, Drivers.Terminal.COLOR_BLACK
 
-        term.WriteString CPtr(Pointer To Byte, "PRK-OS Kernel Initialized via Low-Level Basic (LLB)!")
-        term.WriteChar 10
+        Drivers.Terminal.WriteLine CPtr(Pointer To Byte, "=========================================")
+        Drivers.Terminal.WriteLine CPtr(Pointer To Byte, "      PRK-OS LOW-LEVEL BASIC KERNEL      ")
+        Drivers.Terminal.WriteLine CPtr(Pointer To Byte, "=========================================")
+        Drivers.Terminal.WriteChar 10
+
+        Drivers.Terminal.SetColor Drivers.Terminal.COLOR_LIGHT_CYAN
+        Drivers.Terminal.WriteString CPtr(Pointer To Byte, "Multiboot Magic: ")
+        Drivers.Terminal.WriteHex CType(UInt64, magic)
+        Drivers.Terminal.WriteChar 10
+
+        Drivers.Terminal.WriteString CPtr(Pointer To Byte, "Multiboot Info Address: ")
+        Drivers.Terminal.WriteHex CType(UInt64, mbAddress)
+        Drivers.Terminal.WriteChar 10
+
+        ' Initialize IDT interrupt descriptors
+        Arch.Idt.Initialize
 
         Do
             Asm "hlt"
@@ -866,7 +956,6 @@ Module KernelMain
     End Sub
 
 End Module
-
 ```
 
 ---
@@ -880,21 +969,17 @@ To execute the self-hosting compiler pipeline on your project:
 mkdir build && cd build
 cmake ..
 make -j4
-
 ```
-
 
 2. **Compile LLB Kernel Project:**
 ```bash
-./llbc-stage0 Kernel.llbproj
-
+./llbc-stage0 tests/kernel/Kernel.llbproj
 ```
-
 
 3. **Test Executable in QEMU (Verified on Bare-Metal & Termux):**
 ```bash
 # Direct Multiboot kernel boot with serial output mirrored to terminal
-qemu-system-x86_64 -kernel kernel.elf -display none -serial stdio -no-reboot -no-shutdown
+qemu-system-x86_64 -kernel tests/kernel/kernel.elf -display none -serial stdio -no-reboot -no-shutdown
 ```
 
 **Verified Boot Output:**
@@ -906,3 +991,7 @@ qemu-system-x86_64 -kernel kernel.elf -display none -serial stdio -no-reboot -no
 [PRK-OS KERNEL] IDT gates registered successfully.
 [PRK-OS KERNEL] Kernel execution completed successfully. Halting CPU.
 ```
+
+**VGA Terminal Demo Screenshot:**
+
+![PRK-OS Low-Level Basic VGA Text Mode Screenshot](docs/vga_terminal_demo.png)

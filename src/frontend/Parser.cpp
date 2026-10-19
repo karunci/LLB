@@ -403,16 +403,16 @@ ImportDirective Parser::parseImportStatement() {
     }
 
     // Case 2 & 3: Import ModuleName[.Symbol] [As Alias] [In "path/file.bas"]
-    std::string firstPart = m_currentToken.text;
+    // Support multi-part dotted module names like Import Drivers.Terminal
+    std::string fullName = m_currentToken.text;
     expect(TokenType::Identifier, "Expected module identifier or string path after 'Import'");
 
-    if (match(TokenType::Dot)) {
-        directive.moduleName = firstPart;
-        directive.symbolName = m_currentToken.text;
-        expect(TokenType::Identifier, "Expected symbol identifier after '.' in Import");
-    } else {
-        directive.moduleName = firstPart;
+    while (match(TokenType::Dot)) {
+        fullName += "." + m_currentToken.text;
+        expect(TokenType::Identifier, "Expected identifier after '.' in Import");
     }
+
+    directive.moduleName = fullName;
 
     // Optional: As Alias
     if (m_currentToken.type == TokenType::KwAs || checkKeyword("As")) {
@@ -1609,6 +1609,14 @@ std::unique_ptr<ExprASTNode> Parser::parseUnary() {
     if (m_currentToken.type == TokenType::Plus) {
         consume();
         return parseUnary();
+    }
+    if (m_currentToken.type == TokenType::At) {
+        consume();
+        auto expr = parseUnary();
+        if (auto var = dynamic_cast<VariableExprASTNode*>(expr.get())) {
+            return std::make_unique<AddressOfExprASTNode>(var->name);
+        }
+        return std::make_unique<AddressOfExprASTNode>(std::move(expr));
     }
     return parsePostfixExpr();
 }

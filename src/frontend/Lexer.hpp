@@ -139,7 +139,8 @@ enum class TokenType {
     Minus,          // -
     Asterisk,       // *
     Slash,          // /
-    Ampersand       // &
+    Ampersand,      // &
+    At              // @
 };
 
 struct Token {

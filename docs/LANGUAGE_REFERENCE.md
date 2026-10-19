@@ -562,7 +562,7 @@ LinkerScript = "linker.ld"
 [Sources]
 Assembly = "src/boot.S"
 Module = "src/Idt.bas"
-Class = "src/Terminal.cls"
+Module = "src/Terminal.bas"
 Module = "src/KernelMain.bas"
 
 [CompilerOptions]

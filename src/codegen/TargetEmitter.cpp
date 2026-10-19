@@ -375,4 +375,41 @@ bool TargetEmitter::createStaticArchive(
     return true;
 }
 
+bool TargetEmitter::emitRawBinary(
+    const std::string& inputElfFile,
+    const std::string& outputBinFile
+) {
+    // Prefer llvm-objcopy, objcopy, or llvm-strip
+    const char* objcopyTools[] = {
+        "llvm-objcopy",
+        "objcopy",
+        "/data/data/com.termux/files/usr/bin/objcopy",
+        "/usr/bin/llvm-objcopy",
+        "/usr/bin/objcopy"
+    };
+
+    std::string toolChosen = "";
+    for (const char* tool : objcopyTools) {
+        std::string checkCmd = std::string("which ") + tool + " >/dev/null 2>&1";
+        if (std::system(checkCmd.c_str()) == 0) {
+            toolChosen = tool;
+            break;
+        }
+    }
+
+    if (toolChosen.empty()) {
+        std::cerr << "[llbc] Error: objcopy/llvm-objcopy not found in PATH to emit raw binary.\n";
+        return false;
+    }
+
+    std::string cmd = toolChosen + " -O binary " + inputElfFile + " " + outputBinFile;
+    int ret = std::system(cmd.c_str());
+    if (ret != 0) {
+        std::cerr << "[llbc] Error: Failed to extract flat binary with: " << cmd << "\n";
+        return false;
+    }
+
+    return true;
+}
+
 } // namespace llbc

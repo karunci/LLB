@@ -67,7 +67,7 @@ public:
                 if (key == "Name") config.name = value;
                 else if (key == "Type") {
                     config.type = value;
-                    if (value == "Kernel" || value == "Freestanding" || value == "BareMetal") {
+                    if (value == "Kernel" || value == "Freestanding" || value == "BareMetal" || value == "RawBinary") {
                         config.isFreestanding = true;
                     }
                 } else if (key == "Freestanding") {
@@ -84,7 +84,8 @@ public:
             }
         }
 
-        config.outputFile = resolvePath(config.name + ".elf");
+        std::string ext = (config.type == "RawBinary") ? ".bin" : ".elf";
+        config.outputFile = resolvePath(config.name + ext);
         return config;
     }
 };

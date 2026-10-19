@@ -258,6 +258,7 @@ int main(int argc, char** argv) {
     bool isShared = false;
     bool isStatic = false;
     bool isFreestanding = false;
+    bool isRawBinary = false;
     bool enableDebugInfo = false;
     int optLevel = 0;
 
@@ -310,6 +311,10 @@ int main(int argc, char** argv) {
             isShared = true;
         } else if (arg == "-static" || arg == "--static" || arg == "-archive") {
             isStatic = true;
+        } else if (arg == "-raw-binary" || arg == "--raw-binary" || (arg == "-O" && i + 1 < argc && std::string(argv[i + 1]) == "binary")) {
+            if (arg == "-O") ++i;
+            isRawBinary = true;
+            isFreestanding = true;
         } else if (arg == "-freestanding" || arg == "--freestanding" || arg == "-nostdlib" || arg == "--nostdlib") {
             isFreestanding = true;
         } else if (arg == "-O0") {
@@ -354,6 +359,9 @@ int main(int argc, char** argv) {
             isShared = true;
         } else if (config.type == "StaticLibrary" || config.type == "Archive") {
             isStatic = true;
+        } else if (config.type == "RawBinary") {
+            isRawBinary = true;
+            isFreestanding = true;
         }
 
         // Register all project sources in module file catalog
@@ -433,9 +441,22 @@ int main(int argc, char** argv) {
             return 1;
         }
     } else {
-        std::cout << "[llbc] Linking " << objectFiles.size() << " object file(s) into " << outputFile << "...\n";
-        if (llbc::TargetEmitter::linkExecutable(objectFiles, outputFile, linkerScript, isShared, isFreestanding, targetTriple, sysroot)) {
-            if (isShared) {
+        std::string linkTarget = outputFile;
+        if (isRawBinary) {
+            linkTarget = outputFile + ".elf";
+        }
+
+        std::cout << "[llbc] Linking " << objectFiles.size() << " object file(s) into " << linkTarget << "...\n";
+        if (llbc::TargetEmitter::linkExecutable(objectFiles, linkTarget, linkerScript, isShared, isFreestanding, targetTriple, sysroot)) {
+            if (isRawBinary) {
+                std::cout << "[llbc] Extracting flat binary -> " << outputFile << "...\n";
+                if (llbc::TargetEmitter::emitRawBinary(linkTarget, outputFile)) {
+                    std::cout << "[llbc] SUCCESS: Raw Binary created -> " << outputFile << "\n";
+                } else {
+                    std::cerr << "Error: Raw binary extraction failed!\n";
+                    return 1;
+                }
+            } else if (isShared) {
                 std::cout << "[llbc] SUCCESS: Dynamic Library created -> " << outputFile << "\n";
             } else {
                 std::cout << "[llbc] SUCCESS: Executable created -> " << outputFile << "\n";

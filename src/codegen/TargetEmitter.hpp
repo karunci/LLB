@@ -47,6 +47,11 @@ public:
         const std::string& outputFile
     );
 
+    static bool emitRawBinary(
+        const std::string& inputElfFile,
+        const std::string& outputBinFile
+    );
+
 private:
     TargetConfig m_config;
 };

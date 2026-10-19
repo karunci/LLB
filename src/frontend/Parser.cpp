@@ -822,7 +822,8 @@ std::unique_ptr<MatchStmtNode> Parser::parseMatchStatement() {
 }
 
 std::unique_ptr<AsmStmtNode> Parser::parseAsmStatement() {
-    if (m_currentToken.type == TokenType::StringLiteral) {
+    // Single-line Asm on same line, e.g.: Asm "hlt"
+    if (m_currentToken.type == TokenType::StringLiteral && !m_currentToken.hasLeadingNewline) {
         std::string code = m_currentToken.text;
         consume();
         return std::make_unique<AsmStmtNode>(code);
@@ -830,14 +831,25 @@ std::unique_ptr<AsmStmtNode> Parser::parseAsmStatement() {
 
     // Multiline Asm block until 'End Asm'
     std::string fullCode;
+    std::string constraintsStr;
+    std::vector<std::unique_ptr<ExprASTNode>> inputs;
+
+    // Phase 0: Template strings
     while (m_currentToken.type != TokenType::Eof) {
         if (m_currentToken.type == TokenType::KwEnd || checkKeyword("End")) {
             consume();
             if (m_currentToken.type == TokenType::KwAsm || checkKeyword("Asm")) {
                 consume();
             }
+            auto node = std::make_unique<AsmStmtNode>(fullCode);
+            return node;
+        }
+
+        if (m_currentToken.type == TokenType::Colon) {
+            // Reached output operands separator ':'
             break;
         }
+
         if (m_currentToken.type == TokenType::StringLiteral) {
             if (!fullCode.empty()) fullCode += "\n";
             fullCode += m_currentToken.text;
@@ -847,7 +859,82 @@ std::unique_ptr<AsmStmtNode> Parser::parseAsmStatement() {
         }
     }
 
-    return std::make_unique<AsmStmtNode>(fullCode);
+    // Phase 1: Output operands (after first ':')
+    if (m_currentToken.type == TokenType::Colon) {
+        consume();
+        while (m_currentToken.type != TokenType::Colon &&
+               m_currentToken.type != TokenType::KwEnd && !checkKeyword("End") &&
+               m_currentToken.type != TokenType::Eof) {
+            // For future output operands handling
+            consume();
+        }
+    }
+
+    // Phase 2: Input operands (after second ':')
+    if (m_currentToken.type == TokenType::Colon) {
+        consume();
+        while (m_currentToken.type != TokenType::Colon &&
+               m_currentToken.type != TokenType::KwEnd && !checkKeyword("End") &&
+               m_currentToken.type != TokenType::Eof) {
+            if (m_currentToken.type == TokenType::StringLiteral) {
+                std::string c = m_currentToken.text;
+                consume();
+                if (!constraintsStr.empty()) constraintsStr += ",";
+                constraintsStr += c;
+
+                if (match(TokenType::LParen)) {
+                    inputs.push_back(parseExpression());
+                    expect(TokenType::RParen, "Expected ')' after input operand expression in Asm");
+                }
+            } else if (match(TokenType::Comma)) {
+                continue;
+            } else {
+                consume();
+            }
+        }
+    }
+
+    // Phase 3: Clobbers (after third ':')
+    if (m_currentToken.type == TokenType::Colon) {
+        consume();
+        while (m_currentToken.type != TokenType::KwEnd && !checkKeyword("End") &&
+               m_currentToken.type != TokenType::Eof) {
+            if (m_currentToken.type == TokenType::StringLiteral) {
+                std::string clobber = "~{" + m_currentToken.text + "}";
+                consume();
+                if (!constraintsStr.empty()) constraintsStr += ",";
+                constraintsStr += clobber;
+            } else if (match(TokenType::Comma)) {
+                continue;
+            } else {
+                consume();
+            }
+        }
+    }
+
+    // Consume trailing 'End Asm'
+    while (m_currentToken.type != TokenType::Eof) {
+        if (m_currentToken.type == TokenType::KwEnd || checkKeyword("End")) {
+            consume();
+            if (m_currentToken.type == TokenType::KwAsm || checkKeyword("Asm")) {
+                consume();
+            }
+            break;
+        }
+        consume();
+    }
+
+    // Always include standard clobbers if not already present
+    if (!constraintsStr.empty()) {
+        constraintsStr += ",~{dirflag},~{fpsr},~{flags}";
+    } else {
+        constraintsStr = "~{dirflag},~{fpsr},~{flags}";
+    }
+
+    auto node = std::make_unique<AsmStmtNode>(fullCode);
+    node->constraints = constraintsStr;
+    node->inputOperands = std::move(inputs);
+    return node;
 }
 
 std::unique_ptr<WithStmtNode> Parser::parseWithStatement() {
@@ -1793,22 +1880,22 @@ std::unique_ptr<ProcedureNode> Parser::parseProcedure(bool isPublic, bool isInli
     procNode->line = m_currentToken.line;
     procNode->column = m_currentToken.column;
 
-    if (m_currentToken.type == TokenType::KwPublic || checkKeyword("Public")) {
-        consume();
-        procNode->isPublic = true;
-    } else if (m_currentToken.type == TokenType::KwPrivate || checkKeyword("Private")) {
-        consume();
-        procNode->isPublic = false;
-    }
-
-    if (m_currentToken.type == TokenType::KwDeclare || checkKeyword("Declare")) {
-        consume();
-        procNode->isDeclare = true;
-    }
-
-    if (m_currentToken.type == TokenType::KwUnsafe || checkKeyword("Unsafe")) {
-        consume();
-        procNode->isUnsafe = true;
+    while (true) {
+        if (m_currentToken.type == TokenType::KwPublic || checkKeyword("Public")) {
+            consume();
+            procNode->isPublic = true;
+        } else if (m_currentToken.type == TokenType::KwPrivate || checkKeyword("Private")) {
+            consume();
+            procNode->isPublic = false;
+        } else if (m_currentToken.type == TokenType::KwDeclare || checkKeyword("Declare")) {
+            consume();
+            procNode->isDeclare = true;
+        } else if (m_currentToken.type == TokenType::KwUnsafe || checkKeyword("Unsafe")) {
+            consume();
+            procNode->isUnsafe = true;
+        } else {
+            break;
+        }
     }
 
     if (m_currentToken.type == TokenType::KwSub || checkKeyword("Sub")) {

@@ -292,6 +292,9 @@ public:
 class AsmStmtNode : public ASTNode {
 public:
     std::string assemblyCode;
+    std::string constraints{"~{dirflag},~{fpsr},~{flags}"};
+    std::vector<std::unique_ptr<ExprASTNode>> inputOperands;
+
     explicit AsmStmtNode(std::string code) : assemblyCode(std::move(code)) {}
 };
 

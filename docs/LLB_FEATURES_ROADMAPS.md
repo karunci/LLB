@@ -1,6 +1,10 @@
 # LLB Gap Analysis: VB6 Features & Modern Language Standards
 
-> **Status Legend:** ✅ Implemented | 🔧 Partial | ❌ Missing
+> **Status Legend:**
+> - ✅ **Implemented**: Fully operational in compiler, runtime, and verified in test suites.
+> - 🔧 **Partial**: Functional with known boundaries or alternate idiom available.
+> - 🚫 **Non-Goal / Won't Implement**: Intentionally excluded to maintain freestanding microkernel portability, zero-cost abstractions, deterministic latency, and cross-compilation integrity.
+> - ⏳ **Future Roadmap**: High-value candidate for post-bootstrap development.
 
 ## Core Design Philosophy & Architecture
 
@@ -48,7 +52,7 @@ LLB fuses the safety and performance of modern systems languages with the approa
 | `CStr`, `CInt`, `CLng`, `CDbl`, `Val` conversion | ✅ | Explicit type conversion & numeric parsing functions |
 | Line continuation (`_`) | ✅ | Multi-line statement support |
 | String comparison (`StrComp`, `Option Compare`) | ✅ | Built-in three-way string comparison function (`StrComp`) returning -1, 0, 1 |
-| `DoEvents` | ❌ | Cooperative yield (N/A for systems lang) |
+| `DoEvents` | 🚫 Won't Implement | Windows GUI message pump (`PeekMessage`/`DispatchMessage`). Inapplicable for freestanding systems & kernels. |
 | Collections / `For Each` | ✅ | Iterator-based looping over fixed arrays & dynamic collections (`ArrayList`, etc.) |
 
 ---
@@ -66,15 +70,14 @@ LLB fuses the safety and performance of modern systems languages with the approa
 | Static arrays (`Dim x(N) As T`) | ✅ | Stack-allocated fixed arrays |
 | `Single` / `Double` (floating point) | ✅ | IEEE-754 32-bit & 64-bit float types |
 | `Currency` / `Decimal` | ✅ | Fixed-point decimal types (64-bit fixed-point scaled units) |
-| `Variant` / `Object` | ❌ | Dynamic/boxed types (low priority for systems lang) |
-| `Date` | ❌ | Date/time type |
-| Dynamic arrays (heap, resizable) | ❌ | Requires runtime allocator |
+| `Variant` / `Object` | 🚫 Won't Implement | Dynamically-typed boxed COM structures. Contradicts bare-metal zero-cost goals; use `Union`, `Structure(Of T)`, or `Result(T, E)`. |
+| `Date` | 🚫 Won't Implement | High-level calendar/locale type requiring OS libc timezone databases. Systems code uses `UInt64` UNIX timestamps. |
+| Dynamic arrays (syntax `Dim x()`) | 🔧 Partial | Supported via dynamic pointer resizing (`ReDim`, `ReDim Preserve`, `Erase`) and freestanding `ArrayList`. Fat-pointer syntax is a future candidate. |
 | Multidimensional arrays / Matrices (`Dim x(M, N)`) | ✅ | Row-major flat indexing computation |
 | `UBound` / `LBound` | ✅ | Dimension-aware array bounds intrinsics (`UBound(arr, dim)`) |
 | Union types (`Union ... End Union`) | ✅ | Overlapping memory layout with offset-0 member aliasing for registers & hardware protocols |
-| Nullable / Optional types | ❌ | `T?` or `Maybe T` |
+| Nullable / Optional types (`T?`) | 🔧 Idiomatic | Represented idiomatically via `Result(T, E)` sum types or `Pointer Is Nothing` null guards. |
 | Generics / Templates | ✅ | Parameterized templates (`Structure Box(Of T)`, `Function Min(Of T)`) with on-demand monomorphization |
-
 | Type aliases (`TypeAlias X = Y`) | ✅ | Named type synonyms for primitives, pointers, and UDTs |
 | Signed vs Unsigned distinction in ops | ✅ | `UDiv`, `URem`, `LShr`, and unsigned comparisons (`ULT`, `ULE`, `UGT`, `UGE`) for unsigned operands |
 
@@ -90,14 +93,14 @@ LLB fuses the safety and performance of modern systems languages with the approa
 | `Unsafe` keyword annotation | ✅ | On functions doing raw memory |
 | Heap allocation (`malloc` via runtime) | ✅ | Fully integrated `New ClassName` and `Delete obj` lifecycle with freestanding allocator hooks |
 | `New` / `Delete` keywords | ✅ | Object lifecycle management (`New ClassName` and `Delete obj`) |
-| Reference counting / `Set` | ❌ | VB6-style COM ref counting |
+| Reference counting (`IUnknown` / COM) | 🚫 Won't Implement | Windows-specific desktop component model. Scoped deterministic RAII cleanup is handled via `Using ... End Using`. |
 | `AddressOf` operator | ✅ | Extract typed function and procedure addresses (`AddressOf Func`) |
 | Bounds-checked array access | ✅ | Compiler-injected runtime bounds validation on array access (`idxgep`), zero-cost bypassable via `Unsafe` |
 | Null-pointer safety checks | ✅ | Zero-address null guard insertion before pointer dereferences, zero-cost bypassable via `Unsafe` |
 | Stack buffer overflow protection | ✅ | Stack canary protection via LLVM `StackProtectStrong` attribute |
-| Ownership / Borrow checker | ❌ | Rust-style memory safety (aspirational) |
+| Ownership / Borrow checker | ⏳ Future Roadmap | Rust-style affine borrow checker (aspirational for post-bootstrap phases). |
 | `Dispose` / RAII cleanup | ✅ | Deterministic scoped resource management with `Using ... End Using` calling `.Dispose()` |
-| `GC` (garbage collection) | ❌ | Not planned for systems language |
+| `GC` (garbage collection) | 🚫 Won't Implement | Non-goal for systems language; manual lifecycle, bump allocators, and scoped RAII guarantee zero GC latency. |
 
 ---
 
@@ -110,9 +113,9 @@ LLB fuses the safety and performance of modern systems languages with the approa
 | `snprintf`, `strlen`, `memcpy`, `malloc` | ✅ | Used internally for string concat |
 | String runtime (`Mid`, `Left`, `Right`, `Len`, `InStr`, `Trim`, `Asc`, `Chr`) | ✅ | Self-contained, freestanding ODR bump allocator |
 | Math library (`Abs`, `Sgn`, `Sqrt`, `Int`/`Floor`) | ✅ | Native LLVM intrinsics (`llvm.fabs`, `llvm.sqrt`, `llvm.floor`, selects) |
-| I/O library (`Open`, `Print #`, `Line Input #`, `Input #`, `Close`, `EOF`, `LOF`) | ✅ | Full file stream I/O with multiple file numbers (1..255), reading, writing, and file status |
+| I/O library (`Open`, `Print #`, `Line Input #`, `Input #`, `Close`, `EOF`, `LOF`) | ✅ | Full file stream I/O with multiple file numbers (1..255) and stdin channel `#0` |
 | Console I/O (`Print`, `PrintLine`, `PrintFormat`/`PrintF`, `Input`) | ✅ | Both statement form and built-in call wrappers |
-| Date/Time library (`Now`, `DateDiff`, `Format`) | ❌ | Calendar operations |
+| Date/Time library (`Now`, `DateDiff`, `Format`) | 🚫 Won't Implement | OS-specific calendar formatting; standard 64-bit integer timer ticks used instead. |
 | Error runtime (`Err.Number`, `Err.Description`) | ✅ | Full VB6 `Err` runtime singleton with `Err.Number`, `Err.Source`, `Err.Description`, `Err.Raise`, and `Err.Clear` |
 | Collection runtime (`Dictionary`, `Map`, `HashMap`, `ArrayList`) | ✅ | ODR open-addressing hash table runtime (`map("k") = v`), intrinsics (`MapCreate`, `MapHas`, `MapGet`), and freestanding `HashMap` & `ArrayList` UDTs |
 | Memory runtime (`CopyMemory`, `ZeroMemory`, `FillMemory`) | ✅ | Direct lowering to native freestanding LLVM `llvm.memcpy` & `llvm.memset` intrinsics |
@@ -135,9 +138,9 @@ LLB fuses the safety and performance of modern systems languages with the approa
 | Optimization passes (`-O0` to `-O3`) | ✅ | Full LLVM PassBuilder pipeline integration |
 | Debug info emission (`-g`, DWARF) | ✅ | Source-level DWARF v4 debugging symbols & subprogram line/col mappings |
 | Cross-compilation (`--target=`) | ✅ | Full CLI `--target=<triple>`, `--sysroot=<path>`, and `--nostdlib` toolchain cross-compilation with LLD emulation mapping |
-| Incremental / parallel builds | ❌ | Recompile-only-changed |
-| Package manager | ❌ | Dependency resolution |
-| LSP / IDE integration | ❌ | Language server protocol |
+| Incremental / parallel builds | ⏳ Future Roadmap | Dependency graph caching for recompiling only modified units. |
+| Package manager | ⏳ Future Roadmap | External ecosystem dependency manager. |
+| LSP / IDE integration | ⏳ Future Roadmap | Language Server Protocol daemon for syntax highlighting and autocomplete. |
 
 ---
 
@@ -151,9 +154,9 @@ LLB fuses the safety and performance of modern systems languages with the approa
 | `Alias "real_name"` (symbol renaming) | ✅ | Map LLB identifier to external symbol name |
 | Dynamic loading (`LoadLibrary` / `dlopen`) | ✅ | Full dynamic runtime symbol resolution via POSIX `dlopen`/`dlsym` & Win32 `LoadLibrary`/`GetProcAddress` |
 | Callback / function pointer passing | ✅ | `AddressOf` operator with typed pointer passing |
-| C struct layout interop | 🔧 | `<Packed>` works, but no `<LayoutKind.Sequential>` |
+| C struct layout interop | 🔧 | `<Packed>` and `<Align(N)>` supported; full MSVC bitfield layout in progress |
 | POSIX / Win32 API bindings | 🔧 | Supported via `Declare ... Lib "c"` / `Lib "kernel32.dll"` stubs |
-| COM / IUnknown interop | ❌ | VB6's core object model (low priority) |
+| COM / IUnknown interop | 🚫 Won't Implement | Windows-specific desktop object model; inapplicable to cross-target and freestanding bare-metal targets. |
 
 ---
 
@@ -167,15 +170,20 @@ LLB fuses the safety and performance of modern systems languages with the approa
 | Hardware descriptor annotations | ✅ | `<Packed>`, `<Align(N)>` |
 | First-class closures / lambdas | ✅ | Anonymous functions with `Function(...) [As Type] => expr` lowering to internal functions & pointers |
 | Pattern matching (`Match ... End Match`) | ✅ | Full algebraic pattern matching with `Ok(v)`, `Err(e)`, ranges `min To max`, values, and wildcards |
-| Async / Await | ❌ | Cooperative async I/O |
+| Async / Await | ⏳ Future Roadmap | Coroutine transformation pipelines for cooperative multitasking. |
 | Interfaces / Traits / Protocols | ✅ | `Interface ... End Interface`, `Implements` contracts & vtable definitions |
-| Operator overloading | ❌ | Custom `+`, `-`, `=`, etc. |
-| Iterators / Generators (`Yield`) | ❌ | Lazy sequence production |
+| Operator overloading | ⏳ Future Roadmap | Custom user-defined operators (`+`, `-`, `*`). |
+| Iterators / Generators (`Yield`) | ⏳ Future Roadmap | Generator coroutines for lazy sequences. |
 | Namespaces / Module nesting | ✅ | `Namespace Name ... End Namespace` hierarchical scope organization with dotted symbol normalization |
 | Compile-time evaluation (`Const` expressions) | ✅ | Compile-time constant evaluation in preprocessor |
 | Conditional compilation (`#If`, `#Else`, `#End If`) | ✅ | Full preprocessor directives (`#Const`, `#If`, `#ElseIf`, `#Else`, `#End If`) with `-D` flags |
 | Attributes / Annotations beyond `<Packed>` | ✅ | `<Inline>` (AlwaysInline), `<NoReturn>`, `<Export>`, `<Packed>`, `<Align(N)>` |
 | Result / Error return types | ✅ | Native `Result` sum type `{ is_ok, err_code, value }` with `Ok(val)`, `Err(code)`, and `IsOk(res)` intrinsics |
+| Bitfield structure fields (`Field As Type * Bits`) | ⏳ Future Roadmap | Hardware register bitfield packing syntax matching classic VB fixed-length string/field style |
+| Compile-time `SizeOf` & `OffsetOf` intrinsics | ⏳ Future Roadmap | Zero-overhead compile-time layout queries (`SizeOf(T)`, `OffsetOf(T, Field)`) |
+| Interrupt procedure attribute (`<Interrupt>`) | ⏳ Future Roadmap | Native ISR procedures compiling to LLVM `x86_intr` with automatic register preservation and `iretq` |
+| Compile-time static assertions (`#Assert` / `StaticAssert`) | ⏳ Future Roadmap | Validation of structure alignment and constant invariants at compile-time |
+| Flat binary output (`-O binary` / `Type = "RawBinary"`) | ⏳ Future Roadmap | Direct generation of raw `.bin` kernel images and bootloader sectors |
 
 ---
 
@@ -203,7 +211,7 @@ LLB fuses the safety and performance of modern systems languages with the approa
 15. ~~Static library output (`.a`)~~ — **Done** ✅
 16. ~~Conditional compilation (`#If`)~~ — **Done** ✅
 
-### Phase 4: Modern Language Power
+### Phase 4: Modern Language Power — COMPLETE ✅
 17. ~~`New` / `Delete` + heap object lifecycle~~ — **Done** ✅
 18. ~~Interfaces / Traits / Protocols~~ — **Done** ✅
 19. ~~Generics / Parameterized Templates (`Structure Box(Of T)`, `Function Min(Of T)`)~~ — **Done** ✅
@@ -216,5 +224,56 @@ LLB fuses the safety and performance of modern systems languages with the approa
 26. ~~Deterministic Scoped Cleanup (`Using ... End Using`)~~ — **Done** ✅
 27. ~~Algebraic Pattern Matching (`Match ... Case ... End Match`)~~ — **Done** ✅
 28. ~~Self-Hosting Bootstrap: `stage1` Compiler Architecture (`src/stage1/`, `llbc.llbproj`)~~ — **Done** ✅
+
+---
+
+### Phase 5: Bare-Metal Systems & Toolchain Enhancements (VB6-Idiomatic)
+
+1. **Bitfield Structure Declarations (VB6 Fixed-Length Style):**
+   - Syntax:
+     ```vb
+     <Packed>
+     Structure PageTableEntry
+         Public Present As Byte * 1
+         Public Writable As Byte * 1
+         Public UserAccessible As Byte * 1
+         Public WriteThrough As Byte * 1
+         Public CacheDisabled As Byte * 1
+         Public Accessed As Byte * 1
+         Public Dirty As Byte * 1
+         Public HugePage As Byte * 1
+         Public Reserved As Byte * 4
+         Public FrameAddress As UInt64 * 52
+     End Structure
+     ```
+   - Matches classic VB fixed-length syntax (`Dim s As String * 30`), making bitfields clean and natural to read.
+
+2. **Compile-Time Size & Offset Intrinsics (`SizeOf` / `OffsetOf`):**
+   - Syntax:
+     ```vb
+     Dim structSize As UInt64 = SizeOf(IdtEntry)
+     Dim fieldOffset As UInt64 = OffsetOf(IdtEntry, BaseHigh)
+     ```
+
+3. **Interrupt Handler Procedures (`<Interrupt>` Attribute):**
+   - Syntax:
+     ```vb
+     <Interrupt>
+     Public Unsafe Sub KeyboardInterruptHandler(ByVal frame As Pointer To InterruptStackFrame)
+         ' LLVM x86_intr calling convention automatically preserves all registers and emits iretq
+         Drivers.Keyboard.HandleScancode
+     End Sub
+     ```
+
+4. **Compile-Time Static Assertions (`#Assert` Directive):**
+   - Syntax:
+     ```vb
+     #Assert SizeOf(IdtEntry) = 16, "IdtEntry must be exactly 16 bytes on x86_64"
+     #Assert SizeOf(GdtDescriptor) = 8, "GDT segment descriptor size mismatch"
+     ```
+
+5. **Direct Flat Binary Output (`-O binary` / `Type = "RawBinary"`):**
+   - Direct emission of flat binary image files (`.bin`) without ELF/PE container wrappers, ideal for bootloader sectors (`boot.bin`) and raw kernel images.
+
 
 

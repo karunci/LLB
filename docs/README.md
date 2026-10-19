@@ -486,6 +486,150 @@ LLB can also compile shared libraries (`.so` / `.dll`) for modular plugins, exte
   ```
 Public functions in the module are exported as unmangled symbols.
 
+#### 7. Algebraic Pattern Matching (`Match ... Case ... End Match`)
+
+LLB features comprehensive pattern matching supporting enum values, exact expressions, numeric ranges (`min To max`), sum type variants (`Ok(val)` and `Err(code)`), and fallback wildcards (`Case Else`):
+
+```vb
+' Pattern matching over Result sum type
+Match result
+    Case Ok(val)
+        PrintLine "Computation succeeded with: " & val
+    Case Err(code)
+        PrintLine "Failed with error code: " & code
+    Case Else
+        PrintLine "Unknown result status"
+End Match
+
+' Range and multi-value matching
+Match statusCode
+    Case 200, 201, 204
+        PrintLine "HTTP Success"
+    Case 400 To 499
+        PrintLine "Client Error Range"
+    Case 500 To 599
+        PrintLine "Server Error Range"
+    Case Else
+        PrintLine "Unexpected status code"
+End Match
+```
+
+#### 8. Deterministic Scoped Cleanup (`Using ... End Using`)
+
+For RAII-style deterministic resource management without garbage collection overhead, LLB provides `Using` blocks. Any object instance implementing a `.Dispose()` method is automatically and unconditionally finalized when execution leaves the block (including early exits or returns):
+
+```vb
+Class FileStreamResource
+    Public Handle As Int32
+
+    Public Sub Dispose()
+        If Me.Handle <> 0 Then
+            PrintLine "Closing file handle: " & Me.Handle
+            Me.Handle = 0
+        End If
+    End Sub
+End Class
+
+Public Sub ProcessFile()
+    Dim stream As FileStreamResource
+    stream.Handle = 101
+
+    Using stream
+        PrintLine "Processing with handle: " & stream.Handle
+        ' Stream.Dispose() is guaranteed to be invoked upon block exit
+    End Using
+End Sub
+```
+
+#### 9. Structured Error Handling & Exception Model
+
+LLB provides dual error handling models:
+1. **Classic VB6 `Err` Object:** A freestanding thread-local singleton with `Err.Number`, `Err.Description`, `Err.Source`, `Err.Clear()`, and `Err.Raise(number, source, description)`.
+2. **Structured `Try ... Catch ... Finally` Blocks:** Freestanding zero-overhead structured exceptions:
+
+```vb
+Try
+    ' Code that might trigger an error or raise
+    Err.Raise 404, "NetworkService", "Resource not found"
+Catch
+    PrintLine "Caught error #" & Err.Number & " from " & Err.Source & ": " & Err.Description
+    Err.Clear
+Finally
+    PrintLine "Cleanup logic executes unconditionally"
+End Try
+```
+
+#### 10. Dynamic Array Resizing & Fixed Array Operations (`ReDim`, `Erase`)
+
+LLB supports both fixed stack arrays and dynamic heap arrays:
+* **`ReDim arr(newSize)`**: Allocates or resizes a dynamic array pointer.
+* **`ReDim Preserve arr(newSize)`**: Resizes a dynamic array while preserving existing element contents.
+* **`Erase arr`**: Zeroes all elements in fixed stack arrays, or frees and clears dynamic pointer arrays.
+
+```vb
+Dim dynArr As Pointer To Int32
+ReDim dynArr(10)
+dynArr(0) = 100
+dynArr(1) = 200
+
+' Grow while preserving values
+ReDim Preserve dynArr(20)
+
+' Clear array memory
+Erase dynArr
+```
+
+#### 11. Variadic Arguments & Call-Site Named Parameters
+
+Functions can accept variable-length parameter lists and call-sites can bind parameters out of order:
+
+```vb
+' Variadic function via ParamArray
+Public Function SumAll(ParamArray values() As Int32) As Int32
+    Dim total As Int32 = 0
+    Dim i As Int32
+    For i = 0 To UBound(values)
+        total = total + values(i)
+    Next i
+    SumAll = total
+End Function
+
+' Call-Site Named Arguments
+Public Sub ConfigureDevice(ByVal baud As Int32, ByVal parity As Int32, ByVal stopBits As Int32)
+    ' ...
+End Sub
+
+' Arguments supplied by name out of order
+ConfigureDevice stopBits := 1, baud := 115200, parity := 0
+```
+
+#### 12. File & Stream I/O Subsystem
+
+LLB includes built-in file channel operations supporting classic BASIC file numbering:
+* **`Open "path" For Output As #1`**: Creates or truncates a file for writing.
+* **`Open "path" For Append As #1`**: Opens a file for appending.
+* **`Open "path" For Binary As #1`**: Opens a file for binary reading/writing.
+* **`Print #1, expr`**: Writes text to file channel.
+* **`Line Input #1, strVar`**: Reads a newline-delimited line from file channel. If file number `#0` is specified, it reads from standard input (`stdin`).
+* **`EOF(fileNum)` / `LOF(fileNum)`**: Returns end-of-file status and length of file in bytes.
+* **`Close #1`**: Flushes and closes the channel.
+
+#### 13. Freestanding Runtime & Intrinsics Library
+
+LLB provides an out-of-the-box standard intrinsics library that lowers directly to native machine instructions or zero-dependency freestanding helpers:
+
+| Domain | Functions & Intrinsics | Description |
+|---|---|---|
+| **Strings** | `Len(s)`, `Mid(s, start, [len])`, `Left(s, n)`, `Right(s, n)`, `InStr([start], s, find)`, `Trim(s)`, `Asc(s)`, `Chr(code)`, `StrComp(s1, s2)` | Zero-dependency freestanding ODR string runtime with bump allocator. |
+| **Conversions** | `Val(s)`, `CStr(n)`, `CInt(n)`, `CLng(n)`, `CDbl(n)`, `CBool(n)` | Direct string-to-number and number-to-string formatters. |
+| **Math** | `Abs(x)`, `Sgn(x)`, `Sqrt(x)`, `Int(x)` / `Floor(x)` | Direct LLVM hardware intrinsics (`llvm.fabs`, `llvm.sqrt`, `llvm.floor`). |
+| **Memory** | `CopyMemory(dst, src, bytes)`, `ZeroMemory(dst, bytes)`, `FillMemory(dst, bytes, val)` | Direct LLVM memory intrinsics (`llvm.memcpy`, `llvm.memset`). |
+| **Arrays** | `UBound(arr, [dim])`, `LBound(arr, [dim])` | Returns upper and lower bounds for fixed and multidimensional arrays. |
+| **Containers** | `MapCreate()`, `MapHas(m, k)`, `MapGet(m, k)`, `HashMap`, `ArrayList` | Built-in open-addressing hash table runtime and freestanding container structures. |
+| **Type Reflection** | `TypeOf expr Is TypeName`, `TypeOf expr Is Not TypeName` | Compile-time and pointer-level type safety verification. |
+| **Pattern Match** | `s Like pattern` | Zero-heap pattern matcher supporting `*` and `?` wildcards. |
+
+
 ---
 
 ### Self-Hosting Roadmap & LLVM-C API Bindings

@@ -4389,6 +4389,13 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
             }
             return val;
         }
+
+        // Check module-level global variable (including typed Const globals)
+        llvm::GlobalVariable* gVar = findGlobalCaseInsensitive(m_module.get(), var->name);
+        if (gVar) {
+            return m_builder->CreateLoad(gVar->getValueType(), gVar, var->name);
+        }
+
         auto enumIt = m_enumConstants.find(var->name);
         if (enumIt == m_enumConstants.end()) {
             enumIt = m_enumConstants.find(toLower(var->name));
@@ -4399,12 +4406,6 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
         auto enumLowerIt = m_enumConstants.find(toLower(var->name));
         if (enumLowerIt != m_enumConstants.end()) {
             return llvm::ConstantInt::get(llvm::Type::getInt32Ty(*m_context), enumLowerIt->second);
-        }
-
-        // Check module-level global variable
-        llvm::GlobalVariable* gVar = findGlobalCaseInsensitive(m_module.get(), var->name);
-        if (gVar) {
-            return m_builder->CreateLoad(gVar->getValueType(), gVar, var->name);
         }
 
         // Check module-level Property Get function (e.g. get_Prop)

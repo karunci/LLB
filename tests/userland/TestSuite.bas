@@ -11,6 +11,11 @@ Module TestSuite
 
     Import ImportHelper In "ImportHelper.bas"
 
+    ' Module-level constants & global initializers
+    Public Const MODULE_TEST_MAGIC As Int32 = 4242
+    Private Const PI_APPROX As Double = 3.14159
+    Dim g_initializedCounter As Int32 = 777
+
     Public Declare Function puts(ByVal str As Pointer To Byte) As Int32
     Public Declare Function putsLib Lib "c" Alias "puts" (ByVal str As Pointer To Byte) As Int32
     Public Declare Function AddNumbers Lib "SharedLib" (ByVal a As Int32, ByVal b As Int32) As Int32
@@ -1646,6 +1651,52 @@ SkipMiddle:
         End If
     End Function
 
+    ' Helper subroutines demonstrating flexible modifier ordering (Unsafe Public / Unsafe Private)
+    Unsafe Public Sub AsmSingleLineNop()
+        Asm "nop"
+    End Sub
+
+    Unsafe Private Sub AsmMultilineNopWithOperands(ByVal val1 As Int64, ByVal val2 As Int64)
+        Asm
+            "nop"
+            "nop"
+            :
+            :
+            "r" (val1), "r" (val2)
+        End Asm
+    End Sub
+
+    ' 58. Inline Assembly Support (Single-line Asm, Multiline Asm ... End Asm, Operands & Clobbers)
+    Public Unsafe Function TestInlineAssembly() As Boolean
+        AsmSingleLineNop()
+        AsmMultilineNopWithOperands(100, 200)
+
+        ' Direct inline block in function
+        Dim inVal As Int64: inVal = 42
+        Asm
+            "nop"
+            :
+            :
+            "r" (inVal)
+        End Asm
+
+        TestInlineAssembly = True
+    End Function
+
+    ' 59. Module Constants, Variable Initializers & Flexible Modifiers
+    Unsafe Public Function TestModuleConstants() As Boolean
+        Dim magicOk As Boolean: magicOk = (MODULE_TEST_MAGIC = 4242)
+        Dim globalInitOk As Boolean: globalInitOk = (g_initializedCounter = 777)
+        Dim piOk As Boolean: piOk = (PI_APPROX > 3.14 And PI_APPROX < 3.15)
+
+        If magicOk And globalInitOk And piOk Then
+            TestModuleConstants = True
+        Else
+            Print "  [Test 59 Debug] magicOk=", magicOk, ", globalInitOk=", globalInitOk, ", piOk=", piOk
+            TestModuleConstants = False
+        End If
+    End Function
+
 
     ' Main Entry Point
     Public Unsafe Function Main(ByVal argc As Int32, ByVal argv As Pointer To Pointer To Byte) As Int32
@@ -2111,13 +2162,29 @@ SkipMiddle:
             failCount = failCount + 1
         End If
 
+        ' 58. Inline Assembly Statements & Operand Directives (Single-line Asm, Multiline Asm ... End Asm)
+        If TestInlineAssembly() Then
+            puts CPtr(Pointer To Byte, "Test 58 > [PASS] Inline Assembly Statements (Single-line Asm, Multiline Asm, Inputs & Clobbers)")
+        Else
+            puts CPtr(Pointer To Byte, "Test 58 > [FAIL] Inline Assembly Statements")
+            failCount = failCount + 1
+        End If
+
+        ' 59. Module Constants, Variable Initializers & Flexible Modifiers
+        If TestModuleConstants() Then
+            puts CPtr(Pointer To Byte, "Test 59 > [PASS] Module Constants, Global Initializers & Flexible Procedure Modifiers")
+        Else
+            puts CPtr(Pointer To Byte, "Test 59 > [FAIL] Module Constants & Modifiers")
+            failCount = failCount + 1
+        End If
+
         puts CPtr(Pointer To Byte, "================================================")
         If failCount = 0 Then
-            puts CPtr(Pointer To Byte, "   ALL 57 TEST SUITES PASSED SUCCESSFULLY!      ")
+            puts CPtr(Pointer To Byte, "   ALL 59 TEST SUITES PASSED SUCCESSFULLY!      ")
             puts CPtr(Pointer To Byte, "================================================")
             Main = 0
         Else
-            Print "   TEST SUITE FINISHED WITH ", failCount, " FAILURE(S) OUT OF 57"
+            Print "   TEST SUITE FINISHED WITH ", failCount, " FAILURE(S) OUT OF 59"
             puts CPtr(Pointer To Byte, "================================================")
             Main = 1
         End If

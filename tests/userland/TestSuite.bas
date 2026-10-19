@@ -11,6 +11,7 @@ Module TestSuite
     #Const UNUSED_FLAG = 0
 
     Import ImportHelper In "ImportHelper.bas"
+    Import MathHelper In "NamespaceHelper.bas"
 
     ' Module-level constants & global initializers
     Public Const MODULE_TEST_MAGIC As Int32 = 4242
@@ -22,6 +23,31 @@ Module TestSuite
     Public Declare Function AddNumbers Lib "SharedLib" (ByVal a As Int32, ByVal b As Int32) As Int32
     Public Declare Function StaticMultiply(ByVal a As Int32, ByVal b As Int32) As Int32
     Public Declare Function StaticPower(ByVal baseVal As Int32, ByVal expVal As Int32) As Int32
+
+    ' Runtime Type & String Inspection Helpers
+    Public Function IsNumericString(ByVal s As String) As Boolean
+        If Len(s) = 0 Then
+            IsNumericString = False
+            Exit Function
+        End If
+        Dim i As Int32
+        Dim hasDigit As Boolean = False
+        For i = 1 To Len(s)
+            Dim ch As String = Mid(s, i, 1)
+            Dim c As Int32 = Asc(ch)
+            If c >= 48 And c <= 57 Then
+                hasDigit = True
+            ElseIf (c = 43 Or c = 45) And i = 1 Then
+                ' Leading '+' or '-'
+            ElseIf c = 46 Then
+                ' Decimal point '.'
+            Else
+                IsNumericString = False
+                Exit Function
+            End If
+        Next i
+        IsNumericString = hasDigit
+    End Function
 
     Public Enum TrafficLight
         Red = 10
@@ -1698,6 +1724,68 @@ SkipMiddle:
         End If
     End Function
 
+    ' 60. Namespaces & Runtime Type/String Inspection Helpers
+    Public Function TestNamespacesAndTypeInspection() As Boolean
+        ' Test Namespace procedure resolution
+        Dim sumVal As Int32 = MathHelper.Add(15, 27)
+        Dim prodVal As Int32 = MathHelper.Multiply(6, 7)
+
+        ' Test Runtime String & Type inspection helpers
+        Dim validInt As Boolean = IsNumericString("4242")
+        Dim validFloat As Boolean = IsNumericString("-123.45")
+        Dim invalidAlpha As Boolean = IsNumericString("42abc")
+        Dim invalidEmpty As Boolean = IsNumericString("")
+
+        If sumVal = 42 And prodVal = 42 And validInt = True And validFloat = True And invalidAlpha = False And invalidEmpty = False Then
+            TestNamespacesAndTypeInspection = True
+        Else
+            Print "  [Test 60 Debug] sum=", sumVal, ", prod=", prodVal, ", vInt=", validInt, ", vFloat=", validFloat
+            TestNamespacesAndTypeInspection = False
+        End If
+    End Function
+
+    ' Helper for recursive Sub mutation
+    Public Sub RecursiveCountdown(ByVal n As Int32, ByRef accumulator As Int32)
+        If n <= 0 Then Exit Sub
+        accumulator = accumulator + n
+        RecursiveCountdown n - 1, accumulator
+    End Sub
+
+    ' 61. Additional Control Flow: Exit While, Do Until / Loop Until, Recursive Sub
+    Public Function TestExitWhileAndDoUntil() As Boolean
+        ' Test Exit While
+        Dim wCount As Int32 = 0
+        While wCount < 100
+            wCount = wCount + 1
+            If wCount = 7 Then
+                Exit While
+            End If
+        Wend
+
+        ' Test Do Until ... Loop (pre-condition)
+        Dim uPre As Int32 = 0
+        Do Until uPre >= 10
+            uPre = uPre + 2
+        Loop
+
+        ' Test Do ... Loop Until (post-condition)
+        Dim uPost As Int32 = 0
+        Do
+            uPost = uPost + 3
+        Loop Until uPost >= 15
+
+        ' Test Recursive Sub with ByRef accumulator
+        Dim totalAccum As Int32 = 0
+        RecursiveCountdown 5, totalAccum ' 5 + 4 + 3 + 2 + 1 = 15
+
+        If wCount = 7 And uPre = 10 And uPost = 15 And totalAccum = 15 Then
+            TestExitWhileAndDoUntil = True
+        Else
+            Print "  [Test 61 Debug] wCount=", wCount, ", uPre=", uPre, ", uPost=", uPost, ", totalAccum=", totalAccum
+            TestExitWhileAndDoUntil = False
+        End If
+    End Function
+
 
     ' Main Entry Point
     Public Unsafe Function Main(ByVal argc As Int32, ByVal argv As Pointer To Pointer To Byte) As Int32
@@ -2179,13 +2267,29 @@ SkipMiddle:
             failCount = failCount + 1
         End If
 
+        ' 60. Namespaces & Runtime Type/String Inspection Helpers
+        If TestNamespacesAndTypeInspection() Then
+            puts CPtr(Pointer To Byte, "Test 60 > [PASS] Namespaces Scope & Runtime Inspection (MathHelper.Add & IsNumericString)")
+        Else
+            puts CPtr(Pointer To Byte, "Test 60 > [FAIL] Namespaces & Runtime Inspection")
+            failCount = failCount + 1
+        End If
+
+        ' 61. Additional Control Flow: Exit While, Do Until / Loop Until, Recursive Sub
+        If TestExitWhileAndDoUntil() Then
+            puts CPtr(Pointer To Byte, "Test 61 > [PASS] Control Flow & Loop Forms (Exit While, Do Until, Recursive Sub ByRef)")
+        Else
+            puts CPtr(Pointer To Byte, "Test 61 > [FAIL] Control Flow & Loop Forms")
+            failCount = failCount + 1
+        End If
+
         puts CPtr(Pointer To Byte, "================================================")
         If failCount = 0 Then
-            puts CPtr(Pointer To Byte, "   ALL 59 TEST SUITES PASSED SUCCESSFULLY!      ")
+            puts CPtr(Pointer To Byte, "   ALL 61 TEST SUITES PASSED SUCCESSFULLY!      ")
             puts CPtr(Pointer To Byte, "================================================")
             Main = 0
         Else
-            Print "   TEST SUITE FINISHED WITH ", failCount, " FAILURE(S) OUT OF 59"
+            Print "   TEST SUITE FINISHED WITH ", failCount, " FAILURE(S) OUT OF 61"
             puts CPtr(Pointer To Byte, "================================================")
             Main = 1
         End If

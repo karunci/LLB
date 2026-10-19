@@ -272,8 +272,21 @@ LLB fuses the safety and performance of modern systems languages with the approa
      #Assert SizeOf(GdtDescriptor) = 8, "GDT segment descriptor size mismatch"
      ```
 
-5. **Direct Flat Binary Output (`-O binary` / `Type = "RawBinary"`):**
-   - Direct emission of flat binary image files (`.bin`) without ELF/PE container wrappers, ideal for bootloader sectors (`boot.bin`) and raw kernel images.
+5. ~~Direct Flat Binary Output (`-O binary` / `Type = "RawBinary"`)~~ — **Done** ✅
+
+---
+
+### Phase 6: Temporary Discussion & Review Roadmap (For Next Review)
+
+1. **Standard Library Packaging Model:**
+   - Precompiled static standard library (`libllb_std.a`) vs source module tree (`Import Std.Collections`).
+2. **Self-Hosting Stage-1 Full Monomorphization & Lowering:**
+   - Complete AST lowering from `src/stage1/Parser.cls` to `src/stage1/LlvmC.bas` to allow compiling `llbc` without C++ stage-0.
+3. **Cross-Compilation Hardware Presets:**
+   - Bundled target architectures (`x86_64-kernel`, `aarch64-rpi4`, `riscv64-virt`) in `.llbproj`.
+4. **Standard String & Type Inspection Intrinsics:**
+   - Built-in freestanding runtime helpers (`IsNumericString(s)`, `IsAlpha(s)`, `IsWhitespace(s)`).
+
 
 
 

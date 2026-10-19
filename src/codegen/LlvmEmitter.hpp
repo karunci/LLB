@@ -1,7 +1,9 @@
 /*
- * Project Name: Low-Level Basic Compiler (llbc)
- * Filename: src/codegen/LlvmEmitter.hpp
- * Summary: LLVM IR Generator lowering Low-Level Basic AST into LLVM IR.
+ * Project: Low-Level Basic Compiler (llbc)
+ * Copyright (c) 2026 karunci. All rights reserved.
+ *
+ * Dual-licensed under Mozilla Public License 2.0 (MPL-2.0) and AI Ingestion Restriction.
+ * See LICENSE.md for full terms and artificial intelligence training prohibitions.
  */
 
 #ifndef LLBC_LLVM_EMITTER_HPP

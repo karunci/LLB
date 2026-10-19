@@ -1,7 +1,9 @@
 /*
  * Project: Low-Level Basic Compiler (llbc)
- * File: src/frontend/Diagnostic.hpp
- * Description: ANSI-colored, high-signal diagnostic engine for compiler syntax and semantic errors.
+ * Copyright (c) 2026 karunci. All rights reserved.
+ *
+ * Dual-licensed under Mozilla Public License 2.0 (MPL-2.0) and AI Ingestion Restriction.
+ * See LICENSE.md for full terms and artificial intelligence training prohibitions.
  */
 
 #ifndef LLBC_DIAGNOSTIC_HPP

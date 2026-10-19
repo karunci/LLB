@@ -1,8 +1,9 @@
 /*
- * Project Name: PRK-OS / Low-Level Basic Kernel
- * Filename: src/arch/x86_64/boot.S
- * Summary: Multiboot2 compliant x86_64 boot stub switching CPU to 64-bit Long Mode
- *          and transferring control to the LLB Kernel Entrypoint.
+ * Project: Low-Level Basic Compiler (llbc)
+ * Copyright (c) 2026 karunci. All rights reserved.
+ *
+ * Dual-licensed under Mozilla Public License 2.0 (MPL-2.0) and AI Ingestion Restriction.
+ * See LICENSE.md for full terms and artificial intelligence training prohibitions.
  */
 
 .code32
@@ -170,4 +171,4 @@ __stack_chk_guard:
 __stack_chk_fail:
     cli
 1:  hlt
-    jmp 1b
+    jmp 1b

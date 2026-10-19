@@ -1,7 +1,8 @@
-' Project Name: Low-Level Basic Compiler (llbc)
-' Filename: tests/userland/TestSuite.bas
-' Workspace Path: tests/userland/TestSuite.bas
-' Summary: Comprehensive validation suite testing control flow, loops, operators, recursion, pointers, and structures.
+' Project: Low-Level Basic Compiler (llbc)
+' Copyright (c) 2026 karunci. All rights reserved.
+'
+' Dual-licensed under Mozilla Public License 2.0 (MPL-2.0) and AI Ingestion Restriction.
+' See LICENSE.md for full terms and artificial intelligence training prohibitions.
 
 Module TestSuite
 

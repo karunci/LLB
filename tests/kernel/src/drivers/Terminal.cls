@@ -1,8 +1,8 @@
-' Project Name: PRK-OS
-' Filename: src/drivers/Terminal.cls
-' Workspace Path: src/drivers/Terminal.cls
-' Summary: Object-oriented VGA text-mode driver providing color output, cursor tracking,
-'          and hardware row scrolling for Low-Level Basic kernels.
+' Project: Low-Level Basic Compiler (llbc)
+' Copyright (c) 2026 karunci. All rights reserved.
+'
+' Dual-licensed under Mozilla Public License 2.0 (MPL-2.0) and AI Ingestion Restriction.
+' See LICENSE.md for full terms and artificial intelligence training prohibitions.
 
 Class Drivers.Terminal
 

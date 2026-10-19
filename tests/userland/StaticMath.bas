@@ -1,7 +1,8 @@
-' Project Name: Low-Level Basic Compiler (llbc)
-' Filename: tests/userland/StaticMath.bas
-' Workspace Path: tests/userland/StaticMath.bas
-' Summary: Reusable math utility module compiled into a static library archive (.a).
+' Project: Low-Level Basic Compiler (llbc)
+' Copyright (c) 2026 karunci. All rights reserved.
+'
+' Dual-licensed under Mozilla Public License 2.0 (MPL-2.0) and AI Ingestion Restriction.
+' See LICENSE.md for full terms and artificial intelligence training prohibitions.
 
 Module StaticMath
 

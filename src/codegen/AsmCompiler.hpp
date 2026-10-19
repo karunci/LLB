@@ -1,8 +1,9 @@
 /*
- * Project Name: PRK-OS / Low-Level Basic Compiler (llbc)
- * Filename: src/codegen/AsmCompiler.hpp
- * Workspace Path: src/codegen/AsmCompiler.hpp
- * Summary: Integrated GNU Assembly (.S) parser and object compiler using LLVM MC.
+ * Project: Low-Level Basic Compiler (llbc)
+ * Copyright (c) 2026 karunci. All rights reserved.
+ *
+ * Dual-licensed under Mozilla Public License 2.0 (MPL-2.0) and AI Ingestion Restriction.
+ * See LICENSE.md for full terms and artificial intelligence training prohibitions.
  */
 
 #ifndef LLBC_ASM_COMPILER_HPP

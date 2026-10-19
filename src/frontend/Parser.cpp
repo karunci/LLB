@@ -1,8 +1,9 @@
 /*
- * Project Name: PRK-OS / Low-Level Basic Compiler
- * Filename: src/frontend/Parser.cpp
- * Workspace Path: src/frontend/Parser.cpp
- * Summary: Production-ready recursive descent parser supporting expressions, precedence, nested control flow, blocks, and procedure calls.
+ * Project: Low-Level Basic Compiler (llbc)
+ * Copyright (c) 2026 karunci. All rights reserved.
+ *
+ * Dual-licensed under Mozilla Public License 2.0 (MPL-2.0) and AI Ingestion Restriction.
+ * See LICENSE.md for full terms and artificial intelligence training prohibitions.
  */
 
 #include "Parser.hpp"

@@ -1,8 +1,9 @@
 /*
- * Project Name: PRK-OS / Low-Level Basic Compiler (llbc)
- * Filename: src/driver/ProjectParser.hpp
- * Workspace Path: src/driver/ProjectParser.hpp
- * Summary: Simple INI/Key-Value descriptor parser supporting Assembly files.
+ * Project: Low-Level Basic Compiler (llbc)
+ * Copyright (c) 2026 karunci. All rights reserved.
+ *
+ * Dual-licensed under Mozilla Public License 2.0 (MPL-2.0) and AI Ingestion Restriction.
+ * See LICENSE.md for full terms and artificial intelligence training prohibitions.
  */
 
 #ifndef LLBC_PROJECT_PARSER_HPP

@@ -1,7 +1,9 @@
 /*
- * Project Name: Low-Level Basic Compiler (llbc)
- * Filename: src/frontend/Lexer.cpp
- * Summary: Lexical analyzer implementation converting LLB source text into tokens.
+ * Project: Low-Level Basic Compiler (llbc)
+ * Copyright (c) 2026 karunci. All rights reserved.
+ *
+ * Dual-licensed under Mozilla Public License 2.0 (MPL-2.0) and AI Ingestion Restriction.
+ * See LICENSE.md for full terms and artificial intelligence training prohibitions.
  */
 
 #include "Lexer.hpp"

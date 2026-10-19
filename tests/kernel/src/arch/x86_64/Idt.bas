@@ -1,6 +1,8 @@
-' Project Name: PRK-OS
-' Filename: src/arch/x86_64/Idt.bas
-' Summary: IDT Descriptor management and ISR central dispatcher in Low-Level Basic.
+' Project: Low-Level Basic Compiler (llbc)
+' Copyright (c) 2026 karunci. All rights reserved.
+'
+' Dual-licensed under Mozilla Public License 2.0 (MPL-2.0) and AI Ingestion Restriction.
+' See LICENSE.md for full terms and artificial intelligence training prohibitions.
 
 Module Arch.Idt
 

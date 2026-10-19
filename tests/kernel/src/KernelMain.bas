@@ -1,6 +1,8 @@
-' Project Name: PRK-OS
-' Filename: src/KernelMain.bas
-' Summary: Low-Level Basic Kernel demonstrating Terminal class usage with colors and scrolling.
+' Project: Low-Level Basic Compiler (llbc)
+' Copyright (c) 2026 karunci. All rights reserved.
+'
+' Dual-licensed under Mozilla Public License 2.0 (MPL-2.0) and AI Ingestion Restriction.
+' See LICENSE.md for full terms and artificial intelligence training prohibitions.
 
 Module KernelMain
 

@@ -1,7 +1,8 @@
-' Project Name: PRK-OS / Low-Level Basic Compiler
-' Filename: src/stage1/CompilerMain.bas
-' Workspace Path: src/stage1/CompilerMain.bas
-' Summary: Stage-1 compiler entry point written in LLB.
+' Project: Low-Level Basic Compiler (llbc)
+' Copyright (c) 2026 karunci. All rights reserved.
+'
+' Dual-licensed under Mozilla Public License 2.0 (MPL-2.0) and AI Ingestion Restriction.
+' See LICENSE.md for full terms and artificial intelligence training prohibitions.
 
 Module CompilerMain
 

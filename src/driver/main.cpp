@@ -1,7 +1,9 @@
 /*
- * Project Name: PRK-OS / Low-Level Basic Compiler (llbc)
- * Filename: src/driver/main.cpp
- * Summary: Driver entry point handling project manifests and single-file targets.
+ * Project: Low-Level Basic Compiler (llbc)
+ * Copyright (c) 2026 karunci. All rights reserved.
+ *
+ * Dual-licensed under Mozilla Public License 2.0 (MPL-2.0) and AI Ingestion Restriction.
+ * See LICENSE.md for full terms and artificial intelligence training prohibitions.
  */
 
 #include "ProjectParser.hpp"

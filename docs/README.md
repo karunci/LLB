@@ -891,8 +891,18 @@ make -j4
 ```
 
 
-3. **Test Executable in QEMU:**
+3. **Test Executable in QEMU (Verified on Bare-Metal & Termux):**
 ```bash
-qemu-system-x86_64 -kernel kernel.elf -serial stdio
+# Direct Multiboot kernel boot with serial output mirrored to terminal
+qemu-system-x86_64 -kernel kernel.elf -display none -serial stdio -no-reboot -no-shutdown
+```
 
+**Verified Boot Output:**
+```text
+[PRK-OS KERNEL] Booting Low-Level Basic Kernel in QEMU!
+[PRK-OS KERNEL] Multiboot Verified. Long mode active.
+[PRK-OS KERNEL] VGA Terminal Driver initialized (&HB8000).
+[PRK-OS KERNEL] Initializing IDT interrupt descriptors...
+[PRK-OS KERNEL] IDT gates registered successfully.
+[PRK-OS KERNEL] Kernel execution completed successfully. Halting CPU.
 ```

@@ -165,9 +165,9 @@ LLB fuses the safety and performance of modern systems languages with the approa
 | Feature | Status | Notes |
 |---------|--------|-------|
 | Inline assembly (`Asm`) | ✅ | GCC-style with clobbers |
-| Freestanding / bare-metal target | ✅ | `--nostdlib`, custom linker scripts |
-| MMIO volatile pointers | ✅ | `Volatile Pointer To T` |
-| Hardware descriptor annotations | ✅ | `<Packed>`, `<Align(N)>` |
+| Freestanding / bare-metal target | ✅ | `--nostdlib`, custom linker scripts, dual Multiboot headers (verified booting directly in QEMU x86_64) |
+| MMIO volatile pointers | ✅ | `Volatile Pointer To T` (verified in VGA driver at `0xB8000`) |
+| Hardware descriptor annotations | ✅ | `<Packed>`, `<Align(N)>` (verified in 16-byte IDT descriptors & GDT tables) |
 | First-class closures / lambdas | ✅ | Anonymous functions with `Function(...) [As Type] => expr` lowering to internal functions & pointers |
 | Pattern matching (`Match ... End Match`) | ✅ | Full algebraic pattern matching with `Ok(v)`, `Err(e)`, ranges `min To max`, values, and wildcards |
 | Async / Await | ⏳ Future Roadmap | Coroutine transformation pipelines for cooperative multitasking. |

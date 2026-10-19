@@ -45,10 +45,13 @@ static llvm::Function* findFunctionCaseInsensitive(llvm::Module* mod, const std:
     return nullptr;
 }
 
-LlvmEmitter::LlvmEmitter(const std::string& moduleName, bool enableDebugInfo) 
+LlvmEmitter::LlvmEmitter(const std::string& moduleName, bool enableDebugInfo, const std::string& targetTriple) 
     : m_enableDebugInfo(enableDebugInfo) {
     m_context = std::make_unique<llvm::LLVMContext>();
     m_module = std::make_unique<llvm::Module>(moduleName, *m_context);
+    if (!targetTriple.empty()) {
+        m_module->setTargetTriple(llvm::Triple(targetTriple));
+    }
     m_builder = std::make_unique<llvm::IRBuilder<>>(*m_context);
 
     if (m_enableDebugInfo) {
@@ -3747,9 +3750,31 @@ void LlvmEmitter::emitMatchStatement(const MatchStmtNode& matchNode) {
 }
 
 void LlvmEmitter::emitAsmStatement(const AsmStmtNode& asmNode) {
-    llvm::FunctionType* asmTy = llvm::FunctionType::get(llvm::Type::getVoidTy(*m_context), false);
-    llvm::InlineAsm* inlineAsm = llvm::InlineAsm::get(asmTy, asmNode.assemblyCode, "~{dirflag},~{fpsr},~{flags}", true);
-    m_builder->CreateCall(inlineAsm);
+    std::vector<llvm::Type*> paramTypes;
+    std::vector<llvm::Value*> args;
+
+    for (const auto& op : asmNode.inputOperands) {
+        llvm::Value* val = emitExpression(op.get());
+        if (val) {
+            paramTypes.push_back(val->getType());
+            args.push_back(val);
+        }
+    }
+
+    // Convert GCC inline assembly operand placeholders (%0, %1, etc.) to LLVM format ($0, $1, etc.)
+    std::string llvmAsmCode;
+    const std::string& rawAsm = asmNode.assemblyCode;
+    for (size_t i = 0; i < rawAsm.size(); ++i) {
+        if (rawAsm[i] == '%' && i + 1 < rawAsm.size() && std::isdigit(static_cast<unsigned char>(rawAsm[i + 1]))) {
+            llvmAsmCode += '$';
+        } else {
+            llvmAsmCode += rawAsm[i];
+        }
+    }
+
+    llvm::FunctionType* asmTy = llvm::FunctionType::get(llvm::Type::getVoidTy(*m_context), paramTypes, false);
+    llvm::InlineAsm* inlineAsm = llvm::InlineAsm::get(asmTy, llvmAsmCode, asmNode.constraints, true);
+    m_builder->CreateCall(inlineAsm, args);
 }
 
 void LlvmEmitter::emitStatement(ASTNode* stmt) {
@@ -6139,6 +6164,38 @@ bool LlvmEmitter::emitModule(const ModuleNode& moduleNode) {
     for (const auto& member : moduleNode.members) {
         if (auto st = dynamic_cast<const StructureNode*>(member.get())) {
             emitStructure(*st);
+        }
+    }
+
+    // 2.5 Emit Module-level Constants (Const)
+    for (const auto& member : moduleNode.members) {
+        if (auto c = dynamic_cast<const ConstStmtNode*>(member.get())) {
+            if (c->value) {
+                if (auto num = dynamic_cast<const NumberExprASTNode*>(c->value.get())) {
+                    m_enumConstants[c->name] = num->val;
+                    m_enumConstants[toLower(c->name)] = num->val;
+                }
+            }
+            llvm::Type* constType = getLlvmType(c->type);
+            llvm::Constant* initVal = llvm::Constant::getNullValue(constType);
+            if (c->value) {
+                if (auto num = dynamic_cast<const NumberExprASTNode*>(c->value.get())) {
+                    if (num->isFloat && constType->isFloatingPointTy()) {
+                        initVal = llvm::ConstantFP::get(constType, num->floatVal);
+                    } else if (constType->isIntegerTy()) {
+                        initVal = llvm::ConstantInt::get(constType, num->val);
+                    }
+                }
+            }
+            llvm::GlobalValue::LinkageTypes linkage = c->isPublic ? llvm::GlobalValue::ExternalLinkage : llvm::GlobalValue::InternalLinkage;
+            new llvm::GlobalVariable(
+                *m_module,
+                constType,
+                true, // isConstant
+                linkage,
+                initVal,
+                c->name
+            );
         }
     }
 

@@ -23,7 +23,7 @@ namespace llbc {
 
 class LlvmEmitter {
 public:
-    explicit LlvmEmitter(const std::string& moduleName, bool enableDebugInfo = false);
+    explicit LlvmEmitter(const std::string& moduleName, bool enableDebugInfo = false, const std::string& targetTriple = "");
 
     bool emitModule(const ModuleNode& moduleNode);
     void registerExternalProcedure(const std::string& name, const TypeSpec& retType, const std::vector<TypeSpec>& paramTypes, const std::string& aliasName = "");

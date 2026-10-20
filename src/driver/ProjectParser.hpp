@@ -19,9 +19,10 @@ namespace llbc {
 struct ProjectConfig {
     std::string name;
     std::string type;
-    std::string targetArch{"x86_64-unknown-none-elf"};
+    std::string targetArch;               // empty = host triple (Executable); explicit for cross/bare-metal
     std::string entryPoint;
     std::string outputFile;
+    std::string outDir;                   // resolved absolute path to the output directory
     std::string linkerScript;
     bool isFreestanding{false};
     std::vector<std::string> sourceFiles;    // .bas / .cls
@@ -67,7 +68,8 @@ public:
                 if (key == "Name") config.name = value;
                 else if (key == "Type") {
                     config.type = value;
-                    if (value == "Kernel" || value == "Freestanding" || value == "BareMetal" || value == "RawBinary") {
+                    if (value == "Kernel" || value == "Freestanding" || value == "BareMetal" ||
+                        value == "BareMetalExecutable" || value == "RawBinary") {
                         config.isFreestanding = true;
                     }
                 } else if (key == "Freestanding") {
@@ -76,6 +78,8 @@ public:
                 else if (key == "Arch") config.targetArch = value;
                 else if (key == "EntryPoint") config.entryPoint = value;
                 else if (key == "LinkerScript") config.linkerScript = resolvePath(value);
+                else if (key == "OutDir")  config.outDir  = (baseDir / value).lexically_normal().string();
+                else if (key == "OutFile") config.outputFile = value;   // stored raw; resolved below
                 else if (key == "Module" || key == "Class") {
                     config.sourceFiles.push_back(resolvePath(value));
                 } else if (key == "Assembly") {
@@ -84,8 +88,17 @@ public:
             }
         }
 
+        // Build final output file path: baseDir / outDir / outFile
         std::string ext = (config.type == "RawBinary") ? ".bin" : ".elf";
-        config.outputFile = resolvePath(config.name + ext);
+        std::string outFile = config.outputFile.empty() ? (config.name + ext) : config.outputFile;
+        if (config.outDir.empty()) {
+            config.outputFile = (baseDir / outFile).lexically_normal().string();
+        } else {
+            // Ensure the output directory exists
+            std::error_code ec;
+            std::filesystem::create_directories(config.outDir, ec);
+            config.outputFile = (std::filesystem::path(config.outDir) / outFile).lexically_normal().string();
+        }
         return config;
     }
 };

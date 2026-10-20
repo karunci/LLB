@@ -1,29 +1,35 @@
 ' Project Name: Low-Level Basic Compiler (llbc)
 ' Filename: llbc.llbproj
 ' Summary: Primary build descriptor for the self-hosted LLB compiler driver.
+'          Compiles the Stage-1 LLB bootstrap compiler from LLB source.
 
 [Project]
-Name = "llbc"
-Type = "HostedExecutable"
+Name    = "llbc"
+Type    = "Executable"
 Version = "0.1.0"
 
-[Target]
-Arch = "x86_64"
-Vendor = "unknown"
-Sys = "linux"
-Format = "elf64"
+; [Target] is intentionally omitted — uses host native triple.
+; Uncomment for explicit cross/freestanding targets:
+;   [Target]
+;   Arch = "x86_64-unknown-none-elf"
+
+[Output]
+; All build artifacts are placed in the project-local build/ sub-directory
+; to avoid cluttering the source tree.
+OutDir  = "build"
+OutFile = "llbc"
 
 [Entry]
 EntryPoint = "CompilerMain.Main"
 
 [Sources]
 Module = "src/stage1/LlvmC.bas"
-Class = "src/stage1/Lexer.cls"
+Class  = "src/stage1/Lexer.cls"
 Module = "src/stage1/Ast.bas"
-Class = "src/stage1/Parser.cls"
+Class  = "src/stage1/Parser.cls"
 Module = "src/stage1/CompilerMain.bas"
 
 [CompilerOptions]
-Optimize = "O2"
-EmitDebugSymbols = True
+Optimize            = "O2"
+EmitDebugSymbols    = True
 AllowUnsafePointers = True

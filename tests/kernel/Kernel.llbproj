@@ -1,10 +1,22 @@
+' Project Name: Low-Level Basic Kernel / llbc
+' Filename: tests/kernel/Kernel.llbproj
+' Summary: Bare-metal x86_64 kernel build descriptor.
+'          Compiles the LLB kernel test target to a freestanding ELF
+'          suitable for QEMU or real hardware via GRUB/Multiboot2.
+
 [Project]
-Name = "kernel"
-Type = "BareMetalExecutable"
+Name    = "kernel"
+Type    = "Kernel"
 Version = "0.1.0"
 
 [Target]
 Arch = "x86_64-unknown-none-elf"
+
+[Output]
+; All build artifacts are placed in the project-local build/ sub-directory
+; to avoid cluttering the source tree.
+OutDir  = "build"
+OutFile = "kernel.elf"
 
 [Entry]
 EntryPoint = "_start"
@@ -15,6 +27,6 @@ LinkerScript = "linker.ld"
 [Sources]
 Assembly = "src/arch/x86_64/boot.S"
 Assembly = "src/arch/x86_64/IsrStubs.S"
-Module = "src/arch/x86_64/Idt.bas"
-Module = "src/drivers/Terminal.bas"
-Module = "src/KernelMain.bas"
+Module   = "src/arch/x86_64/Idt.bas"
+Module   = "src/drivers/Terminal.bas"
+Module   = "src/KernelMain.bas"

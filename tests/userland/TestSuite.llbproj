@@ -10,11 +10,12 @@ Name    = "TestSuite"
 Type    = "Executable"
 Version = "1.0.0"
 
-[Target]
-Arch   = "x86_64"
-Vendor = "unknown"
-Sys    = "linux"
-Format = "elf64"
+; [Target] is intentionally omitted for hosted Executables.
+; The compiler uses the host's native triple (aarch64 on Termux, x86_64 on x86_64 Linux)
+; so the output links correctly against the host CRT.
+; For bare-metal/cross targets, uncomment and fill in:
+;   [Target]
+;   Arch   = "x86_64-unknown-none-elf"
 
 [Output]
 ; All build artifacts are placed in the project-local build/ sub-directory

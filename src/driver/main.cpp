@@ -163,7 +163,8 @@ static std::string compileSourceFile(
     int optLevel = 0,
     bool enableDebugInfo = false,
     const std::string& targetTriple = "",
-    const std::string& sysroot = ""
+    const std::string& sysroot = "",
+    const std::string& outDir = ""    // directory for .ll / .o artifacts; empty = cwd
 ) {
     auto moduleAST = getOrParseModule(sourcePath);
     if (!moduleAST) {
@@ -345,13 +346,17 @@ static std::string compileSourceFile(
 
     {
         std::error_code ec;
-        llvm::raw_fd_ostream irOut(moduleAST->name + ".ll", ec);
+        std::string llName = moduleAST->name + ".ll";
+        std::string llPath = outDir.empty() ? llName : (fs::path(outDir) / llName).lexically_normal().string();
+        llvm::raw_fd_ostream irOut(llPath, ec);
         if (!ec) {
             irEmitter.getModule()->print(irOut, nullptr);
         }
     }
 
-    std::string objFilename = moduleAST->name + ".o";
+    std::string stem = moduleAST->name + ".o";
+    std::string objFilename = outDir.empty() ? stem
+                                             : (fs::path(outDir) / stem).lexically_normal().string();
     llbc::TargetConfig targetConfig;
     if (!targetTriple.empty()) {
         targetConfig.targetTriple = targetTriple;
@@ -478,7 +483,12 @@ int main(int argc, char** argv) {
         outputFile = config.outputFile;
         if (!config.linkerScript.empty()) linkerScript = config.linkerScript;
         if (config.isFreestanding) isFreestanding = true;
-        if (!config.targetArch.empty() && targetTriple.empty()) {
+
+        // For hosted Executables: pass arch to LLVM codegen (per compileSourceFile call)
+        // but do NOT set the global targetTriple used by the linker — let LLD use host CRT.
+        // For bare-metal / cross targets the full triple must drive both codegen and linking.
+        bool isHostedExe = (config.type == "Executable" && !config.isFreestanding);
+        if (!config.targetArch.empty() && targetTriple.empty() && !isHostedExe) {
             targetTriple = config.targetArch;
         }
         if (config.type == "SharedLibrary" || config.type == "DynamicLibrary") {
@@ -496,17 +506,22 @@ int main(int argc, char** argv) {
         }
 
         // Compile LLB Modules (.bas / .cls)
+        // Use config.targetArch for codegen (may differ from link-time targetTriple
+        // for hosted Executables where LLD must use the host CRT/ABI).
+        std::string codegenTriple = !config.targetArch.empty() ? config.targetArch : targetTriple;
         for (const auto& srcFile : config.sourceFiles) {
-            std::string objFile = compileSourceFile(srcFile, optLevel, enableDebugInfo, targetTriple, sysroot);
+            std::string objFile = compileSourceFile(srcFile, optLevel, enableDebugInfo, codegenTriple, sysroot, config.outDir);
             if (objFile.empty()) return 1;
             objectFiles.push_back(objFile);
         }
         // Assemble Raw Assembly Files (.S)
         for (const auto& asmFile : config.assemblyFiles) {
-            std::string objFile = fs::path(asmFile).stem().string() + "_asm.o";
+            std::string asmStem = fs::path(asmFile).stem().string() + "_asm.o";
+            std::string objFile = config.outDir.empty() ? asmStem
+                                                        : (fs::path(config.outDir) / asmStem).lexically_normal().string();
             std::cout << "  [+] Assembling GNU Assembly: " << asmFile << " -> " << objFile << "\n";
 
-            std::string asmTarget = !targetTriple.empty() ? targetTriple : config.targetArch;
+            std::string asmTarget = !config.targetArch.empty() ? config.targetArch : targetTriple;
             if (!llbc::AsmCompiler::compileAssemblyFile(asmFile, objFile, asmTarget)) {
                 std::cerr << "Error: Assembly compilation failed for " << asmFile << "\n";
                 return 1;

@@ -1,7 +1,7 @@
 # Low-Level Basic (LLB)
 
 [![License: MPL-2.0](https://img.shields.io/badge/License-MPL_2.0-blue.svg)](LICENSE.md)
-[![Build Status](https://img.shields.io/badge/tests-59%2F59%20passed-brightgreen.svg)](#)
+[![Build Status](https://img.shields.io/badge/tests-63%2F63%20passed-brightgreen.svg)](#)
 [![LLVM Version](https://img.shields.io/badge/backend-LLVM%2019-red.svg)](#)
 
 > **Low-Level Basic (LLB)** is an Ahead-Of-Time (AOT) compiled systems programming language combining the safety guarantees and bare-metal performance of Rust and C/C++ with the clean, expressive, approachable syntax of Visual Basic 6.
@@ -138,21 +138,54 @@ Public Sub RunFilter()
 End Sub
 ```
 
+### 7. `Use` Statement — Scoped Binding, Aliasing & Class Instancing
+```vb
+' Import a MultiUse class and create independent, scoped instances
+Module Demo
+    Use ClassHelper In "ClassHelper.cls" As Helper
+
+    Public Sub Run()
+        ' Instantiate two independent value instances within scope
+        Use New Helper As h1
+        Use New Helper As h2
+
+        h1.Initialize 10     ' h1.m_val = 10
+        h2.Initialize 5      ' h2.m_val = 5  (fully independent)
+
+        PrintLine "h1 sum: " & h1.ComputeSum(3)   ' => 13
+        PrintLine "h2 sum: " & h2.ComputeSum(7)   ' => 12
+    End Sub
+End Module
+
+' SingleUse class — compiler enforces exactly one instance per scope
+<Instancing(SingleUse)>
+Class Logger
+    Public Sub Initialize(ByVal level As Int32)
+        ' ...
+    End Sub
+End Class
+```
+
 ---
+
+
 
 ## 🛠️ Toolchain Usage
 
-The compiler driver `llbc-stage0` compiles single files or `.llbproj` project manifests directly into native ELF/PE binaries:
+The compiler driver `llbc-stage0` compiles single files or `.llbproj` project manifests directly into native ELF/PE binaries. All build artifacts are emitted into the `build/` directory.
 
 ```bash
 # 1. Compile and link a standalone application
-./build/llbc-stage0 app.bas -o app
+./build/llbc-stage0 app.bas -o build/app
 
-# 2. Build a full bare-metal OS kernel via project manifest
+# 2. Build the comprehensive test suite via project manifest
+./build/llbc-stage0 tests/userland/TestSuite.llbproj
+
+# 3. Build a full bare-metal OS kernel via project manifest
 ./build/llbc-stage0 tests/kernel/Kernel.llbproj
 
-# 3. Cross-compile for bare-metal x86_64 or AArch64
-./build/llbc-stage0 kernel.bas --target=x86_64-unknown-none-elf --nostdlib -o kernel.elf
+# 4. Cross-compile for bare-metal x86_64 or AArch64
+./build/llbc-stage0 kernel.bas --target=x86_64-unknown-none-elf --nostdlib -o build/kernel.elf
 ```
 
 ---

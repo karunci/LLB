@@ -104,6 +104,7 @@ TokenType Lexer::identifyKeyword(const std::string& text) const {
         {"to", TokenType::KwTo},
         {"asm", TokenType::KwAsm},
         {"import", TokenType::KwImport},
+        {"use", TokenType::KwUse},
         {"if", TokenType::KwIf},
         {"then", TokenType::KwThen},
         {"elseif", TokenType::KwElseIf},

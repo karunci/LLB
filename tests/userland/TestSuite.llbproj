@@ -1,0 +1,53 @@
+' Project Name: Low-Level Basic / Userland Test Suite
+' Filename: tests/userland/TestSuite.llbproj
+' Summary: Project manifest for the comprehensive LLB runtime test suite.
+'          Compiles all helper modules, class fixtures, and the main test
+'          runner into a single native ELF executable. Run after any
+'          compiler or runtime change to validate correctness.
+
+[Project]
+Name    = "TestSuite"
+Type    = "Executable"
+Version = "1.0.0"
+
+[Target]
+Arch   = "x86_64"
+Vendor = "unknown"
+Sys    = "linux"
+Format = "elf64"
+
+[Output]
+; All build artifacts are placed in the project-local build/ sub-directory
+; to avoid cluttering the source tree.
+OutDir  = "build"
+OutFile = "testsuite"
+
+[Entry]
+EntryPoint = "TestSuite.RunAllTests"
+
+[Sources]
+; --- Shared library stub (must be compiled as a shared .so before linking) ---
+Module = "SharedLib.bas"
+
+; --- Static helper module ---
+Module = "StaticMath.bas"
+
+; --- Namespace / import helpers ---
+Module = "NamespaceHelper.bas"
+Module = "ImportHelper.bas"
+
+; --- Class fixtures ---
+Class = "ClassHelper.cls"
+Class = "SingleUseHelper.cls"
+
+; --- Main test runner ---
+Module = "TestSuite.bas"
+
+[CompilerOptions]
+Optimize            = "O0"
+EmitDebugSymbols    = True
+AllowUnsafePointers = True
+
+[RejectionTests]
+; Compiler-error (negative) tests. Run via:  bash test_rejections.sh
+Script = "test_rejections.sh"

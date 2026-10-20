@@ -12,6 +12,8 @@ Module TestSuite
 
     Import ImportHelper In "ImportHelper.bas"
     Import MathHelper In "NamespaceHelper.bas"
+    Use ClassHelper In "ClassHelper.cls" As Helper
+    Use SingleUseHelper In "SingleUseHelper.cls" As SingleInst
 
     ' Module-level constants & global initializers
     Public Const MODULE_TEST_MAGIC As Int32 = 4242
@@ -1786,6 +1788,45 @@ SkipMiddle:
         End If
     End Function
 
+    ' 62. Use Scope Binding, Aliasing & MultiUse Class Instantiation
+    Public Function TestUseAndClassInstancing() As Boolean
+        ' Test 1: Stack instance using aliased class name
+        Use New Helper As h1
+        h1.Initialize 42
+        Dim val1 As Int32 = h1.GetValue()
+        Dim sum1 As Int32 = h1.ComputeSum(8) ' 42 + 100 + 8 = 150
+
+        ' Test 2: Second instance demonstrating MultiUse independence
+        Use New Helper As h2
+        h2.Initialize 10
+        h2.SetValue 25
+        Dim val2 As Int32 = h2.GetValue()
+        Dim sum2 As Int32 = h2.ComputeSum(5) ' 25 + 100 + 5 = 130
+
+        If val1 = 42 And sum1 = 150 And val2 = 25 And sum2 = 130 Then
+            TestUseAndClassInstancing = True
+        Else
+            Print "  [Test 62 Debug] val1=", val1, ", sum1=", sum1, ", val2=", val2, ", sum2=", sum2
+            TestUseAndClassInstancing = False
+        End If
+    End Function
+
+    ' 63. SingleUse Class Instancing
+    Public Function TestSingleUseInstancing() As Boolean
+        Use New SingleInst As s1
+        s1.Initialize 77
+        Dim st1 As Int32 = s1.GetStatus()
+        s1.SetStatus 88
+        Dim st2 As Int32 = s1.GetStatus()
+
+        If st1 = 77 And st2 = 88 Then
+            TestSingleUseInstancing = True
+        Else
+            Print "  [Test 63 Debug] st1=", st1, ", st2=", st2
+            TestSingleUseInstancing = False
+        End If
+    End Function
+
 
     ' Main Entry Point
     Public Unsafe Function Main(ByVal argc As Int32, ByVal argv As Pointer To Pointer To Byte) As Int32
@@ -2283,13 +2324,29 @@ SkipMiddle:
             failCount = failCount + 1
         End If
 
+        ' 62. Use Scope Binding, Aliasing & Class Instancing
+        If TestUseAndClassInstancing() Then
+            puts CPtr(Pointer To Byte, "Test 62 > [PASS] Use Scope Binding, Aliasing & Class Instancing (MultiUse Value Instances)")
+        Else
+            puts CPtr(Pointer To Byte, "Test 62 > [FAIL] Use Scope Binding & Class Instancing")
+            failCount = failCount + 1
+        End If
+
+        ' 63. SingleUse Class Instancing
+        If TestSingleUseInstancing() Then
+            puts CPtr(Pointer To Byte, "Test 63 > [PASS] SingleUse Class Instancing & Method Dispatch")
+        Else
+            puts CPtr(Pointer To Byte, "Test 63 > [FAIL] SingleUse Class Instancing")
+            failCount = failCount + 1
+        End If
+
         puts CPtr(Pointer To Byte, "================================================")
         If failCount = 0 Then
-            puts CPtr(Pointer To Byte, "   ALL 61 TEST SUITES PASSED SUCCESSFULLY!      ")
+            puts CPtr(Pointer To Byte, "   ALL 63 TEST SUITES PASSED SUCCESSFULLY!      ")
             puts CPtr(Pointer To Byte, "================================================")
             Main = 0
         Else
-            Print "   TEST SUITE FINISHED WITH ", failCount, " FAILURE(S) OUT OF 61"
+            Print "   TEST SUITE FINISHED WITH ", failCount, " FAILURE(S) OUT OF 63"
             puts CPtr(Pointer To Byte, "================================================")
             Main = 1
         End If

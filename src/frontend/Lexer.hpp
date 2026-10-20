@@ -41,6 +41,7 @@ enum class TokenType {
     KwTo,
     KwAsm,
     KwImport,
+    KwUse,
     KwIf,
     KwThen,
     KwElseIf,

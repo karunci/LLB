@@ -29,8 +29,9 @@ public:
 
     bool emitModule(const ModuleNode& moduleNode);
     void registerExternalProcedure(const std::string& name, const TypeSpec& retType, const std::vector<TypeSpec>& paramTypes, const std::string& aliasName = "", const std::vector<ExprASTNode*>& defExprs = {});
+    void registerClassInstancing(const std::string& className, InstancingKind instancing);
     void declareConstant(const ConstStmtNode& constNode, const std::string& prefix = "");
-    llvm::Function* emitProcedure(const ProcedureNode& procNode, const std::string& className = "", const std::vector<std::unique_ptr<ASTNode>>* bodyStatements = nullptr);
+    llvm::Function* emitProcedure(const ProcedureNode& procNode, const std::string& className = "", const std::vector<std::unique_ptr<ASTNode>>* bodyStatements = nullptr, bool isClassMethod = false);
 
     void emitStructure(const StructureNode& structNode);
     void emitStatement(ASTNode* stmt);
@@ -129,6 +130,10 @@ private:
     std::unordered_map<std::string, bool> m_procParamArray;
     std::unordered_map<std::string, const StructureNode*> m_genericStructTemplates;
     std::unordered_map<std::string, const ProcedureNode*> m_genericProcTemplates;
+    std::unordered_map<std::string, InstancingKind> m_classInstancing;
+    std::unordered_map<std::string, llvm::GlobalVariable*> m_classSingletons;
+    std::unordered_set<std::string> m_singleUseInstantiated;
+    std::unordered_set<std::string> m_initializedObjects;
 
 
     std::string instantiateGenericStruct(const TypeSpec& typeSpec);

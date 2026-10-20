@@ -166,7 +166,26 @@ public:
     std::unique_ptr<ExprASTNode> bodyExpr;
 };
 
+enum class InstancingKind {
+    Unspecified,
+    Global,
+    SingleUse,
+    MultiUse
+};
+
+struct UseDirective : public ASTNode {
+    std::string targetPath;    // e.g. "Terminal" or "Drivers.Terminal" or "WriteChar"
+    std::string containerPath; // e.g. "Drivers" if "Use Terminal In Drivers"
+    std::string aliasName;     // e.g. "term" if "As term"
+    bool isNew{false};         // True if instantiated via "As New" or "Use New"
+};
+
 // --- Statements ---
+
+class UseStmtNode : public ASTNode {
+public:
+    UseDirective directive;
+};
 
 class DimStmtNode : public ASTNode {
 public:
@@ -465,7 +484,6 @@ public:
     std::vector<std::unique_ptr<ASTNode>> body;
 };
 
-
 struct ImportDirective {
     std::string moduleName;
     std::string symbolName;
@@ -493,8 +511,10 @@ public:
     std::string sourceFilePath;
     bool isClass{false};
     bool isInterface{false};
+    InstancingKind instancing{InstancingKind::Unspecified};
     std::vector<std::string> implementsInterfaces;
     std::vector<ImportDirective> imports;
+    std::vector<UseDirective> uses;
     std::vector<std::unique_ptr<ASTNode>> members;
 };
 

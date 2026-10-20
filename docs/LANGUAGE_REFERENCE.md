@@ -101,10 +101,35 @@ Dim val As Byte = Hardware.Bus.ReadRegister(&H60)
 ```
 
 ### Imports (`Import`)
-Imports resolve dependencies between compilation units:
+Imports resolve dependencies between compilation units and bring module routines and constants into scope:
 ```vb
 Import Hardware.Bus In "drivers/Bus.bas"
+Import Arch.Idt
 Import System.Math
+```
+
+### Explicit Scope Binding (`Use`)
+While `Import` is designed for static modules, `Use` provides fine-grained, explicit scope binding and aliasing for classes, procedures, and member functions across namespaces:
+
+| Syntax Pattern | Semantics / What it does | Example Call |
+| :--- | :--- | :--- |
+| `Use Drivers.Terminal` | Brings class `Terminal` into current scope without typing `Drivers.` prefix | `Terminal.WriteChar "A"` |
+| `Use Drivers.Terminal As term` | Imports class with a convenient short alias | `term.WriteChar "A"` |
+| `Use Terminal In Drivers` | Equivalent to `from Drivers import Terminal` | `Terminal.WriteChar "A"` |
+| `Use Terminal In Drivers As term` | Class import from parent namespace with alias | `term.WriteChar "A"` |
+| `Use WriteChar In Drivers.Terminal` | Directly imports a specific procedure/method | `WriteChar "A"` |
+| `Use WriteChar In Drivers.Terminal As TWrite` | Directly imports a method with a unique alias | `TWrite "A"` |
+
+#### One-Liner Instantiation via `Use`
+For instance-able classes (`<Instancing(MultiUse)>` or `<Instancing(SingleUse)>`), `Use` supports concise, one-line instantiation on the stack or heap:
+```vb
+' Instantiation with alias in a single statement
+Use New Terminal In Drivers As term1
+' Or:
+Use Terminal In Drivers As New term1
+
+term1.Initialize 10, 0
+term1.WriteChar "A"
 ```
 
 ---
@@ -349,6 +374,84 @@ Next item
 ---
 
 ## 8. Object-Oriented Programming & Interfaces
+
+### Mandatory `<Instancing(...)>` Class Attributes
+Every `.cls` file must declare its instancing category at the top. If missing, the compiler will emit a **hard compile-time error**:
+```vb
+<Instancing(Category)>
+Class ClassName
+    ' ...
+End Class
+```
+
+| Attribute | Category | Description | Freestanding / Zero-Heap? |
+| :--- | :--- | :--- | :--- |
+| `<Instancing(Global)>` | **Global Static Class** | Singleton state living in `.bss`. Methods can be called directly without `New` or local `Dim`. | ✅ 100% Zero-Heap |
+| `<Instancing(SingleUse)>` | **Single-Instance Class** | Can only be instantiated **once** per scope/binary. Attempting multiple instances or `New` throws a compile-time error. | ✅ 100% Zero-Heap (Stack or Global BSS) |
+| `<Instancing(MultiUse)>` | **Multi-Instance Class** | Can be instantiated multiple times via `Dim ... As New ...` or `Use ... As New ...`. | ✅ Stack (Value) or Heap (Dynamic) |
+
+---
+
+### Class Categories & Memory Models
+
+#### 1. Global Static Class (`<Instancing(Global)>`)
+- **Concept:** Acts as a structured singleton service with internal state stored in `.bss`.
+- **Codegen:** The compiler allocates a zeroed static buffer `@__singleton_ClassName = internal global %struct.ClassName zeroinitializer` and automatically passes its address as `Me`.
+- **Usage:**
+  ```vb
+  Use Drivers.Terminal As term
+
+  term.Initialize 10, 0
+  term.WriteChar 65
+  ```
+
+#### 2. Single-Instance Class (`<Instancing(SingleUse)>`)
+- **Concept:** Represents unique hardware devices or core kernel drivers (e.g., primary VGA console, keyboard controller) that must never be duplicated.
+- **Rules:** The compiler strictly enforces at compile-time that only one instance exists. Attempting a second instantiation or using `New` produces:
+  `Error: Class 'Drivers.Terminal' is marked <Instancing(SingleUse)> and cannot be instantiated multiple times.`
+- **Instantiation:**
+  ```vb
+  Dim term As Drivers.Terminal ' Single instance on stack or in .bss
+  term.Initialize 10, 0
+  ```
+
+#### 3. Multi-Instance Class (`<Instancing(MultiUse)>`)
+- **Concept:** Represents reusable objects, buffers, virtual terminals, or processes.
+- **Stack / Value Instantiation (Zero Heap):**
+  ```vb
+  Dim com1 As Drivers.SerialPort ' Stack-allocated via alloca
+  com1.Initialize &H3F8
+  ```
+- **Dynamic Heap Instantiation:**
+  ```vb
+  Dim comPort As Pointer To Drivers.SerialPort
+  Set comPort = New Drivers.SerialPort
+  ```
+
+---
+
+### Strict Compile-Time Uninitialized Error Enforcement
+For both `<Instancing(SingleUse)>` and `<Instancing(MultiUse)>` classes that define a `Public Sub Initialize(...)` constructor:
+1. The compiler tracks the lifecycle state of each instance variable (`UNINITIALIZED` -> `INITIALIZED`).
+2. If code attempts to access a member variable or invoke any method before calling `.Initialize(...)`, the compiler immediately emits a **compile-time error**:
+   ```text
+   [llbc error] File 'KernelMain.bas', Line 42:
+     Object 'term' of class 'Drivers.Terminal' is used before being initialized.
+     Call 'term.Initialize(...)' first.
+   ```
+3. Calling `.Initialize(...)` transitions the state to `INITIALIZED`, permitting all subsequent operations.
+
+---
+
+### Destruction & Teardown Lifecycle (`Exit` / `Destroy`)
+Classes may provide symmetric teardown via `Public Sub Destroy()` or `Public Sub Exit()`:
+```vb
+term.Destroy ' or term.Exit
+```
+- **Value / Stack instances:** Resets hardware state and clears buffers.
+- **Dynamic Heap instances (`New`):** `Delete term` automatically invokes `Destroy()` before freeing memory through the registered allocator hook.
+
+---
 
 ### Interfaces & Implementation
 ```vb

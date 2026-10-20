@@ -74,6 +74,7 @@ private:
     std::unique_ptr<InterfaceNode> parseInterface(bool isPublic = true);
     void parseTypeAlias();
     ImportDirective parseImportStatement();
+    UseDirective parseUseStatement();
 
     std::unordered_map<std::string, TypeSpec> m_typeAliases;
 

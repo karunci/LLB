@@ -21,7 +21,8 @@ LLB fuses the safety and performance of modern systems languages with the approa
 | Feature | Status | Notes |
 |---------|--------|-------|
 | `Module` / `End Module` | ✅ | Static singleton compilation units |
-| `Class` / `End Class` | ✅ | With implicit `Me` pointer |
+| `Class` / `End Class` | ✅ | Encapsulated OOP with `<Instancing(Global/SingleUse/MultiUse)>` and compile-time uninitialized verification |
+| `Use` / `In` / `As` | ✅ | Fine-grained scope binding, aliasing, and one-liner instantiation (`Use [New] Class In Ns As [New] alias`) |
 | `Sub` / `Function` / `End Sub` / `End Function` | ✅ | With `ByVal` / `ByRef` |
 | `If / ElseIf / Else / End If` | ✅ | Multi-branch, nested |
 | `For / To / Step / Next` | ✅ | With `Exit For` |
@@ -224,6 +225,7 @@ LLB fuses the safety and performance of modern systems languages with the approa
 26. ~~Deterministic Scoped Cleanup (`Using ... End Using`)~~ — **Done** ✅
 27. ~~Algebraic Pattern Matching (`Match ... Case ... End Match`)~~ — **Done** ✅
 28. ~~Self-Hosting Bootstrap: `stage1` Compiler Architecture (`src/stage1/`, `llbc.llbproj`)~~ — **Done** ✅
+29. ~~`Use` Statement — Scoped Binding, Aliasing & Compile-Time Class Instancing (`<Instancing(MultiUse/SingleUse/Global)>`, duplicate `New` rejection, uninitialized-access rejection)~~ — **Done** ✅
 
 ---
 

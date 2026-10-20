@@ -435,6 +435,72 @@ ImportDirective Parser::parseImportStatement() {
     return directive;
 }
 
+UseDirective Parser::parseUseStatement() {
+    UseDirective directive;
+    directive.line = m_currentToken.line;
+    directive.column = m_currentToken.column;
+
+    bool leadingNew = false;
+    bool trailingNew = false;
+
+    // Check for "Use New Class..."
+    if (m_currentToken.type == TokenType::KwNew || checkKeyword("New")) {
+        consume();
+        leadingNew = true;
+    }
+
+    // Target identifier / dotted path: Terminal or Drivers.Terminal
+    std::string targetPath = m_currentToken.text;
+    expect(TokenType::Identifier, "Expected identifier after 'Use'");
+    while (match(TokenType::Dot)) {
+        targetPath += "." + m_currentToken.text;
+        expect(TokenType::Identifier, "Expected identifier after '.' in Use target");
+    }
+    directive.targetPath = targetPath;
+
+    // Optional: In Container/Namespace or File Path (e.g. Use Terminal In Drivers or Use Helper In "ClassHelper.cls")
+    if (m_currentToken.type == TokenType::KwIn || checkKeyword("In")) {
+        consume();
+        if (m_currentToken.type == TokenType::StringLiteral) {
+            directive.containerPath = m_currentToken.text;
+            consume();
+        } else {
+            std::string container = m_currentToken.text;
+            expect(TokenType::Identifier, "Expected container, namespace, or file string after 'In'");
+            while (match(TokenType::Dot)) {
+                container += "." + m_currentToken.text;
+                expect(TokenType::Identifier, "Expected identifier after '.' in container name");
+            }
+            directive.containerPath = container;
+        }
+    }
+
+    // Optional: As [New] Alias (e.g. As term or As New term)
+    if (m_currentToken.type == TokenType::KwAs || checkKeyword("As")) {
+        consume();
+        if (m_currentToken.type == TokenType::KwNew || checkKeyword("New")) {
+            consume();
+            trailingNew = true;
+        }
+
+        directive.aliasName = m_currentToken.text;
+        expect(TokenType::Identifier, "Expected alias identifier after 'As'");
+    }
+
+    // Validation: prevent duplicate New usage (e.g. "Use New Terminal In Drivers As New term1")
+    if (leadingNew && trailingNew) {
+        throw std::runtime_error("Duplicate 'New' in 'Use' statement. Use either 'Use New ...' or '... As New ...', not both.");
+    }
+
+    // If instantiated with New, alias is required to name the instance
+    if ((leadingNew || trailingNew) && directive.aliasName.empty()) {
+        throw std::runtime_error("Instantiation via 'New' in 'Use' statement requires an alias via 'As <name>' (e.g. 'Use New Terminal As term').");
+    }
+
+    directive.isNew = (leadingNew || trailingNew);
+    return directive;
+}
+
 std::unique_ptr<DimStmtNode> Parser::parseDimStatement() {
     auto dimNode = std::make_unique<DimStmtNode>();
     
@@ -1088,6 +1154,23 @@ std::unique_ptr<ASTNode> Parser::parseStatement() {
     if (m_currentToken.type == TokenType::KwDim || checkKeyword("Dim")) {
         consume();
         result = parseDimStatement();
+    } else if (m_currentToken.type == TokenType::KwUse || checkKeyword("Use")) {
+        consume();
+        UseDirective useDir = parseUseStatement();
+        if (useDir.isNew) {
+            auto dimNode = std::make_unique<DimStmtNode>();
+            dimNode->varName = useDir.aliasName;
+            std::string className = !useDir.containerPath.empty() 
+                ? (useDir.containerPath + "." + useDir.targetPath) 
+                : useDir.targetPath;
+            dimNode->type = TypeSpec{className};
+            result = std::move(dimNode);
+        } else {
+            // For non-new Use statements in procedure bodies, create a UseStmtNode
+            auto useNode = std::make_unique<UseStmtNode>();
+            useNode->directive = std::move(useDir);
+            result = std::move(useNode);
+        }
     } else if (m_currentToken.type == TokenType::KwConst || checkKeyword("Const")) {
         consume();
         result = parseConstStatement(false);
@@ -2370,6 +2453,34 @@ std::unique_ptr<InterfaceNode> Parser::parseInterface(bool isPublic) {
 std::unique_ptr<ModuleNode> Parser::parseModule() {
     auto moduleNode = std::make_unique<ModuleNode>();
 
+    InstancingKind instancing = InstancingKind::Unspecified;
+
+    // Check for leading attributes like <Instancing(...)> or <Packed> before Module/Class
+    while (match(TokenType::Less)) {
+        do {
+            if (checkKeyword("Instancing")) {
+                consume();
+                expect(TokenType::LParen, "Expected '(' after 'Instancing'");
+                if (checkKeyword("Global")) {
+                    consume();
+                    instancing = InstancingKind::Global;
+                } else if (checkKeyword("SingleUse")) {
+                    consume();
+                    instancing = InstancingKind::SingleUse;
+                } else if (checkKeyword("MultiUse")) {
+                    consume();
+                    instancing = InstancingKind::MultiUse;
+                } else {
+                    throw std::runtime_error("Invalid Instancing category: expected 'Global', 'SingleUse', or 'MultiUse'");
+                }
+                expect(TokenType::RParen, "Expected ')' after Instancing category");
+            } else {
+                consume(); // Skip other leading attributes gracefully
+            }
+        } while (match(TokenType::Comma));
+        expect(TokenType::Greater, "Expected '>' to close attribute");
+    }
+
     if (m_currentToken.type == TokenType::KwModule || checkKeyword("Module")) {
         consume();
         moduleNode->isClass = false;
@@ -2383,7 +2494,14 @@ std::unique_ptr<ModuleNode> Parser::parseModule() {
         consume();
         moduleNode->isClass = false;
     } else {
-        throw std::runtime_error("Source file must begin with 'Module', 'Class', 'Interface', or 'Namespace'");
+        throw std::runtime_error("Source file must begin with 'Module', 'Class', 'Interface', or 'Namespace' (optionally preceded by attributes)");
+    }
+
+    if (moduleNode->isClass) {
+        if (instancing == InstancingKind::Unspecified) {
+            throw std::runtime_error("Class '" + m_currentToken.text + "' must specify an <Instancing(...)> attribute (Global, SingleUse, or MultiUse)");
+        }
+        moduleNode->instancing = instancing;
     }
 
     std::string modName = m_currentToken.text;
@@ -2478,6 +2596,12 @@ std::unique_ptr<ModuleNode> Parser::parseModule() {
         if (m_currentToken.type == TokenType::KwImport || checkKeyword("Import")) {
             consume();
             moduleNode->imports.push_back(parseImportStatement());
+            continue;
+        }
+
+        if (m_currentToken.type == TokenType::KwUse || checkKeyword("Use")) {
+            consume();
+            moduleNode->uses.push_back(parseUseStatement());
             continue;
         }
 

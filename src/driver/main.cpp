@@ -248,6 +248,96 @@ static std::string compileSourceFile(
         }
     }
 
+    // Inject exported symbols and classes from all Use directives
+    for (const auto& useDir : moduleAST->uses) {
+        std::string targetModName = !useDir.containerPath.empty()
+            ? (useDir.containerPath + "." + useDir.targetPath)
+            : useDir.targetPath;
+
+        // Try exact match, base match in moduleFileIndex, or direct file path if containerPath has an extension
+        std::string targetFilePath = "";
+        if (useDir.containerPath.find('.') != std::string::npos && 
+            (useDir.containerPath.find(".cls") != std::string::npos || useDir.containerPath.find(".bas") != std::string::npos)) {
+            targetFilePath = useDir.containerPath;
+            // Resolve relative to sourcePath directory if needed
+            size_t slash = sourcePath.find_last_of("/\\");
+            if (slash != std::string::npos && targetFilePath.find('/') == std::string::npos && targetFilePath.find('\\') == std::string::npos) {
+                targetFilePath = sourcePath.substr(0, slash + 1) + targetFilePath;
+            }
+        } else {
+            auto it = g_moduleFileIndex.find(toLowerStr(targetModName));
+            if (it != g_moduleFileIndex.end()) {
+                targetFilePath = it->second;
+            } else if (!useDir.containerPath.empty()) {
+                auto it2 = g_moduleFileIndex.find(toLowerStr(useDir.containerPath));
+                if (it2 != g_moduleFileIndex.end()) targetFilePath = it2->second;
+            } else {
+                auto it3 = g_moduleFileIndex.find(toLowerStr(useDir.targetPath));
+                if (it3 != g_moduleFileIndex.end()) targetFilePath = it3->second;
+            }
+        }
+
+        if (targetFilePath.empty()) continue;
+        auto targetMod = getOrParseModule(targetFilePath);
+        if (!targetMod) continue;
+
+        if (targetMod->isClass) {
+            irEmitter.registerClassInstancing(targetMod->name, targetMod->instancing);
+            if (!useDir.aliasName.empty()) {
+                irEmitter.registerClassInstancing(useDir.aliasName, targetMod->instancing);
+            }
+            llbc::StructureNode classStruct;
+            classStruct.name = targetMod->name;
+            for (const auto& m : targetMod->members) {
+                if (auto dim = dynamic_cast<const llbc::DimStmtNode*>(m.get())) {
+                    llbc::StructureField f;
+                    f.name = dim->varName;
+                    f.type = dim->type;
+                    classStruct.fields.push_back(f);
+                }
+            }
+            irEmitter.emitStructure(classStruct);
+            if (!useDir.aliasName.empty() && useDir.aliasName != targetMod->name) {
+                classStruct.name = useDir.aliasName;
+                irEmitter.emitStructure(classStruct);
+            }
+        }
+
+        // Register the class and its methods
+        for (const auto& member : targetMod->members) {
+            if (auto proc = dynamic_cast<const llbc::ProcedureNode*>(member.get())) {
+                if (proc->isPublic) {
+                    std::vector<llbc::TypeSpec> pTypes;
+                    // First parameter for class method is Me (pointer to class struct)
+                    if (targetMod->isClass) {
+                        pTypes.push_back(llbc::TypeSpec{targetMod->name, 1});
+                    }
+                    for (const auto& p : proc->parameters) {
+                        llbc::TypeSpec pt = p.type;
+                        if (p.isByRef) pt.pointerDepth++;
+                        pTypes.push_back(pt);
+                    }
+                    llbc::TypeSpec retType = proc->isFunction ? proc->returnType : llbc::TypeSpec{"void"};
+
+                    std::vector<llbc::ExprASTNode*> defExprs;
+                    for (const auto& p : proc->parameters) {
+                        defExprs.push_back(p.defaultValue.get());
+                    }
+
+                    std::string symbolMangled = targetMod->name + "_" + proc->name;
+                    for (auto& ch : symbolMangled) if (ch == '.') ch = '_';
+
+                    irEmitter.registerExternalProcedure(targetMod->name + "." + proc->name, retType, pTypes, symbolMangled, defExprs);
+                    irEmitter.registerExternalProcedure(targetMod->name + "_" + proc->name, retType, pTypes, symbolMangled, defExprs);
+                    if (!useDir.aliasName.empty()) {
+                        irEmitter.registerExternalProcedure(useDir.aliasName + "." + proc->name, retType, pTypes, symbolMangled, defExprs);
+                        irEmitter.registerExternalProcedure(useDir.aliasName + "_" + proc->name, retType, pTypes, symbolMangled, defExprs);
+                    }
+                }
+            }
+        }
+    }
+
     if (!irEmitter.emitModule(*moduleAST)) {
         std::cerr << "Error: IR Verification failed for module " << moduleAST->name << "\n";
         return "";

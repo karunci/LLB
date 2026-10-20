@@ -692,6 +692,15 @@ Cmd = "post_build.sh"
 | **Shared Library** | `SharedLibrary`, `DynamicLibrary` | Hosted (`-shared`) | `.so` | Dynamic shared library |
 | **Static Library** | `StaticLibrary`, `Archive` | Static archive (`llvm-ar`) | `.a` | Static code archive |
 
+### Multiple Manifest Builds & Invocation Modes
+
+The `llbc` compiler driver supports compiling multiple project manifests sequentially:
+```bash
+llbc 1.llbproj 2.llbproj 3.llbproj
+```
+Each project is compiled with isolated module indices and symbol catalogs. Input files, directories, and extensions are strictly validated before code generation begins.
+
+
 
 ---
 

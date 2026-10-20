@@ -447,16 +447,7 @@ static std::string compileSourceFile(
     return objFilename;
 }
 
-int main(int argc, char** argv) {
-    if (argc < 2) {
-        std::cout << "Usage:\n";
-        std::cout << "  Project Mode: llbc-stage0 <project.llbproj> [--target=<triple>] [--sysroot=<path>] [-nostdlib]\n";
-        std::cout << "  Single File:  llbc-stage0 <source.bas|boot.S> [-I include_dir] [-o output.elf] [-T linker.ld] [--target=<triple>] [--sysroot=<path>] [-nostdlib]\n";
-        return 1;
-    }
-
-    std::vector<std::string> inputFiles;
-    std::vector<std::string> objectFiles;
+struct CliOptions {
     std::string outputFile = "output.elf";
     std::string linkerScript = "";
     std::string targetTriple = "";
@@ -467,11 +458,9 @@ int main(int argc, char** argv) {
     bool isRawBinary = false;
     bool enableDebugInfo = false;
     int optLevel = 0;
-    std::vector<std::string> postBuildCommands;
     int scriptTimeout = 30;
     bool skipPostBuild = false;
 
-    // Track explicit CLI flags so they take precedence over .llbproj defaults
     bool cliHasOutputFile = false;
     bool cliHasOptLevel = false;
     bool cliHasTarget = false;
@@ -479,6 +468,177 @@ int main(int argc, char** argv) {
     bool cliHasFreestanding = false;
     bool cliHasSysroot = false;
     bool cliHasTimeout = false;
+};
+
+static int buildSingleProject(const std::string& manifestPath, const CliOptions& opts, const std::vector<std::string>& extraObjectFiles) {
+    std::cout << "[llbc] Loading project manifest: " << manifestPath << "\n";
+    
+    // Clear project module index for clean build
+    g_moduleFileIndex.clear();
+
+    llbc::ProjectConfig config = llbc::ProjectParser::parse(manifestPath);
+    if (config.sourceFiles.empty() && config.assemblyFiles.empty()) {
+        std::cerr << "Error: No source or assembly files specified in project manifest: " << manifestPath << "\n";
+        return 1;
+    }
+
+    std::vector<std::string> objectFiles = extraObjectFiles;
+    std::string outputFile = opts.cliHasOutputFile ? opts.outputFile : config.outputFile;
+    std::string linkerScript = (!opts.cliHasLinkerScript && !config.linkerScript.empty()) ? config.linkerScript : opts.linkerScript;
+    bool isFreestanding = opts.cliHasFreestanding ? opts.isFreestanding : config.isFreestanding;
+    int scriptTimeout = opts.cliHasTimeout ? opts.scriptTimeout : config.scriptTimeout;
+    bool isShared = opts.isShared;
+    bool isStatic = opts.isStatic;
+    bool isRawBinary = opts.isRawBinary;
+    int optLevel = opts.cliHasOptLevel ? opts.optLevel : 0;
+    std::string targetTriple = opts.targetTriple;
+
+    // For hosted Executables: pass arch to LLVM codegen (per compileSourceFile call)
+    // but do NOT set the global targetTriple used by the linker — let LLD use host CRT.
+    // For bare-metal / cross targets the full triple must drive both codegen and linking.
+    bool isHostedExe = (config.type == "Executable" && !isFreestanding);
+    if (!opts.cliHasTarget && !config.targetArch.empty() && !isHostedExe) {
+        targetTriple = config.targetArch;
+    }
+    if (config.type == "SharedLibrary" || config.type == "DynamicLibrary") {
+        isShared = true;
+    } else if (config.type == "StaticLibrary" || config.type == "Archive") {
+        isStatic = true;
+    } else if (config.type == "RawBinary" || config.type == "FlatBinary" || config.type == "Binary") {
+        isRawBinary = true;
+        isFreestanding = true;
+    }
+
+    // Validate that all manifest source files exist
+    for (const auto& src : config.sourceFiles) {
+        if (!fs::exists(src)) {
+            std::cerr << "Error: Project source file not found: " << src << "\n";
+            return 1;
+        }
+        if (fs::is_directory(src)) {
+            std::cerr << "Error: Project source file is a directory, not a file: " << src << "\n";
+            return 1;
+        }
+        getOrParseModule(src);
+    }
+    for (const auto& asmFile : config.assemblyFiles) {
+        if (!fs::exists(asmFile)) {
+            std::cerr << "Error: Project assembly file not found: " << asmFile << "\n";
+            return 1;
+        }
+        if (fs::is_directory(asmFile)) {
+            std::cerr << "Error: Project assembly file is a directory, not a file: " << asmFile << "\n";
+            return 1;
+        }
+    }
+
+    // Compile LLB Modules (.bas / .cls)
+    std::string codegenTriple = !config.targetArch.empty() ? config.targetArch : targetTriple;
+    for (const auto& srcFile : config.sourceFiles) {
+        std::string objFile = compileSourceFile(srcFile, optLevel, opts.enableDebugInfo, codegenTriple, opts.sysroot, config.outDir);
+        if (objFile.empty()) return 1;
+        objectFiles.push_back(objFile);
+    }
+
+    // Assemble Raw Assembly Files (.S)
+    for (const auto& asmFile : config.assemblyFiles) {
+        std::string asmStem = fs::path(asmFile).stem().string() + "_asm.o";
+        std::string objFile = config.outDir.empty() ? asmStem
+                                                    : (fs::path(config.outDir) / asmStem).lexically_normal().string();
+        std::cout << "  [+] Assembling GNU Assembly: " << asmFile << " -> " << objFile << "\n";
+
+        std::string asmTarget = !config.targetArch.empty() ? config.targetArch : targetTriple;
+        if (!llbc::AsmCompiler::compileAssemblyFile(asmFile, objFile, asmTarget)) {
+            std::cerr << "Error: Assembly compilation failed for " << asmFile << "\n";
+            return 1;
+        }
+        objectFiles.push_back(objFile);
+    }
+
+    // Auto-detect static archive from output file extension (.a)
+    if (hasExtension(outputFile, ".a")) {
+        isStatic = true;
+    }
+
+    // Ensure parent directory of outputFile exists
+    fs::path outFilePath(outputFile);
+    if (outFilePath.has_parent_path()) {
+        std::error_code ec;
+        fs::create_directories(outFilePath.parent_path(), ec);
+    }
+
+    // Link or Archive
+    if (isStatic) {
+        std::cout << "[llbc] Archiving " << objectFiles.size() << " object file(s) into static library " << outputFile << "...\n";
+        if (llbc::TargetEmitter::createStaticArchive(objectFiles, outputFile)) {
+            std::cout << "[llbc] SUCCESS: Static Library created -> " << outputFile << "\n";
+        } else {
+            std::cerr << "Error: Static library archiving failed!\n";
+            return 1;
+        }
+    } else {
+        std::string linkTarget = outputFile;
+        if (isRawBinary) {
+            linkTarget = outputFile + ".elf";
+        }
+
+        std::cout << "[llbc] Linking " << objectFiles.size() << " object file(s) into " << linkTarget << "...\n";
+        if (llbc::TargetEmitter::linkExecutable(objectFiles, linkTarget, linkerScript, isShared, isFreestanding, targetTriple, opts.sysroot)) {
+            if (isRawBinary) {
+                std::cout << "[llbc] Extracting flat binary -> " << outputFile << "...\n";
+                if (llbc::TargetEmitter::emitRawBinary(linkTarget, outputFile)) {
+                    std::cout << "[llbc] SUCCESS: Raw Binary created -> " << outputFile << "\n";
+                } else {
+                    std::cerr << "Error: Raw binary extraction failed!\n";
+                    return 1;
+                }
+            } else if (isShared) {
+                std::cout << "[llbc] SUCCESS: Dynamic Library created -> " << outputFile << "\n";
+            } else {
+                std::cout << "[llbc] SUCCESS: Executable created -> " << outputFile << "\n";
+            }
+        } else {
+            std::cerr << "Error: LLD Linking stage failed!\n";
+            return 1;
+        }
+    }
+
+    // Execute Post-Build Commands / Scripts
+    if (!opts.skipPostBuild && !config.postBuildCommands.empty()) {
+        std::cout << "[llbc] Running " << config.postBuildCommands.size() << " post-build command(s)...\n";
+        for (size_t idx = 0; idx < config.postBuildCommands.size(); ++idx) {
+            const auto& cmd = config.postBuildCommands[idx];
+            std::cout << "  [>] (" << (idx + 1) << "/" << config.postBuildCommands.size() << ") " << cmd;
+            if (scriptTimeout > 0) {
+                std::cout << " (timeout: " << scriptTimeout << "s)";
+            }
+            std::cout << "\n";
+
+            int ret = runCommandWithTimeout(cmd, scriptTimeout);
+            if (ret != 0) {
+                std::cerr << "Error: Post-build command failed with exit code " << ret << ": " << cmd << "\n";
+                return ret;
+            }
+        }
+    } else if (opts.skipPostBuild && !config.postBuildCommands.empty()) {
+        std::cout << "[llbc] Skipping " << config.postBuildCommands.size() << " post-build command(s) (--no-script requested)\n";
+    }
+
+    return 0;
+}
+
+int main(int argc, char** argv) {
+    if (argc < 2) {
+        std::cout << "Usage:\n";
+        std::cout << "  Project Mode: llbc <project.llbproj>... [options]\n";
+        std::cout << "  Single File:  llbc <source.bas|boot.S>... [options]\n";
+        std::cout << "Run 'llbc --help' for complete documentation.\n";
+        return 1;
+    }
+
+    std::vector<std::string> inputFiles;
+    std::vector<std::string> objectFiles;
+    CliOptions cliOpts;
 
     // 1. Parse CLI options and collect input source files
     for (int i = 1; i < argc; ++i) {
@@ -487,12 +647,11 @@ int main(int argc, char** argv) {
             std::cout << "Low-Level Basic Compiler (llbc) - Version 0.1.0\n"
                       << "Bare-metal & hosted systems programming language compiler based on LLVM/LLD.\n\n"
                       << "Usage:\n"
-                      << "  llbc <project.llbproj> [options]\n"
+                      << "  llbc <project.llbproj>... [options]\n"
                       << "  llbc <source.bas|class.cls|boot.S>... [options]\n\n"
                       << "Project Manifest Mode:\n"
-                      << "  Passing a single .llbproj file builds the complete project according to its\n"
-                      << "  descriptor manifest. Any CLI options provided on the command line override\n"
-                      << "  the defaults specified inside the .llbproj file.\n\n"
+                      << "  Passing one or more .llbproj files builds each project sequentially according\n"
+                      << "  to its descriptor manifest. CLI options override defaults in all manifests.\n\n"
                       << "Basic Options:\n"
                       << "  -o <file>                Specify final output file path (executable, lib, or raw bin)\n"
                       << "  -O0, -O1, -O2, -O3       Optimization level (-O0 default, -O2 recommended for release)\n"
@@ -526,46 +685,46 @@ int main(int argc, char** argv) {
                       << "LLVM backend target: freestanding and hosted x86_64/AArch64/RISC-V.\n";
             return 0;
         } else if (arg == "-o" && i + 1 < argc) {
-            outputFile = argv[++i];
-            cliHasOutputFile = true;
+            cliOpts.outputFile = argv[++i];
+            cliOpts.cliHasOutputFile = true;
         } else if (arg == "-g") {
-            enableDebugInfo = true;
+            cliOpts.enableDebugInfo = true;
         } else if (arg == "-I" && i + 1 < argc) {
             g_includeDirs.push_back(argv[++i]);
         } else if (arg.rfind("-I", 0) == 0 && arg.size() > 2) {
             g_includeDirs.push_back(arg.substr(2));
         } else if (arg == "-T" && i + 1 < argc) {
-            linkerScript = argv[++i];
-            cliHasLinkerScript = true;
+            cliOpts.linkerScript = argv[++i];
+            cliOpts.cliHasLinkerScript = true;
         } else if (arg == "--target" && i + 1 < argc) {
-            targetTriple = argv[++i];
-            cliHasTarget = true;
+            cliOpts.targetTriple = argv[++i];
+            cliOpts.cliHasTarget = true;
         } else if (arg == "-target" && i + 1 < argc) {
-            targetTriple = argv[++i];
-            cliHasTarget = true;
+            cliOpts.targetTriple = argv[++i];
+            cliOpts.cliHasTarget = true;
         } else if (arg.rfind("--target=", 0) == 0) {
-            targetTriple = arg.substr(9);
-            cliHasTarget = true;
+            cliOpts.targetTriple = arg.substr(9);
+            cliOpts.cliHasTarget = true;
         } else if (arg.rfind("-target=", 0) == 0) {
-            targetTriple = arg.substr(8);
-            cliHasTarget = true;
+            cliOpts.targetTriple = arg.substr(8);
+            cliOpts.cliHasTarget = true;
         } else if (arg == "--sysroot" && i + 1 < argc) {
-            sysroot = argv[++i];
-            cliHasSysroot = true;
+            cliOpts.sysroot = argv[++i];
+            cliOpts.cliHasSysroot = true;
         } else if (arg.rfind("--sysroot=", 0) == 0) {
-            sysroot = arg.substr(10);
-            cliHasSysroot = true;
+            cliOpts.sysroot = arg.substr(10);
+            cliOpts.cliHasSysroot = true;
         } else if (arg == "--no-script" || arg == "--skip-scripts" || arg == "--skip-post-build") {
-            skipPostBuild = true;
+            cliOpts.skipPostBuild = true;
         } else if (arg.rfind("--script-timeout=", 0) == 0) {
             try {
-                scriptTimeout = std::stoi(arg.substr(17));
-                cliHasTimeout = true;
+                cliOpts.scriptTimeout = std::stoi(arg.substr(17));
+                cliOpts.cliHasTimeout = true;
             } catch (...) {}
         } else if (arg == "--script-timeout" && i + 1 < argc) {
             try {
-                scriptTimeout = std::stoi(argv[++i]);
-                cliHasTimeout = true;
+                cliOpts.scriptTimeout = std::stoi(argv[++i]);
+                cliOpts.cliHasTimeout = true;
             } catch (...) {}
         } else if (arg == "-D" && i + 1 < argc) {
             std::string def = argv[++i];
@@ -588,30 +747,30 @@ int main(int argc, char** argv) {
                 g_defines[def] = 1;
             }
         } else if (arg == "-shared" || arg == "--shared") {
-            isShared = true;
+            cliOpts.isShared = true;
         } else if (arg == "-static" || arg == "--static" || arg == "-archive") {
-            isStatic = true;
+            cliOpts.isStatic = true;
         } else if (arg == "-raw-binary" || arg == "--raw-binary" ||
                    arg == "-flat-binary" || arg == "--flat-binary" ||
                    (arg == "-O" && i + 1 < argc && std::string(argv[i + 1]) == "binary")) {
             if (arg == "-O") ++i;
-            isRawBinary = true;
-            isFreestanding = true;
+            cliOpts.isRawBinary = true;
+            cliOpts.isFreestanding = true;
         } else if (arg == "-freestanding" || arg == "--freestanding" || arg == "-nostdlib" || arg == "--nostdlib") {
-            isFreestanding = true;
-            cliHasFreestanding = true;
+            cliOpts.isFreestanding = true;
+            cliOpts.cliHasFreestanding = true;
         } else if (arg == "-O0") {
-            optLevel = 0;
-            cliHasOptLevel = true;
+            cliOpts.optLevel = 0;
+            cliOpts.cliHasOptLevel = true;
         } else if (arg == "-O1") {
-            optLevel = 1;
-            cliHasOptLevel = true;
+            cliOpts.optLevel = 1;
+            cliOpts.cliHasOptLevel = true;
         } else if (arg == "-O2") {
-            optLevel = 2;
-            cliHasOptLevel = true;
+            cliOpts.optLevel = 2;
+            cliOpts.cliHasOptLevel = true;
         } else if (arg == "-O3") {
-            optLevel = 3;
-            cliHasOptLevel = true;
+            cliOpts.optLevel = 3;
+            cliOpts.cliHasOptLevel = true;
         } else if (arg.rfind("-l", 0) == 0 || arg.rfind("-L", 0) == 0) {
             // Forward library flags to object / link inputs
             objectFiles.push_back(arg);
@@ -630,196 +789,169 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // Disallow mixed manifest and direct source files
-    bool hasManifest = false;
-    for (const auto& f : inputFiles) {
-        if (hasExtension(f, ".llbproj")) {
-            hasManifest = true;
-            break;
+    // Validate that include directories exist
+    for (const auto& inc : g_includeDirs) {
+        if (!fs::exists(inc)) {
+            std::cerr << "Error: Include directory does not exist: " << inc << "\n";
+            return 1;
+        }
+        if (!fs::is_directory(inc)) {
+            std::cerr << "Error: Include path is not a directory: " << inc << "\n";
+            return 1;
         }
     }
-    if (hasManifest && inputFiles.size() > 1) {
-        std::cerr << "Error: Cannot mix project manifest (.llbproj) with individual source files.\n"
-                  << "Specify either a single .llbproj file or multiple individual source files.\n";
-        return 1;
+
+    // Validate linker script if specified
+    if (cliOpts.cliHasLinkerScript && !cliOpts.linkerScript.empty()) {
+        if (!fs::exists(cliOpts.linkerScript)) {
+            std::cerr << "Error: Linker script file not found: " << cliOpts.linkerScript << "\n";
+            return 1;
+        }
+        if (fs::is_directory(cliOpts.linkerScript)) {
+            std::cerr << "Error: Linker script path is a directory: " << cliOpts.linkerScript << "\n";
+            return 1;
+        }
     }
 
-    // 2. Process project manifest or compile input files
-    if (inputFiles.size() == 1 && hasExtension(inputFiles[0], ".llbproj")) {
-        std::string inputPath = inputFiles[0];
-        std::cout << "[llbc] Loading project manifest: " << inputPath << "\n";
-        
-        llbc::ProjectConfig config = llbc::ProjectParser::parse(inputPath);
-        if (config.sourceFiles.empty() && config.assemblyFiles.empty()) {
-            std::cerr << "Error: No source or assembly files specified in project manifest.\n";
+    // Separate project manifests from source/object files and validate inputs
+    std::vector<std::string> manifestFiles;
+    std::vector<std::string> directSourceFiles;
+
+    for (const auto& file : inputFiles) {
+        // File existence check
+        if (!fs::exists(file)) {
+            std::cerr << "Error: Input file does not exist: " << file << "\n";
+            return 1;
+        }
+        // Directory check
+        if (fs::is_directory(file)) {
+            std::cerr << "Error: Input path is a directory, not a file: " << file << "\n";
             return 1;
         }
 
-        // Apply manifest settings ONLY if not overridden by explicit CLI flags
-        if (!cliHasOutputFile) {
-            outputFile = config.outputFile;
+        // Extension check
+        if (hasExtension(file, ".llbproj")) {
+            manifestFiles.push_back(file);
+        } else if (hasExtension(file, ".bas") || hasExtension(file, ".cls") ||
+                   hasExtension(file, ".S")   || hasExtension(file, ".s") ||
+                   hasExtension(file, ".o")   || hasExtension(file, ".a") ||
+                   hasExtension(file, ".so")) {
+            directSourceFiles.push_back(file);
+        } else {
+            std::cerr << "Error: Unsupported file format/extension: '" << file << "'\n"
+                      << "Supported inputs: .llbproj, .bas, .cls, .S, .s, .o, .a, .so\n";
+            return 1;
         }
-        if (!cliHasLinkerScript && !config.linkerScript.empty()) {
-            linkerScript = config.linkerScript;
-        }
-        if (!cliHasFreestanding && config.isFreestanding) {
-            isFreestanding = true;
-        }
-        if (!cliHasTimeout) {
-            scriptTimeout = config.scriptTimeout;
-        }
-        postBuildCommands = config.postBuildCommands;
+    }
 
-        // For hosted Executables: pass arch to LLVM codegen (per compileSourceFile call)
-        // but do NOT set the global targetTriple used by the linker — let LLD use host CRT.
-        // For bare-metal / cross targets the full triple must drive both codegen and linking.
-        bool isHostedExe = (config.type == "Executable" && !config.isFreestanding);
-        if (!cliHasTarget && !config.targetArch.empty() && !isHostedExe) {
-            targetTriple = config.targetArch;
-        }
-        if (config.type == "SharedLibrary" || config.type == "DynamicLibrary") {
-            isShared = true;
-        } else if (config.type == "StaticLibrary" || config.type == "Archive") {
-            isStatic = true;
-        } else if (config.type == "RawBinary" || config.type == "FlatBinary" || config.type == "Binary") {
-            isRawBinary = true;
-            isFreestanding = true;
-        }
+    // Reject mixing manifests with individual source files
+    if (!manifestFiles.empty() && !directSourceFiles.empty()) {
+        std::cerr << "Error: Cannot mix project manifest (.llbproj) with individual source files.\n"
+                  << "Specify either .llbproj file(s) or individual source files.\n";
+        return 1;
+    }
 
-        // Register all project sources in module file catalog
-        for (const auto& src : config.sourceFiles) {
-            getOrParseModule(src);
-        }
-
-        // Compile LLB Modules (.bas / .cls)
-        // Use config.targetArch for codegen (may differ from link-time targetTriple
-        // for hosted Executables where LLD must use the host CRT/ABI).
-        std::string codegenTriple = !config.targetArch.empty() ? config.targetArch : targetTriple;
-        for (const auto& srcFile : config.sourceFiles) {
-            std::string objFile = compileSourceFile(srcFile, optLevel, enableDebugInfo, codegenTriple, sysroot, config.outDir);
-            if (objFile.empty()) return 1;
-            objectFiles.push_back(objFile);
-        }
-        // Assemble Raw Assembly Files (.S)
-        for (const auto& asmFile : config.assemblyFiles) {
-            std::string asmStem = fs::path(asmFile).stem().string() + "_asm.o";
-            std::string objFile = config.outDir.empty() ? asmStem
-                                                        : (fs::path(config.outDir) / asmStem).lexically_normal().string();
-            std::cout << "  [+] Assembling GNU Assembly: " << asmFile << " -> " << objFile << "\n";
-
-            std::string asmTarget = !config.targetArch.empty() ? config.targetArch : targetTriple;
-            if (!llbc::AsmCompiler::compileAssemblyFile(asmFile, objFile, asmTarget)) {
-                std::cerr << "Error: Assembly compilation failed for " << asmFile << "\n";
-                return 1;
+    // Mode A: Build one or more project manifests sequentially
+    if (!manifestFiles.empty()) {
+        for (size_t i = 0; i < manifestFiles.size(); ++i) {
+            if (manifestFiles.size() > 1) {
+                std::cout << "\n==================================================\n"
+                          << "[llbc] [" << (i + 1) << "/" << manifestFiles.size() << "] Building project: " << manifestFiles[i] << "\n"
+                          << "==================================================\n";
             }
-            objectFiles.push_back(objFile);
-        }
-    } else {
-        // Collect source files and recursively discover imported dependencies
-        std::vector<std::string> sourceFilesToCompile;
-        std::vector<std::string> rawAsmFiles;
-
-        for (const auto& file : inputFiles) {
-            if (hasExtension(file, ".S") || hasExtension(file, ".s")) {
-                rawAsmFiles.push_back(file);
-            } else if (hasExtension(file, ".o") || hasExtension(file, ".a") || hasExtension(file, ".so")) {
-                objectFiles.push_back(file);
-            } else {
-                sourceFilesToCompile.push_back(file);
+            int ret = buildSingleProject(manifestFiles[i], cliOpts, objectFiles);
+            if (ret != 0) {
+                std::cerr << "\n[llbc] Build failed for project: " << manifestFiles[i] << " (exit code " << ret << ")\n";
+                return ret;
             }
         }
-
-        // Transitive Import Discovery
-        std::vector<std::string> allSources;
-        resolveDependencies(sourceFilesToCompile, allSources);
-
-        // Compile all discovered LLB modules
-        for (const auto& file : allSources) {
-            std::string objFile = compileSourceFile(file, optLevel, enableDebugInfo, targetTriple, sysroot);
-            if (objFile.empty()) return 1;
-            objectFiles.push_back(objFile);
+        if (manifestFiles.size() > 1) {
+            std::cout << "\n[llbc] All " << manifestFiles.size() << " projects built successfully.\n";
         }
+        return 0;
+    }
 
-        // Assemble Raw Assembly Files
-        for (const auto& file : rawAsmFiles) {
-            std::string objFile = fs::path(file).stem().string() + "_asm.o";
-            std::string asmTarget = !targetTriple.empty() ? targetTriple : "x86_64-unknown-none-elf";
-            if (llbc::AsmCompiler::compileAssemblyFile(file, objFile, asmTarget)) {
-                std::cout << "  [+] Assembled " << file << " -> " << objFile << "\n";
-                objectFiles.push_back(objFile);
-            } else {
-                return 1;
-            }
+    // Mode B: Direct Source File Compilation & Linking
+    std::vector<std::string> sourceFilesToCompile;
+    std::vector<std::string> rawAsmFiles;
+
+    for (const auto& file : directSourceFiles) {
+        if (hasExtension(file, ".S") || hasExtension(file, ".s")) {
+            rawAsmFiles.push_back(file);
+        } else if (hasExtension(file, ".o") || hasExtension(file, ".a") || hasExtension(file, ".so")) {
+            objectFiles.push_back(file);
+        } else {
+            sourceFilesToCompile.push_back(file);
+        }
+    }
+
+    // Transitive Import Discovery
+    std::vector<std::string> allSources;
+    resolveDependencies(sourceFilesToCompile, allSources);
+
+    // Compile all discovered LLB modules
+    for (const auto& file : allSources) {
+        std::string objFile = compileSourceFile(file, cliOpts.optLevel, cliOpts.enableDebugInfo, cliOpts.targetTriple, cliOpts.sysroot);
+        if (objFile.empty()) return 1;
+        objectFiles.push_back(objFile);
+    }
+
+    // Assemble Raw Assembly Files
+    for (const auto& file : rawAsmFiles) {
+        std::string objFile = fs::path(file).stem().string() + "_asm.o";
+        std::string asmTarget = !cliOpts.targetTriple.empty() ? cliOpts.targetTriple : "x86_64-unknown-none-elf";
+        if (llbc::AsmCompiler::compileAssemblyFile(file, objFile, asmTarget)) {
+            std::cout << "  [+] Assembled " << file << " -> " << objFile << "\n";
+            objectFiles.push_back(objFile);
+        } else {
+            return 1;
         }
     }
 
     // Auto-detect static archive from output file extension (.a)
-    if (hasExtension(outputFile, ".a")) {
-        isStatic = true;
-    }
+    bool isStatic = cliOpts.isStatic || hasExtension(cliOpts.outputFile, ".a");
 
     // Ensure parent directory of outputFile exists (especially if specified via CLI -o)
-    fs::path outFilePath(outputFile);
+    fs::path outFilePath(cliOpts.outputFile);
     if (outFilePath.has_parent_path()) {
         std::error_code ec;
         fs::create_directories(outFilePath.parent_path(), ec);
     }
 
-    // 3. Link or Archive All Generated Object Files
+    // Link or Archive All Generated Object Files
     if (isStatic) {
-        std::cout << "[llbc] Archiving " << objectFiles.size() << " object file(s) into static library " << outputFile << "...\n";
-        if (llbc::TargetEmitter::createStaticArchive(objectFiles, outputFile)) {
-            std::cout << "[llbc] SUCCESS: Static Library created -> " << outputFile << "\n";
+        std::cout << "[llbc] Archiving " << objectFiles.size() << " object file(s) into static library " << cliOpts.outputFile << "...\n";
+        if (llbc::TargetEmitter::createStaticArchive(objectFiles, cliOpts.outputFile)) {
+            std::cout << "[llbc] SUCCESS: Static Library created -> " << cliOpts.outputFile << "\n";
         } else {
             std::cerr << "Error: Static library archiving failed!\n";
             return 1;
         }
     } else {
-        std::string linkTarget = outputFile;
-        if (isRawBinary) {
-            linkTarget = outputFile + ".elf";
+        std::string linkTarget = cliOpts.outputFile;
+        if (cliOpts.isRawBinary) {
+            linkTarget = cliOpts.outputFile + ".elf";
         }
 
         std::cout << "[llbc] Linking " << objectFiles.size() << " object file(s) into " << linkTarget << "...\n";
-        if (llbc::TargetEmitter::linkExecutable(objectFiles, linkTarget, linkerScript, isShared, isFreestanding, targetTriple, sysroot)) {
-            if (isRawBinary) {
-                std::cout << "[llbc] Extracting flat binary -> " << outputFile << "...\n";
-                if (llbc::TargetEmitter::emitRawBinary(linkTarget, outputFile)) {
-                    std::cout << "[llbc] SUCCESS: Raw Binary created -> " << outputFile << "\n";
+        if (llbc::TargetEmitter::linkExecutable(objectFiles, linkTarget, cliOpts.linkerScript, cliOpts.isShared, cliOpts.isFreestanding, cliOpts.targetTriple, cliOpts.sysroot)) {
+            if (cliOpts.isRawBinary) {
+                std::cout << "[llbc] Extracting flat binary -> " << cliOpts.outputFile << "...\n";
+                if (llbc::TargetEmitter::emitRawBinary(linkTarget, cliOpts.outputFile)) {
+                    std::cout << "[llbc] SUCCESS: Raw Binary created -> " << cliOpts.outputFile << "\n";
                 } else {
                     std::cerr << "Error: Raw binary extraction failed!\n";
                     return 1;
                 }
-            } else if (isShared) {
-                std::cout << "[llbc] SUCCESS: Dynamic Library created -> " << outputFile << "\n";
+            } else if (cliOpts.isShared) {
+                std::cout << "[llbc] SUCCESS: Dynamic Library created -> " << cliOpts.outputFile << "\n";
             } else {
-                std::cout << "[llbc] SUCCESS: Executable created -> " << outputFile << "\n";
+                std::cout << "[llbc] SUCCESS: Executable created -> " << cliOpts.outputFile << "\n";
             }
         } else {
             std::cerr << "Error: LLD Linking stage failed!\n";
             return 1;
         }
-    }
-
-    // 4. Execute Post-Build Commands / Scripts (if specified in project manifest)
-    if (!skipPostBuild && !postBuildCommands.empty()) {
-        std::cout << "[llbc] Running " << postBuildCommands.size() << " post-build command(s)...\n";
-        for (size_t idx = 0; idx < postBuildCommands.size(); ++idx) {
-            const auto& cmd = postBuildCommands[idx];
-            std::cout << "  [>] (" << (idx + 1) << "/" << postBuildCommands.size() << ") " << cmd;
-            if (scriptTimeout > 0) {
-                std::cout << " (timeout: " << scriptTimeout << "s)";
-            }
-            std::cout << "\n";
-
-            int ret = runCommandWithTimeout(cmd, scriptTimeout);
-            if (ret != 0) {
-                std::cerr << "Error: Post-build command failed with exit code " << ret << ": " << cmd << "\n";
-                return ret;
-            }
-        }
-    } else if (skipPostBuild && !postBuildCommands.empty()) {
-        std::cout << "[llbc] Skipping " << postBuildCommands.size() << " post-build command(s) (--no-script requested)\n";
     }
 
     return 0;

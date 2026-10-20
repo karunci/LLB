@@ -710,8 +710,29 @@ AllowUnsafePointers = True
   - Multiple entries are executed in sequential order.
   - Can be skipped at invocation time via `--no-script`.
 
+#### Multi-Project Builds & Command-Line Invocation
+
+The compiler driver (`llbc`) supports two primary invocation modes:
+
+1. **Multi-Project Manifest Mode**: Pass one or more `.llbproj` project descriptors:
+   ```bash
+   llbc tests/kernel/Kernel.llbproj tests/userland/TestSuite.llbproj
+   ```
+   Each project is built sequentially in its own isolated context (symbol catalogs and module indices are cleared between builds). If any project fails, compilation halts immediately with that project's exit status.
+2. **Direct Source Compilation Mode**: Pass individual `.bas`, `.cls`, `.S`, or object/library files directly:
+   ```bash
+   llbc src/Main.bas src/Helper.bas -o build/app.elf
+   ```
+
 > [!NOTE]
 > **CLI Precedence:** Command-line options (e.g. `-o`, `-O2`, `-T`, `--target`, `--script-timeout`) always take precedence over values specified in `.llbproj` manifest files.
+
+#### Input Validation & Guards
+
+- **File Existence Guard**: Validates that all CLI input files, `-I` include directories, and `-T` linker scripts exist before starting compilation.
+- **Directory Guard**: Rejects directory paths inadvertently passed as input files (and vice versa for `-I`).
+- **Extension Guard**: Rejects unsupported input file extensions, providing explicit guidance on recognized inputs (`.llbproj`, `.bas`, `.cls`, `.S`, `.s`, `.o`, `.a`, `.so`).
+- **Source Verification**: Automatically checks that all source and assembly units declared within `.llbproj` files exist on disk before compilation commences.
 
 
 

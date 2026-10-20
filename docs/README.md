@@ -706,7 +706,12 @@ AllowUnsafePointers = True
 - `[Script]` / `[PostBuild]`: Sequential post-build commands executed after linking completes successfully:
   - `Cmd = "program_or_script.sh"`: Runs command or script sequentially.
   - `Script = "path/to/script.sh"` or `Bash = "test.sh"`: Executes target script.
+  - `Timeout = 30`: Maximum execution time in seconds per command (default: 30s, 0=unlimited).
   - Multiple entries are executed in sequential order.
+  - Can be skipped at invocation time via `--no-script`.
+
+> [!NOTE]
+> **CLI Precedence:** Command-line options (e.g. `-o`, `-O2`, `-T`, `--target`, `--script-timeout`) always take precedence over values specified in `.llbproj` manifest files.
 
 
 

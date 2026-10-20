@@ -28,6 +28,7 @@ struct ProjectConfig {
     std::vector<std::string> sourceFiles;    // .bas / .cls
     std::vector<std::string> assemblyFiles;  // .S / .s
     std::vector<std::string> postBuildCommands; // sequential post-build commands/scripts
+    int scriptTimeout{30};               // default post-build timeout in seconds (0 = disabled)
 };
 
 class ProjectParser {
@@ -115,6 +116,12 @@ public:
                             config.postBuildCommands.push_back("bash \"" + scriptPath + "\"");
                         } else {
                             config.postBuildCommands.push_back("\"" + scriptPath + "\"");
+                        }
+                    } else if (key == "Timeout" || key == "ScriptTimeout") {
+                        try {
+                            config.scriptTimeout = std::stoi(value);
+                        } catch (...) {
+                            config.scriptTimeout = 30;
                         }
                     } else {
                         // Key is interpreter/executable (e.g. bash = "script.sh", python = "verify.py")

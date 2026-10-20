@@ -23,8 +23,83 @@
 #include <set>
 #include <map>
 #include <algorithm>
+#include <chrono>
+#include <thread>
+
+#if !defined(_WIN32)
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#include <signal.h>
+#endif
 
 namespace fs = std::filesystem;
+
+static int runCommandWithTimeout(const std::string& command, int timeoutSeconds) {
+#if !defined(_WIN32)
+    pid_t pid = fork();
+    if (pid < 0) {
+        std::cerr << "Error: fork() failed to spawn process for command: " << command << "\n";
+        return -1;
+    }
+    if (pid == 0) {
+        // Child: execute via sh -c
+        execl("/bin/sh", "sh", "-c", command.c_str(), (char*)nullptr);
+        _exit(127);
+    }
+
+    // Parent: monitor child with timeout
+    auto startTime = std::chrono::steady_clock::now();
+    bool timedOut = false;
+
+    while (true) {
+        int status = 0;
+        pid_t res = waitpid(pid, &status, WNOHANG);
+        if (res == pid) {
+            if (WIFEXITED(status)) {
+                return WEXITSTATUS(status);
+            } else if (WIFSIGNALED(status)) {
+                return 128 + WTERMSIG(status);
+            }
+            return status;
+        } else if (res < 0) {
+            return -1;
+        }
+
+        if (timeoutSeconds > 0) {
+            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::steady_clock::now() - startTime
+            ).count();
+            if (elapsed >= timeoutSeconds) {
+                timedOut = true;
+                break;
+            }
+        }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+
+    if (timedOut) {
+        std::cerr << "\n[llbc] Error: Post-build command timed out after " << timeoutSeconds
+                  << "s and was terminated!\n";
+        kill(pid, SIGTERM);
+        // Grace period
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        int status = 0;
+        if (waitpid(pid, &status, WNOHANG) == 0) {
+            kill(pid, SIGKILL);
+            waitpid(pid, &status, 0);
+        }
+        return 124; // Standard timeout exit code
+    }
+
+    return 0;
+#else
+    // Windows fallback
+    int ret = std::system(command.c_str());
+    return ret;
+#endif
+}
 
 static bool hasExtension(const std::string& path, const std::string& ext) {
     if (path.length() >= ext.length()) {
@@ -393,40 +468,66 @@ int main(int argc, char** argv) {
     bool enableDebugInfo = false;
     int optLevel = 0;
     std::vector<std::string> postBuildCommands;
+    int scriptTimeout = 30;
+    bool skipPostBuild = false;
+
+    // Track explicit CLI flags so they take precedence over .llbproj defaults
+    bool cliHasOutputFile = false;
+    bool cliHasOptLevel = false;
+    bool cliHasTarget = false;
+    bool cliHasLinkerScript = false;
+    bool cliHasFreestanding = false;
+    bool cliHasSysroot = false;
+    bool cliHasTimeout = false;
 
     // 1. Parse CLI options and collect input source files
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "--help" || arg == "-h") {
             std::cout << "Low-Level Basic Compiler (llbc) - Version 0.1.0\n"
+                      << "Bare-metal & hosted systems programming language compiler based on LLVM/LLD.\n\n"
                       << "Usage:\n"
                       << "  llbc <project.llbproj> [options]\n"
                       << "  llbc <source.bas|class.cls|boot.S>... [options]\n\n"
-                      << "Options:\n"
-                      << "  -o <file>              Specify output filename\n"
-                      << "  -O0, -O1, -O2, -O3     Optimization level (default: -O0)\n"
-                      << "  -g                     Generate debug information\n"
-                      << "  -I <dir>               Add include directory for module resolution\n"
-                      << "  -D <name>[=<val>]      Define preprocessor macro\n"
-                      << "  -T <script>            Specify linker script\n"
-                      << "  --target=<triple>      Target architecture triple (e.g. x86_64-unknown-none-elf)\n"
-                      << "  --sysroot=<dir>        Specify sysroot directory for standard headers/libraries\n"
-                      << "  --shared, -shared      Produce a shared dynamic library (.so)\n"
-                      << "  --static, -static      Produce a static archive (.a)\n"
+                      << "Project Manifest Mode:\n"
+                      << "  Passing a single .llbproj file builds the complete project according to its\n"
+                      << "  descriptor manifest. Any CLI options provided on the command line override\n"
+                      << "  the defaults specified inside the .llbproj file.\n\n"
+                      << "Basic Options:\n"
+                      << "  -o <file>                Specify final output file path (executable, lib, or raw bin)\n"
+                      << "  -O0, -O1, -O2, -O3       Optimization level (-O0 default, -O2 recommended for release)\n"
+                      << "  -g                       Generate DWARF debug information\n"
+                      << "  -I <dir>                 Add directory to search path for Use / Import / Class files\n"
+                      << "  -D <name>[=<val>]        Define preprocessor conditional macro (e.g. -D DEBUG=1)\n"
+                      << "  -h, --help               Display this comprehensive help message and exit\n"
+                      << "  -v, --version            Display compiler version and target information\n\n"
+                      << "Target & Environment Options:\n"
+                      << "  --target=<triple>        Target architecture triple (e.g. x86_64-unknown-none-elf)\n"
+                      << "  -target <triple>         Alias for --target\n"
+                      << "  --sysroot=<dir>          Override sysroot directory for system headers/libraries\n"
+                      << "  -T <script>              Linker script for bare-metal kernel memory layouts\n\n"
+                      << "Output Format & Runtime Mode:\n"
                       << "  --flat-binary, -flat-binary, -raw-binary, -O binary\n"
-                      << "                         Extract raw flat binary image (.bin)\n"
+                      << "                           Emit flat raw binary image (.bin) extracted via objcopy\n"
                       << "  --freestanding, -nostdlib\n"
-                      << "                         Link in freestanding mode without standard CRT\n"
-                      << "  -h, --help             Display this help message and exit\n"
-                      << "  -v, --version          Display version information and exit\n";
+                      << "                           Freestanding mode: disables standard CRT startup and libc\n"
+                      << "  --shared, -shared        Produce a shared dynamic library (.so)\n"
+                      << "  --static, -static        Produce an archived static library (.a)\n\n"
+                      << "Post-Build Script Options:\n"
+                      << "  --no-script, --skip-scripts\n"
+                      << "                           Skip post-build commands/scripts defined in [Script] section\n"
+                      << "  --script-timeout=<sec>   Set maximum execution timeout per script (default: 30s, 0=off)\n\n"
+                      << "Precedence Note:\n"
+                      << "  Command-line arguments always override corresponding keys in .llbproj files.\n";
             return 0;
         } else if (arg == "--version" || arg == "-v") {
             std::cout << "llbc (Low-Level Basic Compiler) 0.1.0\n"
                       << "Copyright (c) 2026 karunci. All rights reserved.\n"
-                      << "LLVM backend target: freestanding and hosted x86_64/ARM/RISC-V.\n";
+                      << "LLVM backend target: freestanding and hosted x86_64/AArch64/RISC-V.\n";
             return 0;
         } else if (arg == "-o" && i + 1 < argc) {
             outputFile = argv[++i];
+            cliHasOutputFile = true;
         } else if (arg == "-g") {
             enableDebugInfo = true;
         } else if (arg == "-I" && i + 1 < argc) {
@@ -435,18 +536,37 @@ int main(int argc, char** argv) {
             g_includeDirs.push_back(arg.substr(2));
         } else if (arg == "-T" && i + 1 < argc) {
             linkerScript = argv[++i];
+            cliHasLinkerScript = true;
         } else if (arg == "--target" && i + 1 < argc) {
             targetTriple = argv[++i];
+            cliHasTarget = true;
         } else if (arg == "-target" && i + 1 < argc) {
             targetTriple = argv[++i];
+            cliHasTarget = true;
         } else if (arg.rfind("--target=", 0) == 0) {
             targetTriple = arg.substr(9);
+            cliHasTarget = true;
         } else if (arg.rfind("-target=", 0) == 0) {
             targetTriple = arg.substr(8);
+            cliHasTarget = true;
         } else if (arg == "--sysroot" && i + 1 < argc) {
             sysroot = argv[++i];
+            cliHasSysroot = true;
         } else if (arg.rfind("--sysroot=", 0) == 0) {
             sysroot = arg.substr(10);
+            cliHasSysroot = true;
+        } else if (arg == "--no-script" || arg == "--skip-scripts" || arg == "--skip-post-build") {
+            skipPostBuild = true;
+        } else if (arg.rfind("--script-timeout=", 0) == 0) {
+            try {
+                scriptTimeout = std::stoi(arg.substr(17));
+                cliHasTimeout = true;
+            } catch (...) {}
+        } else if (arg == "--script-timeout" && i + 1 < argc) {
+            try {
+                scriptTimeout = std::stoi(argv[++i]);
+                cliHasTimeout = true;
+            } catch (...) {}
         } else if (arg == "-D" && i + 1 < argc) {
             std::string def = argv[++i];
             size_t eqPos = def.find('=');
@@ -479,24 +599,48 @@ int main(int argc, char** argv) {
             isFreestanding = true;
         } else if (arg == "-freestanding" || arg == "--freestanding" || arg == "-nostdlib" || arg == "--nostdlib") {
             isFreestanding = true;
+            cliHasFreestanding = true;
         } else if (arg == "-O0") {
             optLevel = 0;
+            cliHasOptLevel = true;
         } else if (arg == "-O1") {
             optLevel = 1;
+            cliHasOptLevel = true;
         } else if (arg == "-O2") {
             optLevel = 2;
+            cliHasOptLevel = true;
         } else if (arg == "-O3") {
             optLevel = 3;
+            cliHasOptLevel = true;
         } else if (arg.rfind("-l", 0) == 0 || arg.rfind("-L", 0) == 0) {
             // Forward library flags to object / link inputs
             objectFiles.push_back(arg);
         } else if (!arg.empty() && arg[0] != '-') {
             inputFiles.push_back(arg);
+        } else {
+            std::cerr << "Error: Unrecognized command-line option '" << arg << "'\n"
+                      << "Run 'llbc --help' for a full list of available options.\n";
+            return 1;
         }
     }
 
     if (inputFiles.empty() && objectFiles.empty()) {
-        std::cerr << "Error: No input files specified.\n";
+        std::cerr << "Error: No input files specified.\n"
+                  << "Run 'llbc --help' for usage syntax.\n";
+        return 1;
+    }
+
+    // Disallow mixed manifest and direct source files
+    bool hasManifest = false;
+    for (const auto& f : inputFiles) {
+        if (hasExtension(f, ".llbproj")) {
+            hasManifest = true;
+            break;
+        }
+    }
+    if (hasManifest && inputFiles.size() > 1) {
+        std::cerr << "Error: Cannot mix project manifest (.llbproj) with individual source files.\n"
+                  << "Specify either a single .llbproj file or multiple individual source files.\n";
         return 1;
     }
 
@@ -511,16 +655,26 @@ int main(int argc, char** argv) {
             return 1;
         }
 
-        outputFile = config.outputFile;
-        if (!config.linkerScript.empty()) linkerScript = config.linkerScript;
-        if (config.isFreestanding) isFreestanding = true;
+        // Apply manifest settings ONLY if not overridden by explicit CLI flags
+        if (!cliHasOutputFile) {
+            outputFile = config.outputFile;
+        }
+        if (!cliHasLinkerScript && !config.linkerScript.empty()) {
+            linkerScript = config.linkerScript;
+        }
+        if (!cliHasFreestanding && config.isFreestanding) {
+            isFreestanding = true;
+        }
+        if (!cliHasTimeout) {
+            scriptTimeout = config.scriptTimeout;
+        }
         postBuildCommands = config.postBuildCommands;
 
         // For hosted Executables: pass arch to LLVM codegen (per compileSourceFile call)
         // but do NOT set the global targetTriple used by the linker — let LLD use host CRT.
         // For bare-metal / cross targets the full triple must drive both codegen and linking.
         bool isHostedExe = (config.type == "Executable" && !config.isFreestanding);
-        if (!config.targetArch.empty() && targetTriple.empty() && !isHostedExe) {
+        if (!cliHasTarget && !config.targetArch.empty() && !isHostedExe) {
             targetTriple = config.targetArch;
         }
         if (config.type == "SharedLibrary" || config.type == "DynamicLibrary") {
@@ -604,6 +758,13 @@ int main(int argc, char** argv) {
         isStatic = true;
     }
 
+    // Ensure parent directory of outputFile exists (especially if specified via CLI -o)
+    fs::path outFilePath(outputFile);
+    if (outFilePath.has_parent_path()) {
+        std::error_code ec;
+        fs::create_directories(outFilePath.parent_path(), ec);
+    }
+
     // 3. Link or Archive All Generated Object Files
     if (isStatic) {
         std::cout << "[llbc] Archiving " << objectFiles.size() << " object file(s) into static library " << outputFile << "...\n";
@@ -641,17 +802,24 @@ int main(int argc, char** argv) {
     }
 
     // 4. Execute Post-Build Commands / Scripts (if specified in project manifest)
-    if (!postBuildCommands.empty()) {
+    if (!skipPostBuild && !postBuildCommands.empty()) {
         std::cout << "[llbc] Running " << postBuildCommands.size() << " post-build command(s)...\n";
         for (size_t idx = 0; idx < postBuildCommands.size(); ++idx) {
             const auto& cmd = postBuildCommands[idx];
-            std::cout << "  [>] (" << (idx + 1) << "/" << postBuildCommands.size() << ") " << cmd << "\n";
-            int ret = std::system(cmd.c_str());
+            std::cout << "  [>] (" << (idx + 1) << "/" << postBuildCommands.size() << ") " << cmd;
+            if (scriptTimeout > 0) {
+                std::cout << " (timeout: " << scriptTimeout << "s)";
+            }
+            std::cout << "\n";
+
+            int ret = runCommandWithTimeout(cmd, scriptTimeout);
             if (ret != 0) {
                 std::cerr << "Error: Post-build command failed with exit code " << ret << ": " << cmd << "\n";
                 return ret;
             }
         }
+    } else if (skipPostBuild && !postBuildCommands.empty()) {
+        std::cout << "[llbc] Skipping " << postBuildCommands.size() << " post-build command(s) (--no-script requested)\n";
     }
 
     return 0;

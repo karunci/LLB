@@ -49,6 +49,6 @@ Optimize            = "O0"
 EmitDebugSymbols    = True
 AllowUnsafePointers = True
 
-[RejectionTests]
-; Compiler-error (negative) tests. Run via:  bash test_rejections.sh
-Script = "test_rejections.sh"
+[Script]
+; Post-build test script: runs automatically after compilation and linking succeed
+Cmd = "test_rejections.sh"

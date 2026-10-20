@@ -703,6 +703,11 @@ AllowUnsafePointers = True
 - `[Linker]`: Linker script specification (`LinkerScript = "linker.ld"`).
 - `[Sources]`: Multi-value declarations of source units (`Module = "..."`, `Class = "..."`, `Assembly = "..."`).
 - `[CompilerOptions]`: Optimization levels (`Optimize = "O0" | "O1" | "O2" | "O3"`), `EmitDebugSymbols`, and safety toggles.
+- `[Script]` / `[PostBuild]`: Sequential post-build commands executed after linking completes successfully:
+  - `Cmd = "program_or_script.sh"`: Runs command or script sequentially.
+  - `Script = "path/to/script.sh"` or `Bash = "test.sh"`: Executes target script.
+  - Multiple entries are executed in sequential order.
+
 
 
 ---

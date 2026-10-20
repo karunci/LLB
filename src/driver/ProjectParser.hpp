@@ -27,6 +27,7 @@ struct ProjectConfig {
     bool isFreestanding{false};
     std::vector<std::string> sourceFiles;    // .bas / .cls
     std::vector<std::string> assemblyFiles;  // .S / .s
+    std::vector<std::string> postBuildCommands; // sequential post-build commands/scripts
 };
 
 class ProjectParser {
@@ -47,14 +48,43 @@ public:
             return (baseDir / p).lexically_normal().string();
         };
 
+        std::string currentSection = "";
         std::string line;
         while (std::getline(file, line)) {
-            if (line.empty() || line[0] == '\'') continue;
+            if (line.empty() || line[0] == '\'' || line[0] == ';') continue;
+
+            // Section header e.g. [Project], [PostBuild], [Script], etc.
+            auto firstChar = line.find_first_not_of(" \t\r\n");
+            if (firstChar != std::string::npos && line[firstChar] == '[') {
+                auto closeBracket = line.find(']', firstChar);
+                if (closeBracket != std::string::npos) {
+                    currentSection = line.substr(firstChar + 1, closeBracket - firstChar - 1);
+                    // Trim section name
+                    currentSection.erase(0, currentSection.find_first_not_of(" \t\r\n"));
+                    auto lastSec = currentSection.find_last_not_of(" \t\r\n");
+                    if (lastSec != std::string::npos) currentSection.erase(lastSec + 1);
+                    continue;
+                }
+            }
 
             auto eqPos = line.find('=');
             if (eqPos != std::string::npos) {
                 std::string key = line.substr(0, eqPos);
                 std::string value = line.substr(eqPos + 1);
+
+                // Strip inline comment (e.g., ' comment or ; comment)
+                size_t commentPos = std::string::npos;
+                bool inQuotes = false;
+                for (size_t i = 0; i < value.size(); ++i) {
+                    if (value[i] == '"') inQuotes = !inQuotes;
+                    else if (!inQuotes && (value[i] == '\'' || value[i] == ';')) {
+                        commentPos = i;
+                        break;
+                    }
+                }
+                if (commentPos != std::string::npos) {
+                    value = value.substr(0, commentPos);
+                }
 
                 // Trim spaces, quotes & carriage return
                 key.erase(0, key.find_first_not_of(" \t\r\n"));
@@ -65,7 +95,33 @@ public:
                 auto lastVal = value.find_last_not_of(" \t\r\n\"");
                 if (lastVal != std::string::npos) value.erase(lastVal + 1);
 
-                if (key == "Name") config.name = value;
+                if (currentSection == "PostBuild" || currentSection == "Script" || currentSection == "RejectionTests") {
+                    if (key == "Cmd" || key == "Run" || key == "Command") {
+                        // If value refers to a script file in the project base directory, resolve it
+                        std::string resolved = resolvePath(value);
+                        if (std::filesystem::exists(resolved)) {
+                            if (resolved.rfind(".sh") != std::string::npos) {
+                                config.postBuildCommands.push_back("bash \"" + resolved + "\"");
+                            } else {
+                                config.postBuildCommands.push_back("\"" + resolved + "\"");
+                            }
+                        } else {
+                            // Otherwise treat as raw command line
+                            config.postBuildCommands.push_back(value);
+                        }
+                    } else if (key == "Script" || key == "Bash" || key == "Sh") {
+                        std::string scriptPath = resolvePath(value);
+                        if (key == "Bash" || key == "Sh" || scriptPath.rfind(".sh") != std::string::npos) {
+                            config.postBuildCommands.push_back("bash \"" + scriptPath + "\"");
+                        } else {
+                            config.postBuildCommands.push_back("\"" + scriptPath + "\"");
+                        }
+                    } else {
+                        // Key is interpreter/executable (e.g. bash = "script.sh", python = "verify.py")
+                        std::string scriptPath = resolvePath(value);
+                        config.postBuildCommands.push_back(key + " \"" + scriptPath + "\"");
+                    }
+                } else if (key == "Name") config.name = value;
                 else if (key == "Type") {
                     config.type = value;
                     if (value == "Kernel" || value == "Freestanding" || value == "BareMetal" ||

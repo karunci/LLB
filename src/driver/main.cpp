@@ -392,11 +392,40 @@ int main(int argc, char** argv) {
     bool isRawBinary = false;
     bool enableDebugInfo = false;
     int optLevel = 0;
+    std::vector<std::string> postBuildCommands;
 
     // 1. Parse CLI options and collect input source files
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
-        if (arg == "-o" && i + 1 < argc) {
+        if (arg == "--help" || arg == "-h") {
+            std::cout << "Low-Level Basic Compiler (llbc) - Version 0.1.0\n"
+                      << "Usage:\n"
+                      << "  llbc <project.llbproj> [options]\n"
+                      << "  llbc <source.bas|class.cls|boot.S>... [options]\n\n"
+                      << "Options:\n"
+                      << "  -o <file>              Specify output filename\n"
+                      << "  -O0, -O1, -O2, -O3     Optimization level (default: -O0)\n"
+                      << "  -g                     Generate debug information\n"
+                      << "  -I <dir>               Add include directory for module resolution\n"
+                      << "  -D <name>[=<val>]      Define preprocessor macro\n"
+                      << "  -T <script>            Specify linker script\n"
+                      << "  --target=<triple>      Target architecture triple (e.g. x86_64-unknown-none-elf)\n"
+                      << "  --sysroot=<dir>        Specify sysroot directory for standard headers/libraries\n"
+                      << "  --shared, -shared      Produce a shared dynamic library (.so)\n"
+                      << "  --static, -static      Produce a static archive (.a)\n"
+                      << "  --flat-binary, -flat-binary, -raw-binary, -O binary\n"
+                      << "                         Extract raw flat binary image (.bin)\n"
+                      << "  --freestanding, -nostdlib\n"
+                      << "                         Link in freestanding mode without standard CRT\n"
+                      << "  -h, --help             Display this help message and exit\n"
+                      << "  -v, --version          Display version information and exit\n";
+            return 0;
+        } else if (arg == "--version" || arg == "-v") {
+            std::cout << "llbc (Low-Level Basic Compiler) 0.1.0\n"
+                      << "Copyright (c) 2026 karunci. All rights reserved.\n"
+                      << "LLVM backend target: freestanding and hosted x86_64/ARM/RISC-V.\n";
+            return 0;
+        } else if (arg == "-o" && i + 1 < argc) {
             outputFile = argv[++i];
         } else if (arg == "-g") {
             enableDebugInfo = true;
@@ -485,6 +514,7 @@ int main(int argc, char** argv) {
         outputFile = config.outputFile;
         if (!config.linkerScript.empty()) linkerScript = config.linkerScript;
         if (config.isFreestanding) isFreestanding = true;
+        postBuildCommands = config.postBuildCommands;
 
         // For hosted Executables: pass arch to LLVM codegen (per compileSourceFile call)
         // but do NOT set the global targetTriple used by the linker — let LLD use host CRT.
@@ -607,6 +637,20 @@ int main(int argc, char** argv) {
         } else {
             std::cerr << "Error: LLD Linking stage failed!\n";
             return 1;
+        }
+    }
+
+    // 4. Execute Post-Build Commands / Scripts (if specified in project manifest)
+    if (!postBuildCommands.empty()) {
+        std::cout << "[llbc] Running " << postBuildCommands.size() << " post-build command(s)...\n";
+        for (size_t idx = 0; idx < postBuildCommands.size(); ++idx) {
+            const auto& cmd = postBuildCommands[idx];
+            std::cout << "  [>] (" << (idx + 1) << "/" << postBuildCommands.size() << ") " << cmd << "\n";
+            int ret = std::system(cmd.c_str());
+            if (ret != 0) {
+                std::cerr << "Error: Post-build command failed with exit code " << ret << ": " << cmd << "\n";
+                return ret;
+            }
         }
     }
 

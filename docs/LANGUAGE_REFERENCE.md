@@ -676,6 +676,10 @@ Module   = "src/KernelMain.bas"
 Optimize           = "O2"
 EmitDebugSymbols   = True
 AllowUnsafePointers = True
+
+[Script]
+; Sequential post-build commands/scripts
+Cmd = "post_build.sh"
 ```
 
 ### Supported Target Types

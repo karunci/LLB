@@ -45,3 +45,9 @@ target_link_libraries(llbc-stage0
     lldELF
     lldCommon
 )
+
+# Symlink or copy llbc -> llbc-stage0 in the build directory for convenience
+add_custom_command(TARGET llbc-stage0 POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E create_symlink $<TARGET_FILE_NAME:llbc-stage0> ${CMAKE_BINARY_DIR}/llbc
+    COMMENT "Creating llbc symlink -> llbc-stage0"
+)

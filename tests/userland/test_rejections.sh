@@ -1,5 +1,8 @@
 #!/bin/bash
-LLBC=../../build/llbc-stage0
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR" || exit 1
+
+LLBC=../../build/llbc
 ERR_COUNT=0
 BUILD_DIR="build"
 

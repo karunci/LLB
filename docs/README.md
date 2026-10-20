@@ -652,8 +652,8 @@ LLB projects are configured via `.llbproj` manifest files, removing the need for
 ' Manifest Descriptor: Kernel.llbproj
 
 [Project]
-Name = "kernel"
-Type = "BareMetalExecutable" ' BareMetalExecutable, HostedExecutable, StaticLibrary
+Name    = "kernel"
+Type    = "Kernel" ; Kernel, BareMetalExecutable, FlatBinary, Executable, SharedLibrary, StaticLibrary
 Version = "0.1.0"
 
 [Target]
@@ -665,19 +665,45 @@ EntryPoint = "_start"
 [Linker]
 LinkerScript = "linker.ld"
 
+[Output]
+OutDir  = "build"
+OutFile = "kernel.elf"
+
 [Sources]
 Assembly = "src/arch/x86_64/boot.S"
 Assembly = "src/arch/x86_64/IsrStubs.S"
-Module = "src/arch/x86_64/Idt.bas"
-Class = "src/drivers/Terminal.cls"
-Module = "src/KernelMain.bas"
+Module   = "src/arch/x86_64/Idt.bas"
+Class    = "src/drivers/Terminal.cls"
+Module   = "src/KernelMain.bas"
 
 [CompilerOptions]
-Optimize = "O2"
-EmitDebugSymbols = True
+Optimize           = "O2"
+EmitDebugSymbols   = True
 AllowUnsafePointers = True
-
 ```
+
+#### Supported Project Types (`Type = "..."`)
+
+| Type Category | Type Name / Aliases | Runtime / CRT | Default Ext | Description |
+|:---|:---|:---:|:---:|:---|
+| **Freestanding / Bare-Metal** | `Kernel`, `BareMetalExecutable`, `BareMetal`, `Freestanding` | `--nostdlib` (No CRT) | `.elf` | Bare-metal ELF executable, linked with custom linker script or freestanding entry |
+| **Flat Binary** | `FlatBinary`, `RawBinary`, `Binary` | `--nostdlib` (No CRT) | `.bin` | Direct raw binary file extracted via `llvm-objcopy -O binary` (bootloaders, raw ROMs) |
+| **Hosted Executable** | `Executable`, `HostedExecutable` | Host libc / CRT | `.elf` / none | Hosted userspace application targeting the host operating system |
+| **Shared Library** | `SharedLibrary`, `DynamicLibrary` | Host CRT (`-shared`) | `.so` | Dynamic shared library |
+| **Static Archive** | `StaticLibrary`, `Archive` | None (`llvm-ar`) | `.a` | Static library archive |
+
+#### Manifest Section Reference
+
+- `[Project]`: Core project metadata (`Name`, `Type`, `Version`).
+- `[Target]`: Cross-compilation settings (`Arch = "<target-triple>"`). Omit or leave empty for host native target.
+- `[Output]`: Artifact location and naming controls:
+  - `OutDir`: Relative directory where all build artifacts (`.ll`, `.o`, `_asm.o`, final binary) are isolated (e.g., `build`).
+  - `OutFile`: Explicit filename for the final compiled target (e.g., `kernel.elf`, `testsuite`, `boot.bin`).
+- `[Entry]`: Target entry point symbol (`EntryPoint = "_start"`).
+- `[Linker]`: Linker script specification (`LinkerScript = "linker.ld"`).
+- `[Sources]`: Multi-value declarations of source units (`Module = "..."`, `Class = "..."`, `Assembly = "..."`).
+- `[CompilerOptions]`: Optimization levels (`Optimize = "O0" | "O1" | "O2" | "O3"`), `EmitDebugSymbols`, and safety toggles.
+
 
 ---
 

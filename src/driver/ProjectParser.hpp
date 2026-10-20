@@ -69,7 +69,8 @@ public:
                 else if (key == "Type") {
                     config.type = value;
                     if (value == "Kernel" || value == "Freestanding" || value == "BareMetal" ||
-                        value == "BareMetalExecutable" || value == "RawBinary") {
+                        value == "BareMetalExecutable" || value == "RawBinary" ||
+                        value == "FlatBinary" || value == "Binary") {
                         config.isFreestanding = true;
                     }
                 } else if (key == "Freestanding") {
@@ -89,7 +90,8 @@ public:
         }
 
         // Build final output file path: baseDir / outDir / outFile
-        std::string ext = (config.type == "RawBinary") ? ".bin" : ".elf";
+        bool isBin = (config.type == "RawBinary" || config.type == "FlatBinary" || config.type == "Binary");
+        std::string ext = isBin ? ".bin" : ".elf";
         std::string outFile = config.outputFile.empty() ? (config.name + ext) : config.outputFile;
         if (config.outDir.empty()) {
             config.outputFile = (baseDir / outFile).lexically_normal().string();

@@ -649,8 +649,8 @@ LLB projects are configured using `.llbproj` descriptors:
 
 ```ini
 [Project]
-Name = "kernel"
-Type = "BareMetalExecutable" ' BareMetalExecutable, HostedExecutable, SharedLibrary, StaticLibrary, RawBinary
+Name    = "kernel"
+Type    = "Kernel" ; Kernel, BareMetalExecutable, FlatBinary, Executable, SharedLibrary, StaticLibrary
 Version = "0.1.0"
 
 [Target]
@@ -662,17 +662,32 @@ EntryPoint = "_start"
 [Linker]
 LinkerScript = "linker.ld"
 
+[Output]
+OutDir  = "build"
+OutFile = "kernel.elf"
+
 [Sources]
 Assembly = "src/boot.S"
-Module = "src/Idt.bas"
-Module = "src/Terminal.bas"
-Module = "src/KernelMain.bas"
+Module   = "src/Idt.bas"
+Module   = "src/Terminal.bas"
+Module   = "src/KernelMain.bas"
 
 [CompilerOptions]
-Optimize = "O2"
-EmitDebugSymbols = True
+Optimize           = "O2"
+EmitDebugSymbols   = True
 AllowUnsafePointers = True
 ```
+
+### Supported Target Types
+
+| Category | Value / Aliases | Runtime CRT | Default Ext | Description |
+|:---|:---|:---:|:---:|:---|
+| **Freestanding** | `Kernel`, `BareMetalExecutable`, `BareMetal`, `Freestanding` | Freestanding (`--nostdlib`) | `.elf` | Bare-metal kernel or firmware binary |
+| **Flat Binary** | `FlatBinary`, `RawBinary`, `Binary` | Freestanding (`--nostdlib`) | `.bin` | Flat raw binary image generated via `llvm-objcopy -O binary` |
+| **Hosted Executable** | `Executable`, `HostedExecutable` | Hosted standard CRT | `.elf` / none | Userspace hosted application |
+| **Shared Library** | `SharedLibrary`, `DynamicLibrary` | Hosted (`-shared`) | `.so` | Dynamic shared library |
+| **Static Library** | `StaticLibrary`, `Archive` | Static archive (`llvm-ar`) | `.a` | Static code archive |
+
 
 ---
 

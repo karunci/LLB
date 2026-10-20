@@ -442,7 +442,9 @@ int main(int argc, char** argv) {
             isShared = true;
         } else if (arg == "-static" || arg == "--static" || arg == "-archive") {
             isStatic = true;
-        } else if (arg == "-raw-binary" || arg == "--raw-binary" || (arg == "-O" && i + 1 < argc && std::string(argv[i + 1]) == "binary")) {
+        } else if (arg == "-raw-binary" || arg == "--raw-binary" ||
+                   arg == "-flat-binary" || arg == "--flat-binary" ||
+                   (arg == "-O" && i + 1 < argc && std::string(argv[i + 1]) == "binary")) {
             if (arg == "-O") ++i;
             isRawBinary = true;
             isFreestanding = true;
@@ -495,7 +497,7 @@ int main(int argc, char** argv) {
             isShared = true;
         } else if (config.type == "StaticLibrary" || config.type == "Archive") {
             isStatic = true;
-        } else if (config.type == "RawBinary") {
+        } else if (config.type == "RawBinary" || config.type == "FlatBinary" || config.type == "Binary") {
             isRawBinary = true;
             isFreestanding = true;
         }

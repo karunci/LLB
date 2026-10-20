@@ -83,6 +83,10 @@ private:
     llvm::Function* getOrCreateStrMid();
     llvm::Function* getOrCreateStrRight();
     llvm::Function* getOrCreateStrTrim();
+    llvm::Function* getOrCreateStrLTrim();
+    llvm::Function* getOrCreateStrRTrim();
+    llvm::Function* getOrCreatePanic();
+    void emitZeroDivCheck(llvm::Value* divisor, const std::string& opName);
     llvm::Function* getOrCreateStrInStr();
     llvm::Function* getOrCreateStrVal();
     llvm::Function* getOrCreateAsc();
@@ -110,6 +114,7 @@ private:
     TypeSpec deduceExprType(ExprASTNode* expr);
     void emitBoundsCheck(llvm::Value* indexVal, uint64_t bound, const std::string& varName);
     void emitNullCheck(llvm::Value* ptrVal, const std::string& exprName);
+    void checkConstantOverflow(const TypeSpec& targetType, ExprASTNode* expr, size_t line, size_t col);
 
     std::unique_ptr<llvm::LLVMContext> m_context;
     std::unique_ptr<llvm::Module> m_module;
@@ -160,6 +165,12 @@ private:
     std::vector<llvm::DIScope*> m_diScopes;
 
     void emitDebugLocation(size_t line, size_t col);
+
+    std::string m_sourceFilePath{"<unknown>"};
+    std::string m_sourceText;
+    size_t m_currentLine{1};
+    size_t m_currentCol{1};
+    bool m_hadError{false};
 };
 
 } // namespace llbc

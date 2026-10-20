@@ -170,6 +170,58 @@ char* __attribute__((weak)) __llbc_str_trim(const char* s) {
     return dest;
 }
 
+char* __attribute__((weak)) __llbc_str_ltrim(const char* s) {
+    if (!s) {
+        char* empty = (char*)__llbc_allocate_instance(1);
+        if (empty) empty[0] = '\0';
+        return empty;
+    }
+    int64_t total_len = (int64_t)__llbc_strlen(s);
+    int64_t start = 0;
+    while (start < total_len && ((unsigned char)s[start] <= 32 && s[start] != '\0')) {
+        start++;
+    }
+    int64_t count = total_len - start;
+    if (count <= 0) {
+        char* empty = (char*)__llbc_allocate_instance(1);
+        if (empty) empty[0] = '\0';
+        return empty;
+    }
+    char* dest = (char*)__llbc_allocate_instance((uint64_t)(count + 1));
+    if (!dest) return (void*)0;
+    for (int64_t i = 0; i < count; ++i) {
+        dest[i] = s[start + i];
+    }
+    dest[count] = '\0';
+    return dest;
+}
+
+char* __attribute__((weak)) __llbc_str_rtrim(const char* s) {
+    if (!s) {
+        char* empty = (char*)__llbc_allocate_instance(1);
+        if (empty) empty[0] = '\0';
+        return empty;
+    }
+    int64_t total_len = (int64_t)__llbc_strlen(s);
+    int64_t end = total_len - 1;
+    while (end >= 0 && ((unsigned char)s[end] <= 32)) {
+        end--;
+    }
+    int64_t count = end + 1;
+    if (count <= 0) {
+        char* empty = (char*)__llbc_allocate_instance(1);
+        if (empty) empty[0] = '\0';
+        return empty;
+    }
+    char* dest = (char*)__llbc_allocate_instance((uint64_t)(count + 1));
+    if (!dest) return (void*)0;
+    for (int64_t i = 0; i < count; ++i) {
+        dest[i] = s[i];
+    }
+    dest[count] = '\0';
+    return dest;
+}
+
 int32_t __attribute__((weak)) __llbc_str_instr(const char* s, const char* sub, int64_t start) {
     if (!s || !sub) return 0;
     int64_t slen = (int64_t)__llbc_strlen(s);
@@ -223,6 +275,41 @@ double __attribute__((weak)) __llbc_str_val(const char* s) {
 
 #if defined(__STDC_HOSTED__) && __STDC_HOSTED__ == 1
 #include <stdio.h>
+#include <signal.h>
+#include <unistd.h>
+
+static void __llbc_signal_handler(int sig, siginfo_t* info, void* ucontext) {
+    (void)ucontext;
+    const char* sigName = "Fatal Signal";
+    if (sig == SIGSEGV) sigName = "SIGSEGV (Segmentation Fault / Invalid Memory Access)";
+    else if (sig == SIGFPE) sigName = "SIGFPE (Arithmetic Exception / Division by Zero)";
+    else if (sig == SIGILL) sigName = "SIGILL (Illegal Instruction)";
+    else if (sig == SIGBUS) sigName = "SIGBUS (Bus Error)";
+
+    fprintf(stderr, "\n\033[1;31m[LLB Runtime Crash]\033[0m Caught %s\n", sigName);
+    if (info) {
+        if (info->si_addr == NULL) {
+            fprintf(stderr, "  \033[1;33mFault Address:\033[0m %p [Null Pointer Dereference]\n", info->si_addr);
+        } else {
+            fprintf(stderr, "  \033[1;33mFault Address:\033[0m %p [Access Violation / Unmapped Page]\n", info->si_addr);
+        }
+    }
+    fprintf(stderr, "  \033[1;37mTip:\033[0m Recompile with '-g' and run in 'lldb' or 'gdb' to inspect full stack frame.\n\n");
+    fflush(stderr);
+    _exit(128 + sig);
+}
+
+static void __attribute__((constructor)) __llbc_install_crash_handlers(void) {
+    struct sigaction sa;
+    sa.sa_flags = SA_SIGINFO;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_sigaction = __llbc_signal_handler;
+    sigaction(SIGSEGV, &sa, NULL);
+    sigaction(SIGBUS, &sa, NULL);
+    sigaction(SIGILL, &sa, NULL);
+    sigaction(SIGFPE, &sa, NULL);
+}
+
 void __attribute__((weak)) __llbc_print_str(const char* s) {
     if (s) fputs(s, stdout);
 }
@@ -231,3 +318,23 @@ void __attribute__((weak)) __llbc_print_str(const char* s) {
     (void)s;
 }
 #endif
+
+void __attribute__((weak)) __llbc_panic(const char* file, int32_t line, int32_t col, const char* reason) {
+#if defined(__STDC_HOSTED__) && __STDC_HOSTED__ == 1
+    fprintf(stderr, "\n\033[1;31m[LLB Runtime Panic]\033[0m %s:%d:%d: \033[1;37m%s\033[0m\n",
+            file ? file : "<unknown>", (int)line, (int)col, reason ? reason : "fatal error");
+    abort();
+#else
+    (void)file;
+    (void)line;
+    (void)col;
+    (void)reason;
+    for (;;) {
+#if defined(__x86_64__) || defined(__i386__)
+        __asm__ volatile("cli; hlt");
+#elif defined(__arm__) || defined(__aarch64__)
+        __asm__ volatile("wfi");
+#endif
+    }
+#endif
+}

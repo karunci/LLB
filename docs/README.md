@@ -1017,6 +1017,16 @@ End Module
 
 ---
 
+### Toolchain & Environment Specifications
+
+Low-Level Basic has been developed and verified on the following toolchain environment:
+
+- **Compiler Backend:** LLVM 21.1.8 (`llvm-config --version`)
+- **C/C++ Host Compiler:** Clang 21.1.8 / C++17
+- **Linker:** Embedded LLD (ELF driver)
+- **Build System:** CMake 3.18+ (tested with CMake 3.31.6)
+- **Environments Verified:** Linux (aarch64 / Termux Android 14+), Linux (x86_64), QEMU 9.x+ (Multiboot1 / Multiboot2 bare-metal emulation)
+
 ### Toolchain Build Summary
 
 To execute the self-hosting compiler pipeline on your project:
@@ -1025,7 +1035,7 @@ To execute the self-hosting compiler pipeline on your project:
 ```bash
 mkdir build && cd build
 cmake ..
-make -j4
+cmake --build . -j4
 ```
 
 2. **Compile LLB Kernel Project:**

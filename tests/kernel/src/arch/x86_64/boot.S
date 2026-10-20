@@ -102,10 +102,22 @@ setup_page_tables:
     or $0x3, %eax
     mov %eax, (page_table_l3)
 
-    /* Map L2[0] -> 2MB Huge Page (Identity Map physical 0x0 - 0x200000) */
+    /* Map L2[0..3] -> 2MB Huge Pages (Identity Map physical 0x0 - 0x800000) */
     mov $0x000000, %eax
     or $0x83, %eax /* Present + Writable + Huge Page Bit (PS) */
     mov %eax, (page_table_l2)
+
+    mov $0x200000, %eax
+    or $0x83, %eax
+    mov %eax, (page_table_l2 + 8)
+
+    mov $0x400000, %eax
+    or $0x83, %eax
+    mov %eax, (page_table_l2 + 16)
+
+    mov $0x600000, %eax
+    or $0x83, %eax
+    mov %eax, (page_table_l2 + 24)
     ret
 
 /* Enable PAE and Long Mode in CR4/CR0/EFER */

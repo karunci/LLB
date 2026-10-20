@@ -220,7 +220,8 @@ bool TargetEmitter::linkExecutable(
     bool isShared,
     bool isFreestanding,
     const std::string& targetTriple,
-    const std::string& sysroot
+    const std::string& sysroot,
+    const std::string& entryPoint
 ) {
     std::vector<std::string> argStorage;
     argStorage.push_back("lld");
@@ -228,6 +229,11 @@ bool TargetEmitter::linkExecutable(
     argStorage.push_back("gnu");
     argStorage.push_back("-o");
     argStorage.push_back(outputFile);
+
+    if (!entryPoint.empty()) {
+        argStorage.push_back("-e");
+        argStorage.push_back(entryPoint);
+    }
 
     // Apply cross-target emulation if targetTriple is supplied
     if (!targetTriple.empty()) {

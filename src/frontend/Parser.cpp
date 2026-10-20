@@ -1331,6 +1331,8 @@ std::unique_ptr<EraseStmtNode> Parser::parseEraseStatement() {
 std::unique_ptr<PrintStmtNode> Parser::parsePrintStatement() {
     auto printNode = std::make_unique<PrintStmtNode>();
     size_t printLine = m_prevToken.line;
+    printNode->line = printLine;
+    printNode->column = m_prevToken.column;
 
     while (m_currentToken.line == printLine &&
            m_currentToken.type != TokenType::Colon &&
@@ -1719,6 +1721,8 @@ std::unique_ptr<ExprASTNode> Parser::parsePostfixExpr() {
         // Parentheses: function call or index expr: expr(...) (do not cross newlines)
         if (!m_currentToken.hasLeadingNewline && match(TokenType::LParen)) {
             auto callNode = std::make_unique<CallExprASTNode>();
+            callNode->line = expr ? expr->line : m_prevToken.line;
+            callNode->column = expr ? expr->column : m_prevToken.column;
             if (auto var = dynamic_cast<VariableExprASTNode*>(expr.get())) {
                 callNode->funcName = var->name;
             } else if (auto member = dynamic_cast<MemberAccessExprASTNode*>(expr.get())) {
@@ -1951,8 +1955,13 @@ std::unique_ptr<ExprASTNode> Parser::parsePrimaryExpr() {
         m_currentToken.type == TokenType::KwEof || checkKeyword("EOF") ||
         m_currentToken.type == TokenType::KwLof || checkKeyword("LOF")) {
         std::string name = m_currentToken.text;
+        size_t tokLine = m_currentToken.line;
+        size_t tokCol = m_currentToken.column;
         consume();
-        return std::make_unique<VariableExprASTNode>(name);
+        auto varNode = std::make_unique<VariableExprASTNode>(name);
+        varNode->line = tokLine;
+        varNode->column = tokCol;
+        return varNode;
     }
 
     // Fallback for unexpected token

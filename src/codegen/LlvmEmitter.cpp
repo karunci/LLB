@@ -7,9 +7,12 @@
  */
 
 #include "LlvmEmitter.hpp"
+#include "../frontend/Diagnostic.hpp"
 #include <llvm/IR/Verifier.h>
 #include <llvm/Support/raw_ostream.h>
 #include <iostream>
+#include <fstream>
+#include <sstream>
 #include <algorithm>
 
 namespace llbc {
@@ -24,9 +27,10 @@ static std::string toLower(const std::string& str) {
 static llvm::GlobalVariable* findGlobalCaseInsensitive(llvm::Module* mod, const std::string& name) {
     if (!mod) return nullptr;
     llvm::GlobalVariable* g = mod->getGlobalVariable(name);
-    if (g) return g;
+    if (g && !g->hasPrivateLinkage()) return g;
     std::string lowerName = toLower(name);
     for (auto& gv : mod->globals()) {
+        if (gv.hasPrivateLinkage()) continue;
         if (toLower(gv.getName().str()) == lowerName) {
             return &gv;
         }
@@ -241,6 +245,7 @@ llvm::Value* LlvmEmitter::getPointerToExpr(ExprASTNode* expr) {
         if (gVar) {
             return gVar;
         }
+        return nullptr;
     }
 
     if (auto idx = dynamic_cast<IndexExprASTNode*>(expr)) {
@@ -345,12 +350,14 @@ bool LlvmEmitter::isStringExpr(ExprASTNode* expr) {
     if (!expr) return false;
     if (dynamic_cast<StringExprASTNode*>(expr)) return true;
     TypeSpec ts = deduceExprType(expr);
-    if (toLower(ts.name) == "string" && ts.pointerDepth == 0 && !ts.isArray) return true;
+    std::string lowerTsName = toLower(ts.name);
+    if (lowerTsName == "string" && ts.pointerDepth == 0 && !ts.isArray) return true;
     if (auto var = dynamic_cast<VariableExprASTNode*>(expr)) {
         auto it = m_variableTypes.find(var->name);
         if (it == m_variableTypes.end()) it = m_variableTypes.find(toLower(var->name));
         if (it != m_variableTypes.end()) {
-            if (toLower(it->second.name) == "string" && it->second.pointerDepth == 0 && !it->second.isArray) return true;
+            std::string vtName = toLower(it->second.name);
+            if (vtName == "string" && it->second.pointerDepth == 0 && !it->second.isArray) return true;
         }
     }
     if (auto call = dynamic_cast<CallExprASTNode*>(expr)) {
@@ -359,8 +366,10 @@ bool LlvmEmitter::isStringExpr(ExprASTNode* expr) {
             fn == "left" || fn == "left$" ||
             fn == "right" || fn == "right$" ||
             fn == "trim" || fn == "trim$" ||
+            fn == "ltrim" || fn == "ltrim$" ||
+            fn == "rtrim" || fn == "rtrim$" ||
             fn == "chr" || fn == "chr$" ||
-            fn == "cstr") {
+            fn == "cstr" || fn == "str" || fn == "str$") {
             return true;
         }
     }
@@ -584,8 +593,12 @@ void LlvmEmitter::emitBoundsCheck(llvm::Value* indexVal, uint64_t bound, const s
     m_builder->CreateCondBr(outOfBounds, panicBB, passBB);
 
     m_builder->SetInsertPoint(panicBB);
-    llvm::Function* trapFn = llvm::Intrinsic::getOrInsertDeclaration(m_module.get(), llvm::Intrinsic::trap);
-    m_builder->CreateCall(trapFn, {});
+    llvm::Function* panicFn = getOrCreatePanic();
+    llvm::Value* fileStr = m_builder->CreateGlobalString(m_sourceFilePath, "panic.file");
+    llvm::Value* reasonStr = m_builder->CreateGlobalString("Subscript out of range (" + varName + ")", "panic.reason");
+    llvm::Value* lineVal = llvm::ConstantInt::get(llvm::Type::getInt32Ty(*m_context), static_cast<uint32_t>(m_currentLine));
+    llvm::Value* colVal = llvm::ConstantInt::get(llvm::Type::getInt32Ty(*m_context), static_cast<uint32_t>(m_currentCol));
+    m_builder->CreateCall(panicFn, {fileStr, lineVal, colVal, reasonStr});
     m_builder->CreateUnreachable();
 
     m_builder->SetInsertPoint(passBB);
@@ -605,11 +618,134 @@ void LlvmEmitter::emitNullCheck(llvm::Value* ptrVal, const std::string& exprName
     m_builder->CreateCondBr(isNull, panicBB, passBB);
 
     m_builder->SetInsertPoint(panicBB);
+    llvm::Function* panicFn = getOrCreatePanic();
+    llvm::Value* fileStr = m_builder->CreateGlobalString(m_sourceFilePath, "panic.file");
+    llvm::Value* reasonStr = m_builder->CreateGlobalString("Null pointer dereference (" + exprName + ")", "panic.reason");
+    llvm::Value* lineVal = llvm::ConstantInt::get(llvm::Type::getInt32Ty(*m_context), static_cast<uint32_t>(m_currentLine));
+    llvm::Value* colVal = llvm::ConstantInt::get(llvm::Type::getInt32Ty(*m_context), static_cast<uint32_t>(m_currentCol));
+    m_builder->CreateCall(panicFn, {fileStr, lineVal, colVal, reasonStr});
+    m_builder->CreateUnreachable();
+
+    m_builder->SetInsertPoint(passBB);
+}
+
+void LlvmEmitter::emitZeroDivCheck(llvm::Value* divisor, const std::string& opName) {
+    if (!divisor || m_currentProcIsUnsafe) return;
+    llvm::Function* currentFunc = m_builder->GetInsertBlock()->getParent();
+    if (!currentFunc) return;
+
+    llvm::Value* zeroVal = llvm::ConstantInt::get(divisor->getType(), 0);
+    llvm::Value* isZero = m_builder->CreateICmpEQ(divisor, zeroVal, "is_zero_div");
+
+    llvm::BasicBlock* panicBB = llvm::BasicBlock::Create(*m_context, "panic.dbz", currentFunc);
+    llvm::BasicBlock* passBB = llvm::BasicBlock::Create(*m_context, "pass.div", currentFunc);
+
+    m_builder->CreateCondBr(isZero, panicBB, passBB);
+
+    m_builder->SetInsertPoint(panicBB);
+    llvm::Function* panicFn = getOrCreatePanic();
+    llvm::Value* fileStr = m_builder->CreateGlobalString(m_sourceFilePath, "panic.file");
+    llvm::Value* reasonStr = m_builder->CreateGlobalString("Division by zero in operator '" + opName + "'", "panic.reason");
+    llvm::Value* lineVal = llvm::ConstantInt::get(llvm::Type::getInt32Ty(*m_context), static_cast<uint32_t>(m_currentLine));
+    llvm::Value* colVal = llvm::ConstantInt::get(llvm::Type::getInt32Ty(*m_context), static_cast<uint32_t>(m_currentCol));
+    m_builder->CreateCall(panicFn, {fileStr, lineVal, colVal, reasonStr});
+    m_builder->CreateUnreachable();
+
+    m_builder->SetInsertPoint(passBB);
+}
+
+void LlvmEmitter::checkConstantOverflow(const TypeSpec& targetType, ExprASTNode* expr, size_t line, size_t col) {
+    if (!expr) return;
+    if (auto num = dynamic_cast<NumberExprASTNode*>(expr)) {
+        if (num->isFloat) return;
+        std::string tName = toLower(targetType.name);
+        int64_t v = num->val;
+        bool overflow = false;
+        int64_t minB = 0, maxB = 0;
+        if (targetType.pointerDepth == 0 && !targetType.isArray) {
+            if (tName == "byte" || tName == "ubyte" || tName == "uint8") {
+                minB = 0; maxB = 255;
+                if (v < minB || v > maxB) overflow = true;
+            } else if (tName == "int8" || tName == "sbyte") {
+                minB = -128; maxB = 127;
+                if (v < minB || v > maxB) overflow = true;
+            } else if (tName == "uint16" || tName == "ushort") {
+                minB = 0; maxB = 65535;
+                if (v < minB || v > maxB) overflow = true;
+            } else if (tName == "int16" || tName == "short") {
+                minB = -32768; maxB = 32767;
+                if (v < minB || v > maxB) overflow = true;
+            } else if (tName == "uint32" || tName == "ulong") {
+                minB = 0; maxB = 4294967295ULL;
+                if (v < 0 || static_cast<uint64_t>(v) > 4294967295ULL) overflow = true;
+            } else if (tName == "int32" || tName == "long") {
+                minB = -2147483648LL; maxB = 2147483647LL;
+                if (v < minB || v > maxB) overflow = true;
+            }
+        }
+        if (overflow) {
+            Diagnostic::report(m_sourceFilePath, line > 0 ? line : m_currentLine, col > 0 ? col : m_currentCol,
+                               true, "Integer literal " + std::to_string(v) + " overflows target type '" + targetType.name + "' [" + std::to_string(minB) + ".." + std::to_string(maxB) + "]", m_sourceText);
+            m_hadError = true;
+        }
+    }
+}
+
+llvm::Function* LlvmEmitter::getOrCreatePanic() {
+    llvm::Function* func = m_module->getFunction("__llbc_panic");
+    if (func && !func->isDeclaration()) return func;
+    if (!func) {
+        llvm::FunctionType* fnTy = llvm::FunctionType::get(
+            llvm::Type::getVoidTy(*m_context),
+            {
+                llvm::PointerType::get(*m_context, 0), // file
+                llvm::Type::getInt32Ty(*m_context),    // line
+                llvm::Type::getInt32Ty(*m_context),    // col
+                llvm::PointerType::get(*m_context, 0)  // reason
+            },
+            false
+        );
+        func = llvm::Function::Create(fnTy, llvm::Function::LinkOnceODRLinkage, "__llbc_panic", m_module.get());
+    } else {
+        func->setLinkage(llvm::Function::LinkOnceODRLinkage);
+    }
+
+    auto prevBB = m_builder->GetInsertBlock();
+    auto prevPoint = m_builder->GetInsertPoint();
+
+    llvm::BasicBlock* entryBB = llvm::BasicBlock::Create(*m_context, "entry", func);
+    m_builder->SetInsertPoint(entryBB);
+
+    llvm::Value* fileArg = func->getArg(0);
+    llvm::Value* lineArg = func->getArg(1);
+    llvm::Value* colArg = func->getArg(2);
+    llvm::Value* reasonArg = func->getArg(3);
+
+    // Formatted diagnostic output matching LLB diagnostic styling
+    llvm::Value* fmt = m_builder->CreateGlobalString("\n\033[1;31m[LLB Runtime Panic]\033[0m %s:%d:%d: \033[1;37m%s\033[0m\n", "panic.fmt");
+
+    llvm::FunctionType* dprintfTy = llvm::FunctionType::get(
+        llvm::Type::getInt32Ty(*m_context),
+        {llvm::Type::getInt32Ty(*m_context), llvm::PointerType::get(*m_context, 0)},
+        true
+    );
+    llvm::FunctionCallee dprintfFn = m_module->getOrInsertFunction("dprintf", dprintfTy);
+    llvm::Value* stderrFd = llvm::ConstantInt::get(llvm::Type::getInt32Ty(*m_context), 2);
+    m_builder->CreateCall(dprintfFn, {stderrFd, fmt, fileArg, lineArg, colArg, reasonArg});
+
+    llvm::FunctionType* abortTy = llvm::FunctionType::get(
+        llvm::Type::getVoidTy(*m_context),
+        false
+    );
+    llvm::FunctionCallee abortFn = m_module->getOrInsertFunction("abort", abortTy);
+    m_builder->CreateCall(abortFn, {});
+
     llvm::Function* trapFn = llvm::Intrinsic::getOrInsertDeclaration(m_module.get(), llvm::Intrinsic::trap);
     m_builder->CreateCall(trapFn, {});
     m_builder->CreateUnreachable();
 
-    m_builder->SetInsertPoint(passBB);
+    if (prevBB) m_builder->SetInsertPoint(prevBB, prevPoint);
+    return func;
 }
 
 llvm::Function* LlvmEmitter::getOrCreateMalloc() {
@@ -1639,6 +1775,162 @@ llvm::Function* LlvmEmitter::getOrCreateStrTrim() {
     llvm::Value* destBuf = m_builder->CreateCall(mallocFn, {allocSize}, "trimbuf");
     llvm::Value* srcStart = m_builder->CreateGEP(llvm::Type::getInt8Ty(*m_context), sArg, startPhi, "srcstart");
     m_builder->CreateMemCpy(destBuf, llvm::MaybeAlign(1), srcStart, llvm::MaybeAlign(1), count);
+    llvm::Value* termSlot = m_builder->CreateGEP(llvm::Type::getInt8Ty(*m_context), destBuf, count, "term");
+    m_builder->CreateStore(llvm::ConstantInt::get(llvm::Type::getInt8Ty(*m_context), 0), termSlot);
+    m_builder->CreateRet(destBuf);
+
+    if (prevBB) m_builder->SetInsertPoint(prevBB, prevPoint);
+    return func;
+}
+
+llvm::Function* LlvmEmitter::getOrCreateStrLTrim() {
+    llvm::Function* func = m_module->getFunction("__llbc_str_ltrim");
+    if (func && !func->isDeclaration()) return func;
+    if (!func) {
+        llvm::FunctionType* fnTy = llvm::FunctionType::get(
+            llvm::PointerType::get(*m_context, 0),
+            {llvm::PointerType::get(*m_context, 0)},
+            false
+        );
+        func = llvm::Function::Create(fnTy, llvm::Function::LinkOnceODRLinkage, "__llbc_str_ltrim", m_module.get());
+    } else {
+        func->setLinkage(llvm::Function::LinkOnceODRLinkage);
+    }
+
+    auto prevBB = m_builder->GetInsertBlock();
+    auto prevPoint = m_builder->GetInsertPoint();
+
+    llvm::BasicBlock* entryBB = llvm::BasicBlock::Create(*m_context, "entry", func);
+    llvm::BasicBlock* validSBB = llvm::BasicBlock::Create(*m_context, "valid.s", func);
+    llvm::BasicBlock* startLoopBB = llvm::BasicBlock::Create(*m_context, "start.loop", func);
+    llvm::BasicBlock* startBodyBB = llvm::BasicBlock::Create(*m_context, "start.body", func);
+    llvm::BasicBlock* checkEmptyBB = llvm::BasicBlock::Create(*m_context, "check.empty", func);
+    llvm::BasicBlock* copyBB = llvm::BasicBlock::Create(*m_context, "copy", func);
+    llvm::BasicBlock* emptyBB = llvm::BasicBlock::Create(*m_context, "empty", func);
+
+    m_builder->SetInsertPoint(entryBB);
+    llvm::Argument* sArg = func->getArg(0);
+    llvm::Value* isNull = m_builder->CreateIsNull(sArg, "isnull");
+    m_builder->CreateCondBr(isNull, emptyBB, validSBB);
+
+    m_builder->SetInsertPoint(emptyBB);
+    llvm::Function* mallocFn = getOrCreateMalloc();
+    llvm::Value* emptyBuf = m_builder->CreateCall(mallocFn, {llvm::ConstantInt::get(llvm::Type::getInt64Ty(*m_context), 1)}, "emptybuf");
+    m_builder->CreateStore(llvm::ConstantInt::get(llvm::Type::getInt8Ty(*m_context), 0), emptyBuf);
+    m_builder->CreateRet(emptyBuf);
+
+    m_builder->SetInsertPoint(validSBB);
+    llvm::Function* strlenFn = getOrCreateStrlen();
+    llvm::Value* totalLen = m_builder->CreateCall(strlenFn, {sArg}, "totallen");
+    m_builder->CreateBr(startLoopBB);
+
+    m_builder->SetInsertPoint(startLoopBB);
+    llvm::PHINode* startPhi = m_builder->CreatePHI(llvm::Type::getInt64Ty(*m_context), 2, "startidx");
+    startPhi->addIncoming(llvm::ConstantInt::get(llvm::Type::getInt64Ty(*m_context), 0), validSBB);
+
+    llvm::Value* inBounds = m_builder->CreateICmpSLT(startPhi, totalLen, "inbounds");
+    llvm::BasicBlock* checkSpaceBB = llvm::BasicBlock::Create(*m_context, "check.space", func, startBodyBB);
+    m_builder->CreateCondBr(inBounds, checkSpaceBB, checkEmptyBB);
+
+    m_builder->SetInsertPoint(checkSpaceBB);
+    llvm::Value* chPtr = m_builder->CreateGEP(llvm::Type::getInt8Ty(*m_context), sArg, startPhi, "chptr");
+    llvm::Value* chVal = m_builder->CreateLoad(llvm::Type::getInt8Ty(*m_context), chPtr, "chval");
+    llvm::Value* isSpace = m_builder->CreateICmpULE(chVal, llvm::ConstantInt::get(llvm::Type::getInt8Ty(*m_context), 32), "isspace");
+    m_builder->CreateCondBr(isSpace, startBodyBB, checkEmptyBB);
+
+    m_builder->SetInsertPoint(startBodyBB);
+    llvm::Value* nextStart = m_builder->CreateAdd(startPhi, llvm::ConstantInt::get(llvm::Type::getInt64Ty(*m_context), 1), "nextstart");
+    startPhi->addIncoming(nextStart, startBodyBB);
+    m_builder->CreateBr(startLoopBB);
+
+    m_builder->SetInsertPoint(checkEmptyBB);
+    llvm::Value* count = m_builder->CreateSub(totalLen, startPhi, "ltrimcount");
+    llvm::Value* countLe0 = m_builder->CreateICmpSLE(count, llvm::ConstantInt::get(llvm::Type::getInt64Ty(*m_context), 0), "countle0");
+    m_builder->CreateCondBr(countLe0, emptyBB, copyBB);
+
+    m_builder->SetInsertPoint(copyBB);
+    llvm::Value* allocSize = m_builder->CreateAdd(count, llvm::ConstantInt::get(llvm::Type::getInt64Ty(*m_context), 1), "allocsize");
+    llvm::Value* destBuf = m_builder->CreateCall(mallocFn, {allocSize}, "ltrimbuf");
+    llvm::Value* srcStart = m_builder->CreateGEP(llvm::Type::getInt8Ty(*m_context), sArg, startPhi, "srcstart");
+    m_builder->CreateMemCpy(destBuf, llvm::MaybeAlign(1), srcStart, llvm::MaybeAlign(1), count);
+    llvm::Value* termSlot = m_builder->CreateGEP(llvm::Type::getInt8Ty(*m_context), destBuf, count, "term");
+    m_builder->CreateStore(llvm::ConstantInt::get(llvm::Type::getInt8Ty(*m_context), 0), termSlot);
+    m_builder->CreateRet(destBuf);
+
+    if (prevBB) m_builder->SetInsertPoint(prevBB, prevPoint);
+    return func;
+}
+
+llvm::Function* LlvmEmitter::getOrCreateStrRTrim() {
+    llvm::Function* func = m_module->getFunction("__llbc_str_rtrim");
+    if (func && !func->isDeclaration()) return func;
+    if (!func) {
+        llvm::FunctionType* fnTy = llvm::FunctionType::get(
+            llvm::PointerType::get(*m_context, 0),
+            {llvm::PointerType::get(*m_context, 0)},
+            false
+        );
+        func = llvm::Function::Create(fnTy, llvm::Function::LinkOnceODRLinkage, "__llbc_str_rtrim", m_module.get());
+    } else {
+        func->setLinkage(llvm::Function::LinkOnceODRLinkage);
+    }
+
+    auto prevBB = m_builder->GetInsertBlock();
+    auto prevPoint = m_builder->GetInsertPoint();
+
+    llvm::BasicBlock* entryBB = llvm::BasicBlock::Create(*m_context, "entry", func);
+    llvm::BasicBlock* validSBB = llvm::BasicBlock::Create(*m_context, "valid.s", func);
+    llvm::BasicBlock* endLoopBB = llvm::BasicBlock::Create(*m_context, "end.loop", func);
+    llvm::BasicBlock* endBodyBB = llvm::BasicBlock::Create(*m_context, "end.body", func);
+    llvm::BasicBlock* checkEmptyBB = llvm::BasicBlock::Create(*m_context, "check.empty", func);
+    llvm::BasicBlock* copyBB = llvm::BasicBlock::Create(*m_context, "copy", func);
+    llvm::BasicBlock* emptyBB = llvm::BasicBlock::Create(*m_context, "empty", func);
+
+    m_builder->SetInsertPoint(entryBB);
+    llvm::Argument* sArg = func->getArg(0);
+    llvm::Value* isNull = m_builder->CreateIsNull(sArg, "isnull");
+    m_builder->CreateCondBr(isNull, emptyBB, validSBB);
+
+    m_builder->SetInsertPoint(emptyBB);
+    llvm::Function* mallocFn = getOrCreateMalloc();
+    llvm::Value* emptyBuf = m_builder->CreateCall(mallocFn, {llvm::ConstantInt::get(llvm::Type::getInt64Ty(*m_context), 1)}, "emptybuf");
+    m_builder->CreateStore(llvm::ConstantInt::get(llvm::Type::getInt8Ty(*m_context), 0), emptyBuf);
+    m_builder->CreateRet(emptyBuf);
+
+    m_builder->SetInsertPoint(validSBB);
+    llvm::Function* strlenFn = getOrCreateStrlen();
+    llvm::Value* totalLen = m_builder->CreateCall(strlenFn, {sArg}, "totallen");
+    llvm::Value* initEnd = m_builder->CreateSub(totalLen, llvm::ConstantInt::get(llvm::Type::getInt64Ty(*m_context), 1), "initend");
+    m_builder->CreateBr(endLoopBB);
+
+    m_builder->SetInsertPoint(endLoopBB);
+    llvm::PHINode* endPhi = m_builder->CreatePHI(llvm::Type::getInt64Ty(*m_context), 2, "endidx");
+    endPhi->addIncoming(initEnd, validSBB);
+
+    llvm::Value* endGeZero = m_builder->CreateICmpSGE(endPhi, llvm::ConstantInt::get(llvm::Type::getInt64Ty(*m_context), 0), "endgezero");
+    llvm::BasicBlock* checkEndSpaceBB = llvm::BasicBlock::Create(*m_context, "check.endspace", func, endBodyBB);
+    m_builder->CreateCondBr(endGeZero, checkEndSpaceBB, checkEmptyBB);
+
+    m_builder->SetInsertPoint(checkEndSpaceBB);
+    llvm::Value* endChPtr = m_builder->CreateGEP(llvm::Type::getInt8Ty(*m_context), sArg, endPhi, "endchptr");
+    llvm::Value* endChVal = m_builder->CreateLoad(llvm::Type::getInt8Ty(*m_context), endChPtr, "endchval");
+    llvm::Value* isEndSpace = m_builder->CreateICmpULE(endChVal, llvm::ConstantInt::get(llvm::Type::getInt8Ty(*m_context), 32), "isendspace");
+    m_builder->CreateCondBr(isEndSpace, endBodyBB, checkEmptyBB);
+
+    m_builder->SetInsertPoint(endBodyBB);
+    llvm::Value* nextEnd = m_builder->CreateSub(endPhi, llvm::ConstantInt::get(llvm::Type::getInt64Ty(*m_context), 1), "nextend");
+    endPhi->addIncoming(nextEnd, endBodyBB);
+    m_builder->CreateBr(endLoopBB);
+
+    m_builder->SetInsertPoint(checkEmptyBB);
+    llvm::Value* count = m_builder->CreateAdd(endPhi, llvm::ConstantInt::get(llvm::Type::getInt64Ty(*m_context), 1), "rtrimcount");
+    llvm::Value* countLe0 = m_builder->CreateICmpSLE(count, llvm::ConstantInt::get(llvm::Type::getInt64Ty(*m_context), 0), "countle0");
+    m_builder->CreateCondBr(countLe0, emptyBB, copyBB);
+
+    m_builder->SetInsertPoint(copyBB);
+    llvm::Value* allocSize = m_builder->CreateAdd(count, llvm::ConstantInt::get(llvm::Type::getInt64Ty(*m_context), 1), "allocsize");
+    llvm::Value* destBuf = m_builder->CreateCall(mallocFn, {allocSize}, "rtrimbuf");
+    m_builder->CreateMemCpy(destBuf, llvm::MaybeAlign(1), sArg, llvm::MaybeAlign(1), count);
     llvm::Value* termSlot = m_builder->CreateGEP(llvm::Type::getInt8Ty(*m_context), destBuf, count, "term");
     m_builder->CreateStore(llvm::ConstantInt::get(llvm::Type::getInt8Ty(*m_context), 0), termSlot);
     m_builder->CreateRet(destBuf);
@@ -2898,6 +3190,7 @@ void LlvmEmitter::emitDimStatement(const DimStmtNode& dimNode) {
 
     // Optional initial value or default zero-initialization for scalar/struct types
     if (dimNode.initValue) {
+        checkConstantOverflow(dimNode.type, dimNode.initValue.get(), dimNode.line, dimNode.column);
         llvm::Value* initVal = emitExpression(dimNode.initValue.get());
         if (initVal) {
             initVal = coerceType(initVal, varType);
@@ -2976,6 +3269,7 @@ void LlvmEmitter::emitConstStatement(const ConstStmtNode& constNode) {
     m_variableTypes[toLower(constNode.name)] = constNode.type;
 
     if (constNode.value) {
+        checkConstantOverflow(constNode.type, constNode.value.get(), constNode.line, constNode.column);
         llvm::Value* val = emitExpression(constNode.value.get());
         if (val) {
             val = coerceType(val, constType);
@@ -2989,6 +3283,12 @@ void LlvmEmitter::emitAssignStatement(const AssignStmtNode& assignNode) {
 
     // Case 1: Variable assignment (var = val) or Module Property Let (Prop = val)
     if (auto var = dynamic_cast<VariableExprASTNode*>(assignNode.target.get())) {
+        auto tItCheck = m_variableTypes.find(var->name);
+        if (tItCheck == m_variableTypes.end()) tItCheck = m_variableTypes.find(toLower(var->name));
+        if (tItCheck != m_variableTypes.end()) {
+            checkConstantOverflow(tItCheck->second, assignNode.value.get(), assignNode.line, assignNode.column);
+        }
+
         llvm::AllocaInst* targetAlloca = nullptr;
         auto it = m_namedValues.find(var->name);
         if (it == m_namedValues.end()) {
@@ -3057,6 +3357,12 @@ void LlvmEmitter::emitAssignStatement(const AssignStmtNode& assignNode) {
             }
             return;
         }
+
+        // Undeclared variable assignment guard
+        Diagnostic::report(m_sourceFilePath, var->line > 0 ? var->line : m_currentLine,
+                           var->column > 0 ? var->column : m_currentCol,
+                           true, "Cannot assign to undeclared variable or identifier '" + var->name + "'.", m_sourceText);
+        m_hadError = true;
         return;
     }
 
@@ -3911,6 +4217,8 @@ void LlvmEmitter::emitStatement(ASTNode* stmt) {
     if (!stmt) return;
 
     if (stmt->line > 0) {
+        m_currentLine = stmt->line;
+        m_currentCol = stmt->column > 0 ? stmt->column : 1;
         emitDebugLocation(stmt->line, stmt->column > 0 ? stmt->column : 1);
     }
 
@@ -4557,6 +4865,11 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
             return m_builder->CreateCall(getFn, {}, "propget");
         }
 
+        // Undeclared variable guard
+        Diagnostic::report(m_sourceFilePath, var->line > 0 ? var->line : m_currentLine,
+                           var->column > 0 ? var->column : m_currentCol,
+                           true, "Undeclared variable or identifier '" + var->name + "'.", m_sourceText);
+        m_hadError = true;
         return nullptr;
     }
 
@@ -4835,7 +5148,7 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
             auto tIt = m_variableTypes.find(call->funcName);
             if (tIt == m_variableTypes.end()) tIt = m_variableTypes.find(toLower(call->funcName));
             llvm::GlobalVariable* gVar = nullptr;
-            if (it == m_namedValues.end()) {
+            if (it == m_namedValues.end() && tIt != m_variableTypes.end()) {
                 gVar = findGlobalCaseInsensitive(m_module.get(), call->funcName);
             }
             if (it != m_namedValues.end() || gVar) {
@@ -5031,6 +5344,13 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
 
         if (lowerFn == "mid" || lowerFn == "mid$") {
             if (call->args.size() >= 2) {
+                if (!isStringExpr(call->args[0].get())) {
+                    Diagnostic::report(m_sourceFilePath, call->line > 0 ? call->line : m_currentLine,
+                                       call->column > 0 ? call->column : m_currentCol,
+                                       true, "Type mismatch in '" + call->funcName + "': string argument expected. Use 'CStr()' or 'Str()' for explicit conversion.", m_sourceText);
+                    m_hadError = true;
+                    return nullptr;
+                }
                 llvm::Value* sVal = emitExpression(call->args[0].get());
                 llvm::Value* startVal = emitExpression(call->args[1].get());
                 if (!sVal || !startVal) return nullptr;
@@ -5052,6 +5372,13 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
 
         if (lowerFn == "left" || lowerFn == "left$") {
             if (call->args.size() >= 2) {
+                if (!isStringExpr(call->args[0].get())) {
+                    Diagnostic::report(m_sourceFilePath, call->line > 0 ? call->line : m_currentLine,
+                                       call->column > 0 ? call->column : m_currentCol,
+                                       true, "Type mismatch in '" + call->funcName + "': string argument expected. Use 'CStr()' or 'Str()' for explicit conversion.", m_sourceText);
+                    m_hadError = true;
+                    return nullptr;
+                }
                 llvm::Value* sVal = emitExpression(call->args[0].get());
                 llvm::Value* nVal = emitExpression(call->args[1].get());
                 if (!sVal || !nVal) return nullptr;
@@ -5067,6 +5394,13 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
 
         if (lowerFn == "right" || lowerFn == "right$") {
             if (call->args.size() >= 2) {
+                if (!isStringExpr(call->args[0].get())) {
+                    Diagnostic::report(m_sourceFilePath, call->line > 0 ? call->line : m_currentLine,
+                                       call->column > 0 ? call->column : m_currentCol,
+                                       true, "Type mismatch in '" + call->funcName + "': string argument expected. Use 'CStr()' or 'Str()' for explicit conversion.", m_sourceText);
+                    m_hadError = true;
+                    return nullptr;
+                }
                 llvm::Value* sVal = emitExpression(call->args[0].get());
                 llvm::Value* nVal = emitExpression(call->args[1].get());
                 if (!sVal || !nVal) return nullptr;
@@ -5081,6 +5415,16 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
 
         if (lowerFn == "instr") {
             if (call->args.size() >= 2) {
+                ExprASTNode* sExpr = (call->args.size() >= 3) ? call->args[1].get() : call->args[0].get();
+                ExprASTNode* subExpr = (call->args.size() >= 3) ? call->args[2].get() : call->args[1].get();
+                if (!isStringExpr(sExpr) || !isStringExpr(subExpr)) {
+                    Diagnostic::report(m_sourceFilePath, call->line > 0 ? call->line : m_currentLine,
+                                       call->column > 0 ? call->column : m_currentCol,
+                                       true, "Type mismatch in 'InStr': search string arguments must be of String type. Use 'CStr()' or 'Str()' for explicit conversion.", m_sourceText);
+                    m_hadError = true;
+                    return llvm::ConstantInt::get(llvm::Type::getInt32Ty(*m_context), 0);
+                }
+
                 llvm::Value* sVal = nullptr;
                 llvm::Value* subVal = nullptr;
                 llvm::Value* startVal = nullptr;
@@ -5105,12 +5449,28 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
             return llvm::ConstantInt::get(llvm::Type::getInt32Ty(*m_context), 0);
         }
 
-        if (lowerFn == "trim" || lowerFn == "trim$") {
+        if (lowerFn == "trim" || lowerFn == "trim$" ||
+            lowerFn == "ltrim" || lowerFn == "ltrim$" ||
+            lowerFn == "rtrim" || lowerFn == "rtrim$") {
             if (!call->args.empty()) {
+                if (!isStringExpr(call->args[0].get())) {
+                    Diagnostic::report(m_sourceFilePath, call->line > 0 ? call->line : m_currentLine,
+                                       call->column > 0 ? call->column : m_currentCol,
+                                       true, "Type mismatch in '" + call->funcName + "': expected String, got numeric or incompatible type. Use 'CStr()' or 'Str()' for explicit conversion.", m_sourceText);
+                    m_hadError = true;
+                    return nullptr;
+                }
                 llvm::Value* sVal = emitExpression(call->args[0].get());
                 if (!sVal) return nullptr;
                 sVal = coerceType(sVal, llvm::PointerType::get(*m_context, 0));
-                llvm::Function* trimFn = getOrCreateStrTrim();
+                llvm::Function* trimFn = nullptr;
+                if (lowerFn == "ltrim" || lowerFn == "ltrim$") {
+                    trimFn = getOrCreateStrLTrim();
+                } else if (lowerFn == "rtrim" || lowerFn == "rtrim$") {
+                    trimFn = getOrCreateStrRTrim();
+                } else {
+                    trimFn = getOrCreateStrTrim();
+                }
                 return m_builder->CreateCall(trimFn, {sVal}, "trimres");
             }
             return nullptr;
@@ -5118,6 +5478,13 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
 
         if (lowerFn == "strcomp") {
             if (call->args.size() >= 2) {
+                if (!isStringExpr(call->args[0].get()) || !isStringExpr(call->args[1].get())) {
+                    Diagnostic::report(m_sourceFilePath, call->line > 0 ? call->line : m_currentLine,
+                                       call->column > 0 ? call->column : m_currentCol,
+                                       true, "Type mismatch in 'StrComp': arguments must be of String type.", m_sourceText);
+                    m_hadError = true;
+                    return llvm::ConstantInt::get(llvm::Type::getInt32Ty(*m_context), 0);
+                }
                 llvm::Value* s1Val = emitExpression(call->args[0].get());
                 llvm::Value* s2Val = emitExpression(call->args[1].get());
                 if (!s1Val || !s2Val) return llvm::ConstantInt::get(llvm::Type::getInt32Ty(*m_context), 0);
@@ -5139,6 +5506,13 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
 
         if (lowerFn == "asc") {
             if (!call->args.empty()) {
+                if (!isStringExpr(call->args[0].get())) {
+                    Diagnostic::report(m_sourceFilePath, call->line > 0 ? call->line : m_currentLine,
+                                       call->column > 0 ? call->column : m_currentCol,
+                                       true, "Type mismatch in 'Asc': argument must be of String type.", m_sourceText);
+                    m_hadError = true;
+                    return llvm::ConstantInt::get(llvm::Type::getInt32Ty(*m_context), 0);
+                }
                 llvm::Value* sVal = emitExpression(call->args[0].get());
                 if (!sVal) return nullptr;
                 sVal = coerceType(sVal, llvm::PointerType::get(*m_context, 0));
@@ -5163,14 +5537,20 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
             if (!call->args.empty()) {
                 llvm::Value* sVal = emitExpression(call->args[0].get());
                 if (!sVal) return nullptr;
-                sVal = coerceType(sVal, llvm::PointerType::get(*m_context, 0));
+                // If already a numeric type, return it directly (avoids inttoptr)
+                if (sVal->getType()->isIntegerTy()) {
+                    return m_builder->CreateSIToFP(sVal, llvm::Type::getDoubleTy(*m_context), "val.i2d");
+                }
+                if (sVal->getType()->isFloatingPointTy()) {
+                    return coerceType(sVal, llvm::Type::getDoubleTy(*m_context));
+                }
                 llvm::Function* valFn = getOrCreateStrVal();
                 return m_builder->CreateCall(valFn, {sVal}, "valres");
             }
             return llvm::ConstantFP::get(llvm::Type::getDoubleTy(*m_context), 0.0);
         }
 
-        if (lowerFn == "cstr") {
+        if (lowerFn == "cstr" || lowerFn == "str" || lowerFn == "str$") {
             if (!call->args.empty()) {
                 llvm::Value* val = emitExpression(call->args[0].get());
                 if (!val) return nullptr;
@@ -6070,9 +6450,15 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
         if (op == "-") return m_builder->CreateSub(l, r, "subtmp");
         if (op == "*") return m_builder->CreateMul(l, r, "multmp");
         if (op == "/") {
+            if (!m_currentProcIsUnsafe && l->getType()->isIntegerTy()) {
+                emitZeroDivCheck(r, "/");
+            }
             return isUnsigned ? m_builder->CreateUDiv(l, r, "udivtmp") : m_builder->CreateSDiv(l, r, "sdivtmp");
         }
         if (op == "mod") {
+            if (!m_currentProcIsUnsafe && l->getType()->isIntegerTy()) {
+                emitZeroDivCheck(r, "Mod");
+            }
             return isUnsigned ? m_builder->CreateURem(l, r, "umodtmp") : m_builder->CreateSRem(l, r, "smodtmp");
         }
 
@@ -6464,10 +6850,20 @@ llvm::Function* LlvmEmitter::emitProcedure(const ProcedureNode& procNode, const 
 }
 
 bool LlvmEmitter::emitModule(const ModuleNode& moduleNode) {
+    m_sourceFilePath = !moduleNode.sourceFilePath.empty() 
+        ? moduleNode.sourceFilePath 
+        : (moduleNode.name + ".bas");
+    {
+        std::ifstream srcFile(m_sourceFilePath);
+        if (srcFile.is_open()) {
+            std::stringstream buffer;
+            buffer << srcFile.rdbuf();
+            m_sourceText = buffer.str();
+        }
+    }
+
     if (m_enableDebugInfo && m_diBuilder) {
-        std::string sourceFile = !moduleNode.sourceFilePath.empty() 
-            ? moduleNode.sourceFilePath 
-            : (moduleNode.name + ".bas");
+        std::string sourceFile = m_sourceFilePath;
         std::string dir = ".";
         std::string filename = sourceFile;
         size_t slashPos = sourceFile.find_last_of("/\\");
@@ -6747,21 +7143,23 @@ bool LlvmEmitter::emitModule(const ModuleNode& moduleNode) {
         m_builder->SetInsertPoint(entryBB);
 
         llvm::Value* retVal = nullptr;
+        bool isVoid = llbMain->getReturnType()->isVoidTy();
+        llvm::Twine callName = isVoid ? "" : "call.main";
         if (llbMain->getFunctionType()->getNumParams() == 0) {
-            retVal = m_builder->CreateCall(llbMain, {}, "call.main");
+            retVal = m_builder->CreateCall(llbMain, {}, callName);
         } else if (llbMain->getFunctionType()->getNumParams() == 1) {
             llvm::Value* argc = mainFn->getArg(0);
             argc = coerceType(argc, llbMain->getFunctionType()->getParamType(0));
-            retVal = m_builder->CreateCall(llbMain, {argc}, "call.main");
+            retVal = m_builder->CreateCall(llbMain, {argc}, callName);
         } else {
             llvm::Value* argc = mainFn->getArg(0);
             llvm::Value* argv = mainFn->getArg(1);
             argc = coerceType(argc, llbMain->getFunctionType()->getParamType(0));
             argv = coerceType(argv, llbMain->getFunctionType()->getParamType(1));
-            retVal = m_builder->CreateCall(llbMain, {argc, argv}, "call.main");
+            retVal = m_builder->CreateCall(llbMain, {argc, argv}, callName);
         }
 
-        if (retVal && retVal->getType()->isIntegerTy()) {
+        if (retVal && !isVoid && retVal->getType()->isIntegerTy()) {
             retVal = coerceType(retVal, llvm::Type::getInt32Ty(*m_context));
             m_builder->CreateRet(retVal);
         } else {
@@ -6771,6 +7169,10 @@ bool LlvmEmitter::emitModule(const ModuleNode& moduleNode) {
 
     if (m_enableDebugInfo && m_diBuilder) {
         m_diBuilder->finalize();
+    }
+
+    if (m_hadError) {
+        return false;
     }
 
     return !llvm::verifyModule(*m_module, &llvm::errs());

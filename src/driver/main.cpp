@@ -450,6 +450,7 @@ static std::string compileSourceFile(
 struct CliOptions {
     std::string outputFile = "output.elf";
     std::string linkerScript = "";
+    std::string entryPoint = "";
     std::string targetTriple = "";
     std::string sysroot = "";
     bool isShared = false;
@@ -465,6 +466,7 @@ struct CliOptions {
     bool cliHasOptLevel = false;
     bool cliHasTarget = false;
     bool cliHasLinkerScript = false;
+    bool cliHasEntryPoint = false;
     bool cliHasFreestanding = false;
     bool cliHasSysroot = false;
     bool cliHasTimeout = false;
@@ -485,6 +487,7 @@ static int buildSingleProject(const std::string& manifestPath, const CliOptions&
     std::vector<std::string> objectFiles = extraObjectFiles;
     std::string outputFile = opts.cliHasOutputFile ? opts.outputFile : config.outputFile;
     std::string linkerScript = (!opts.cliHasLinkerScript && !config.linkerScript.empty()) ? config.linkerScript : opts.linkerScript;
+    std::string entryPoint = opts.cliHasEntryPoint ? opts.entryPoint : (config.isFreestanding ? config.entryPoint : "");
     bool isFreestanding = opts.cliHasFreestanding ? opts.isFreestanding : config.isFreestanding;
     int scriptTimeout = opts.cliHasTimeout ? opts.scriptTimeout : config.scriptTimeout;
     bool isShared = opts.isShared;
@@ -583,7 +586,7 @@ static int buildSingleProject(const std::string& manifestPath, const CliOptions&
         }
 
         std::cout << "[llbc] Linking " << objectFiles.size() << " object file(s) into " << linkTarget << "...\n";
-        if (llbc::TargetEmitter::linkExecutable(objectFiles, linkTarget, linkerScript, isShared, isFreestanding, targetTriple, opts.sysroot)) {
+        if (llbc::TargetEmitter::linkExecutable(objectFiles, linkTarget, linkerScript, isShared, isFreestanding, targetTriple, opts.sysroot, entryPoint)) {
             if (isRawBinary) {
                 std::cout << "[llbc] Extracting flat binary -> " << outputFile << "...\n";
                 if (llbc::TargetEmitter::emitRawBinary(linkTarget, outputFile)) {
@@ -664,7 +667,8 @@ int main(int argc, char** argv) {
                       << "  --target=<triple>        Target architecture triple (e.g. x86_64-unknown-none-elf)\n"
                       << "  -target <triple>         Alias for --target\n"
                       << "  --sysroot=<dir>          Override sysroot directory for system headers/libraries\n"
-                      << "  -T <script>              Linker script for bare-metal kernel memory layouts\n\n"
+                      << "  -T <script>              Linker script for bare-metal kernel memory layouts\n"
+                      << "  -e <symbol>, --entry     Specify custom entry point symbol (e.g. -e MainEntry or -e _start)\n\n"
                       << "Output Format & Runtime Mode:\n"
                       << "  --flat-binary, -flat-binary, -raw-binary, -O binary\n"
                       << "                           Emit flat raw binary image (.bin) extracted via objcopy\n"
@@ -696,6 +700,18 @@ int main(int argc, char** argv) {
         } else if (arg == "-T" && i + 1 < argc) {
             cliOpts.linkerScript = argv[++i];
             cliOpts.cliHasLinkerScript = true;
+        } else if (arg == "-e" && i + 1 < argc) {
+            cliOpts.entryPoint = argv[++i];
+            cliOpts.cliHasEntryPoint = true;
+        } else if (arg.rfind("-e", 0) == 0 && arg.size() > 2) {
+            cliOpts.entryPoint = arg.substr(2);
+            cliOpts.cliHasEntryPoint = true;
+        } else if (arg == "--entry" && i + 1 < argc) {
+            cliOpts.entryPoint = argv[++i];
+            cliOpts.cliHasEntryPoint = true;
+        } else if (arg.rfind("--entry=", 0) == 0) {
+            cliOpts.entryPoint = arg.substr(8);
+            cliOpts.cliHasEntryPoint = true;
         } else if (arg == "--target" && i + 1 < argc) {
             cliOpts.targetTriple = argv[++i];
             cliOpts.cliHasTarget = true;
@@ -934,7 +950,7 @@ int main(int argc, char** argv) {
         }
 
         std::cout << "[llbc] Linking " << objectFiles.size() << " object file(s) into " << linkTarget << "...\n";
-        if (llbc::TargetEmitter::linkExecutable(objectFiles, linkTarget, cliOpts.linkerScript, cliOpts.isShared, cliOpts.isFreestanding, cliOpts.targetTriple, cliOpts.sysroot)) {
+        if (llbc::TargetEmitter::linkExecutable(objectFiles, linkTarget, cliOpts.linkerScript, cliOpts.isShared, cliOpts.isFreestanding, cliOpts.targetTriple, cliOpts.sysroot, cliOpts.entryPoint)) {
             if (cliOpts.isRawBinary) {
                 std::cout << "[llbc] Extracting flat binary -> " << cliOpts.outputFile << "...\n";
                 if (llbc::TargetEmitter::emitRawBinary(linkTarget, cliOpts.outputFile)) {

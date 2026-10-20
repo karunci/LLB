@@ -39,7 +39,8 @@ public:
         bool isShared = false,
         bool isFreestanding = false,
         const std::string& targetTriple = "",
-        const std::string& sysroot = ""
+        const std::string& sysroot = "",
+        const std::string& entryPoint = ""
     );
 
     static bool createStaticArchive(

@@ -154,7 +154,10 @@ private:
     llvm::AllocaInst* m_retAlloca{nullptr};
     std::vector<llvm::BasicBlock*> m_breakStack;
     std::vector<llvm::BasicBlock*> m_continueStack;
+    struct LabelRef { std::string name; size_t line; size_t col; };
     std::unordered_map<std::string, llvm::BasicBlock*> m_labels;
+    std::unordered_set<std::string> m_definedLabels;
+    std::vector<LabelRef> m_referencedLabels;
     std::vector<llvm::BasicBlock*> m_catchStack;
     std::vector<llvm::AllocaInst*> m_tryErrAllocaStack;
     std::unordered_set<std::string> m_byRefParams;

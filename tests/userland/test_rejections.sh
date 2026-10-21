@@ -318,6 +318,37 @@ else
     ERR_COUNT=$((ERR_COUNT + 1))
 fi
 
+# 19. Undefined label in GoTo
+cat << 'CODE' > "$BUILD_DIR/bad_undef_label.bas"
+Module TestUndefLabel
+    Public Sub Foo()
+        GoTo NonExistentLabel
+    End Sub
+End Module
+CODE
+$LLBC "$BUILD_DIR/bad_undef_label.bas" 2>&1 | grep -q "Undefined label 'NonExistentLabel' in procedure 'Foo'"
+if [ $? -eq 0 ]; then
+    echo "[PASS] Rejection 19: Undefined label in GoTo correctly rejected"
+else
+    echo "[FAIL] Rejection 19: Undefined label in GoTo not rejected"
+    ERR_COUNT=$((ERR_COUNT + 1))
+fi
+
+# 20. Undeclared interface in Implements
+cat << 'CODE' > "$BUILD_DIR/bad_undef_iface.bas"
+<Instancing(MultiUse)>
+Class TestUndefIface
+    Implements INonExistentInterface
+End Class
+CODE
+$LLBC "$BUILD_DIR/bad_undef_iface.bas" 2>&1 | grep -q "Cannot find interface 'INonExistentInterface' implemented by class 'TestUndefIface'"
+if [ $? -eq 0 ]; then
+    echo "[PASS] Rejection 20: Undeclared interface in Implements correctly rejected"
+else
+    echo "[FAIL] Rejection 20: Undeclared interface in Implements not rejected"
+    ERR_COUNT=$((ERR_COUNT + 1))
+fi
+
 # Clean up temp files (sources in cwd, objects in build/)
 rm -f bad_uninit.bas bad_multi_singleuse.bas \
       bad_uninit.o bad_multi_singleuse.o \

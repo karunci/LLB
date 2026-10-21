@@ -202,12 +202,12 @@ Comprehensive comparison of compile-time verification in LLB against modern syst
 | **Undeclared Class in `New ClassName`** | ✅ Implemented | Rejects unknown class name with compile error instead of silent `malloc(64)` | `rustc` `cannot find struct or type in this scope` (E0422) |
 | **Undeclared Type in `Dim x As T` / Params** | ⏳ In Progress | `getLlvmType` silently defaults to `i64` without diagnostic | `rustc` `cannot find type in this scope` (E0412) |
 | **Missing Module / Import File** | ✅ Implemented | Driver halts compilation and reports missing imported file path | `rustc` `file not found for module` (E0583) |
-| **Undeclared Interface in `Implements`** | ⏳ In Progress | Parsed into AST array but never checked or validated | `rustc` `cannot find trait in this scope` (E0405) |
+| **Undeclared Interface in `Implements`** | ✅ Implemented | Rejects undeclared interface names in `Implements` declarations | `rustc` `cannot find trait in this scope` (E0405) |
 | **Duplicate Variable in Same Local Scope** | ✅ Implemented | Rejects duplicate `Dim` declaration in the same local procedure scope | `rustc` `the name is defined multiple times` (E0428) |
 | **Duplicate Procedure in Same Module** | ✅ Implemented | Rejects duplicate procedure definitions with clean compile-time error | `rustc` `duplicate definition of item` (E0428) |
 | **Duplicate Field in `Structure`** | ✅ Implemented | Rejects duplicate field names in structures and unions | `rustc` `field is already declared` (E0124) |
 | **Duplicate Enum Member Constant** | ✅ Implemented | Rejects duplicate member names within enum declarations | `rustc` `discriminant value is already defined` |
-| **Undefined Label in `GoTo Label`** | ⏳ In Progress | Crashes LLVM IR Verifier (`Basic Block has no terminator`) | `clang` `use of undeclared label` |
+| **Undefined Label in `GoTo Label`** | ✅ Implemented | Tracks and validates label references in procedure, rejecting undefined labels with caret diagnostic | `clang` `use of undeclared label` |
 
 ### 2. Type Checking, Safety & Mutability Guards
 

@@ -4339,6 +4339,7 @@ void LlvmEmitter::emitStatement(ASTNode* stmt) {
 void LlvmEmitter::emitLabelStatement(const LabelStmtNode& labelNode) {
     llvm::Function* currentFunc = m_builder->GetInsertBlock()->getParent();
     std::string lowerName = toLower(labelNode.labelName);
+    m_definedLabels.insert(lowerName);
 
     llvm::BasicBlock* labelBB = nullptr;
     auto it = m_labels.find(lowerName);
@@ -4359,6 +4360,7 @@ void LlvmEmitter::emitLabelStatement(const LabelStmtNode& labelNode) {
 void LlvmEmitter::emitGoToStatement(const GoToStmtNode& gotoNode) {
     llvm::Function* currentFunc = m_builder->GetInsertBlock()->getParent();
     std::string lowerName = toLower(gotoNode.labelName);
+    m_referencedLabels.push_back({gotoNode.labelName, gotoNode.line, gotoNode.column});
 
     llvm::BasicBlock* targetBB = nullptr;
     auto it = m_labels.find(lowerName);
@@ -6874,6 +6876,8 @@ llvm::Function* LlvmEmitter::emitProcedure(const ProcedureNode& procNode, const 
     }
 
     m_labels.clear();
+    m_definedLabels.clear();
+    m_referencedLabels.clear();
     m_catchStack.clear();
     m_byRefParams.clear();
 
@@ -6982,7 +6986,17 @@ llvm::Function* LlvmEmitter::emitProcedure(const ProcedureNode& procNode, const 
         m_builder->SetCurrentDebugLocation(llvm::DebugLoc());
     }
 
-    llvm::verifyFunction(*func);
+    for (const auto& ref : m_referencedLabels) {
+        if (!m_definedLabels.count(toLower(ref.name))) {
+            Diagnostic::report(m_sourceFilePath, ref.line > 0 ? ref.line : procNode.line,
+                               ref.col > 0 ? ref.col : 1, true,
+                               "Undefined label '" + ref.name + "' in procedure '" + procNode.name + "'.", m_sourceText);
+            m_hadError = true;
+        }
+    }
+    if (!m_hadError) {
+        llvm::verifyFunction(*func);
+    }
     return func;
 }
 

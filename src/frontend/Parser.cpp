@@ -2016,12 +2016,13 @@ std::unique_ptr<ExprASTNode> Parser::parsePrimaryExpr() {
 
 // --- Procedure & Module Parsing ---
 
-std::unique_ptr<ProcedureNode> Parser::parseProcedure(bool isPublic, bool isInline, bool isNoReturn, bool isExport) {
+std::unique_ptr<ProcedureNode> Parser::parseProcedure(bool isPublic, bool isInline, bool isNoReturn, bool isExport, bool isInterrupt) {
     auto procNode = std::make_unique<ProcedureNode>();
     procNode->isPublic = isPublic;
     procNode->isInline = isInline;
     procNode->isNoReturn = isNoReturn;
     procNode->isExport = isExport;
+    procNode->isInterrupt = isInterrupt;
     procNode->line = m_currentToken.line;
     procNode->column = m_currentToken.column;
 
@@ -2700,6 +2701,7 @@ std::unique_ptr<ModuleNode> Parser::parseModule() {
         bool isInline = false;
         bool isNoReturn = false;
         bool isExport = false;
+        bool isInterrupt = false;
 
         while (match(TokenType::Less)) {
             do {
@@ -2715,6 +2717,9 @@ std::unique_ptr<ModuleNode> Parser::parseModule() {
                 } else if (checkKeyword("Export")) {
                     consume();
                     isExport = true;
+                } else if (checkKeyword("Interrupt")) {
+                    consume();
+                    isInterrupt = true;
                 } else if (checkKeyword("Align")) {
                     consume();
                     if (match(TokenType::LParen)) {
@@ -2897,7 +2902,7 @@ std::unique_ptr<ModuleNode> Parser::parseModule() {
             }
 
             // Procedure (Sub / Function / Property / Declare / Unsafe)
-            auto proc = parseProcedure(isPub, isInline, isNoReturn, isExport);
+            auto proc = parseProcedure(isPub, isInline, isNoReturn, isExport, isInterrupt);
             std::string procKey = proc->name;
             if (proc->propertyKind == ProcedureNode::PropertyKind::Get) procKey += ":Get";
             else if (proc->propertyKind == ProcedureNode::PropertyKind::Let || proc->propertyKind == ProcedureNode::PropertyKind::Set) procKey += ":Set";
@@ -2916,7 +2921,7 @@ std::unique_ptr<ModuleNode> Parser::parseModule() {
             m_currentToken.type == TokenType::KwProperty || checkKeyword("Property") ||
             m_currentToken.type == TokenType::KwUnsafe || checkKeyword("Unsafe") ||
             m_currentToken.type == TokenType::KwDeclare || checkKeyword("Declare")) {
-            auto proc = parseProcedure(true, isInline, isNoReturn, isExport);
+            auto proc = parseProcedure(true, isInline, isNoReturn, isExport, isInterrupt);
             std::string procKey = proc->name;
             if (proc->propertyKind == ProcedureNode::PropertyKind::Get) procKey += ":Get";
             else if (proc->propertyKind == ProcedureNode::PropertyKind::Let || proc->propertyKind == ProcedureNode::PropertyKind::Set) procKey += ":Set";

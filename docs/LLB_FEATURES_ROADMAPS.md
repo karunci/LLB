@@ -184,10 +184,10 @@ LLB fuses the safety and performance of modern systems languages with the approa
 | Attributes / Annotations beyond `<Packed>` | ✅ | `<Inline>` (AlwaysInline), `<NoReturn>`, `<Export>`, `<Packed>`, `<Align(N)>` |
 | Result / Error return types | ✅ | Native `Result` sum type `{ is_ok, err_code, value }` with `Ok(val)`, `Err(code)`, and `IsOk(res)` intrinsics |
 | Bitfield structure fields (`Field As Type * Bits`) | ⏳ Future Roadmap | Hardware register bitfield packing syntax matching classic VB fixed-length string/field style |
-| Compile-time `SizeOf` & `OffsetOf` intrinsics | ⏳ Future Roadmap | Zero-overhead compile-time layout queries (`SizeOf(T)`, `OffsetOf(T, Field)`) |
-| Interrupt procedure attribute (`<Interrupt>`) | ⏳ Future Roadmap | Native ISR procedures compiling to LLVM `x86_intr` with automatic register preservation and `iretq` |
+| Compile-time `SizeOf` & `OffsetOf` intrinsics | ✅ | Zero-overhead compile-time layout queries (`SizeOf(T)`, `OffsetOf(T, Field)`) |
+| Interrupt procedure attribute (`<Interrupt>`) | ✅ | Native ISR procedures compiling to LLVM `x86_intr` with automatic register preservation and `iretq` |
 | Compile-time static assertions (`#Assert` / `StaticAssert`) | ⏳ Future Roadmap | Validation of structure alignment and constant invariants at compile-time |
-| Flat binary output (`-O binary` / `Type = "RawBinary"`) | ⏳ Future Roadmap | Direct generation of raw `.bin` kernel images and bootloader sectors |
+| Flat binary output (`-O binary` / `Type = "RawBinary"`) | ✅ | Direct generation of raw `.bin` kernel images and bootloader sectors |
 
 ---
 
@@ -317,7 +317,7 @@ Comprehensive comparison of compile-time verification in LLB against modern syst
      Dim fieldOffset As UInt64 = OffsetOf(IdtEntry, BaseHigh)
      ```
 
-3. **Interrupt Handler Procedures (`<Interrupt>` Attribute):**
+3. ~~**Interrupt Handler Procedures (`<Interrupt>` Attribute):**~~ — **Done** ✅
    - Syntax:
      ```vb
      <Interrupt>

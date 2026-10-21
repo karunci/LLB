@@ -7005,7 +7005,12 @@ llvm::Function* LlvmEmitter::emitProcedure(const ProcedureNode& procNode, const 
     llvm::Function* func = m_module->getFunction(mangledName);
     if (!func) {
         func = llvm::Function::Create(funcType, linkage, mangledName, m_module.get());
-        func->setCallingConv(llvm::CallingConv::C);
+        std::string triple = m_module->getTargetTriple().str();
+        if (procNode.isInterrupt && (triple.find("x86") != std::string::npos || triple.find("i386") != std::string::npos || triple.find("i686") != std::string::npos)) {
+            func->setCallingConv(llvm::CallingConv::X86_INTR);
+        } else {
+            func->setCallingConv(llvm::CallingConv::C);
+        }
     }
 
     // Track default parameter values for optional parameters

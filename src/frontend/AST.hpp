@@ -493,6 +493,7 @@ public:
     bool isInline{false};
     bool isNoReturn{false};
     bool isExport{false};
+    bool isInterrupt{false};
     PropertyKind propertyKind{PropertyKind::None};
     TypeSpec returnType;
     std::vector<ParameterNode> parameters;

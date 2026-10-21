@@ -71,7 +71,7 @@ private:
     TypeSpec parseTypeSpec();
 
     // Declarations & Members
-    std::unique_ptr<ProcedureNode> parseProcedure(bool isPublic = true, bool isInline = false, bool isNoReturn = false, bool isExport = false);
+    std::unique_ptr<ProcedureNode> parseProcedure(bool isPublic = true, bool isInline = false, bool isNoReturn = false, bool isExport = false, bool isInterrupt = false);
     std::unique_ptr<StructureNode> parseStructure(bool isPacked = false, int alignment = 0);
     std::unique_ptr<StructureNode> parseUnion(bool isPacked = false, int alignment = 0);
     std::unique_ptr<ConstStmtNode> parseConstStatement(bool isPublic = false);

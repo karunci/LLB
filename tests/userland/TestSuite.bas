@@ -14,6 +14,7 @@ Module TestSuite
     Import MathHelper In "NamespaceHelper.bas"
     Use ClassHelper In "ClassHelper.cls" As Helper
     Use SingleUseHelper In "SingleUseHelper.cls" As SingleInst
+    Use DeviceWriter In "DeviceWriter.cls" As Writer
 
     ' Module-level constants & global initializers
     Public Const MODULE_TEST_MAGIC As Int32 = 4242
@@ -111,6 +112,12 @@ Module TestSuite
         Public Value As T
         Public Tag As Int32
     End Structure
+
+    ' Interface definition for polymorphism and method dispatch verification
+    Public Interface IWriter
+        Function WriteData(ByVal val As Int32) As Int32
+        Sub ResetDevice()
+    End Interface
 
     ' Generic Function Template (Monomorphized)
     Public Function Min(Of T)(ByVal a As T, ByVal b As T) As T
@@ -1827,6 +1834,22 @@ SkipMiddle:
         End If
     End Function
 
+    ' 64. Interface Polymorphism & Method Implementation Dispatch
+    Public Function TestInterfaceImplementation() As Boolean
+        Use New Writer As w
+        w.Initialize 100
+        Dim r1 As Int32 = w.WriteData(50)  ' 100 + 50 = 150
+        Dim r2 As Int32 = w.WriteData(25)  ' 150 + 25 = 175
+        w.ResetDevice()
+        Dim r3 As Int32 = w.WriteData(10)  ' 0 + 10 = 10
+
+        If r1 = 150 And r2 = 175 And r3 = 10 Then
+            TestInterfaceImplementation = True
+        Else
+            Print "  [Test 64 Debug] r1=", r1, ", r2=", r2, ", r3=", r3
+            TestInterfaceImplementation = False
+        End If
+    End Function
 
     ' Main Entry Point
     Public Unsafe Function Main(ByVal argc As Int32, ByVal argv As Pointer To Pointer To Byte) As Int32
@@ -2340,13 +2363,21 @@ SkipMiddle:
             failCount = failCount + 1
         End If
 
+        ' 64. Interface Polymorphism & Method Implementation Dispatch
+        If TestInterfaceImplementation() Then
+            puts CPtr(Pointer To Byte, "Test 64 > [PASS] Interface Implementation & Method Dispatch")
+        Else
+            puts CPtr(Pointer To Byte, "Test 64 > [FAIL] Interface Implementation & Method Dispatch")
+            failCount = failCount + 1
+        End If
+
         puts CPtr(Pointer To Byte, "================================================")
         If failCount = 0 Then
-            puts CPtr(Pointer To Byte, "   ALL 63 TEST SUITES PASSED SUCCESSFULLY!      ")
+            puts CPtr(Pointer To Byte, "   ALL 64 TEST SUITES PASSED SUCCESSFULLY!      ")
             puts CPtr(Pointer To Byte, "================================================")
             Main = 0
         Else
-            Print "   TEST SUITE FINISHED WITH ", failCount, " FAILURE(S) OUT OF 63"
+            Print "   TEST SUITE FINISHED WITH ", failCount, " FAILURE(S) OUT OF 64"
             puts CPtr(Pointer To Byte, "================================================")
             Main = 1
         End If

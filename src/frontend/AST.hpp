@@ -192,6 +192,7 @@ public:
     std::string varName;
     TypeSpec type;
     std::unique_ptr<ExprASTNode> initValue;
+    bool isPublic{false};
 };
 
 class ConstStmtNode : public ASTNode {
@@ -503,6 +504,15 @@ public:
     std::string name;
     bool isPublic{true};
     std::vector<InterfaceMethod> methods;
+};
+
+class DelegateNode : public ASTNode {
+public:
+    std::string name;
+    bool isPublic{true};
+    bool isFunction{false};
+    TypeSpec returnType;
+    std::vector<ParameterNode> parameters;
 };
 
 class ModuleNode : public ASTNode {

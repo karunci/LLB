@@ -198,9 +198,9 @@ Comprehensive comparison of compile-time verification in LLB against modern syst
 | :--- | :---: | :--- | :--- |
 | **Undeclared Variable Access** | ✅ Implemented | Reports compile error with file, line, column caret | `rustc` `cannot find value in this scope` (E0425) |
 | **Undeclared Function / Subroutine Call** | ✅ Implemented | Reports compile-time error with line and column caret; preserves indirect calls and delegate pointers | `rustc` `cannot find function in this scope` (E0425) |
-| **Undeclared Method on Instance** (`obj.Foo()`) | ⏳ In Progress | Silently returns `nullptr` or attempts indirect call | `rustc` `no method named on type` (E0599) |
+| **Undeclared Method on Instance** (`obj.Foo()`) | ✅ Implemented | Rejects calls to unknown methods on instance with compile-time error | `rustc` `no method named on type` (E0599) |
 | **Undeclared Class in `New ClassName`** | ✅ Implemented | Rejects unknown class name with compile error instead of silent `malloc(64)` | `rustc` `cannot find struct or type in this scope` (E0422) |
-| **Undeclared Type in `Dim x As T` / Params** | ⏳ In Progress | `getLlvmType` silently defaults to `i64` without diagnostic | `rustc` `cannot find type in this scope` (E0412) |
+| **Undeclared Type in `Dim x As T` / Params** | ✅ Implemented | Rejects undeclared types in variables, fields, and parameters with compile error | `rustc` `cannot find type in this scope` (E0412) |
 | **Missing Module / Import File** | ✅ Implemented | Driver halts compilation and reports missing imported file path | `rustc` `file not found for module` (E0583) |
 | **Undeclared Interface in `Implements`** | ✅ Implemented | Rejects undeclared interface names in `Implements` declarations | `rustc` `cannot find trait in this scope` (E0405) |
 | **Duplicate Variable in Same Local Scope** | ✅ Implemented | Rejects duplicate `Dim` declaration in the same local procedure scope | `rustc` `the name is defined multiple times` (E0428) |
@@ -220,8 +220,8 @@ Comprehensive comparison of compile-time verification in LLB against modern syst
 | **Uninitialized Object Method Call** | ✅ Implemented | Rejection test: throws error if method called prior to `.Initialize` | `rustc` `use of uninitialized value` (E0381) |
 | **Missing `<Instancing(...)>` on Class** | ✅ Implemented | Rejection test: enforces Global/SingleUse/MultiUse attribute | `rustc` Attribute validation |
 | **Duplicate `New` in `Use` Statement** | ✅ Implemented | Rejection test: rejects `Use New ... As New ...` | `rustc` Syntax redundancy rejection |
-| **Strict `Unsafe` Enforcement** | ⏳ In Progress | `CPtr`, `Asm`, and raw pointer math don't require `Unsafe` declaration | `rustc` `call to unsafe function requires unsafe block` |
-| **Private Member Access from Outside** | ⏳ In Progress | Frontend does not report compile-time visibility violations | `rustc` `field is private` (E0616) |
+| **Strict `Unsafe` Enforcement** | ✅ Implemented | Enforces `Unsafe` declaration on procedures containing `CPtr`, `Asm`, and raw pointer dereferences | `rustc` `call to unsafe function requires unsafe block` |
+| **Private Member Access from Outside** | ✅ Implemented | Enforces visibility checks, rejecting access to `Private` fields from outside enclosing class or module | `rustc` `field is private` (E0616) |
 
 ### 3. Arithmetic & Evaluation Guards
 
@@ -239,7 +239,7 @@ Comprehensive comparison of compile-time verification in LLB against modern syst
 | **Call Argument Count Mismatch (Arity)** | ✅ Implemented | Validates exact parameter count before emitting call, reporting clear error diagnostic | `rustc` `takes N arguments but M were supplied` (E0061) |
 | **Missing Interface Method Implementation** | ✅ Implemented | Validates that classes declaring `Implements Iface` implement all required methods | `rustc` `not all trait items implemented` (E0046) |
 | **Loop Exit Outside of Loop** (`Exit For`/`Do`/`While`) | ✅ Implemented | Rejects `Exit For`, `Exit Do`, or `Exit While` outside their respective loop scopes | `rustc` `cannot break outside of loop` (E0268) |
-| **Missing Return Value on Function Exit** | ⏳ In Progress | Exiting function without assigning return returns 0/null | `rustc` `mismatched types / expected return value` |
+| **Missing Return Value on Function Exit** | ✅ Implemented | Enforces assignment to function name before exit in non-void Functions | `rustc` `mismatched types / expected return value` |
 | **Unreachable / Dead Code Detection** | ⏳ In Progress | Statements after `Return`, `Exit`, or `Raise` emit unchecked IR | `rustc` `unreachable_code`, `clang -Wunreachable-code` |
 | **Enum / Result Exhaustiveness in `Match`** | ⏳ In Progress | Unhandled match arms fall through to runtime null | `rustc` `non-exhaustive patterns` (E0004) |
 

@@ -135,7 +135,14 @@ llvm::Type* LlvmEmitter::getLlvmType(const TypeSpec& typeSpec) {
             auto itLower = m_structTypes.find(toLower(resolvedName));
             if (itLower != m_structTypes.end()) {
                 baseType = itLower->second;
+            } else if (m_enums.count(resolvedName) || m_enums.count(toLower(resolvedName))) {
+                baseType = llvm::Type::getInt32Ty(*m_context);
+            } else if (m_delegates.count(resolvedName) || m_delegates.count(toLower(resolvedName))) {
+                baseType = llvm::PointerType::get(*m_context, 0);
             } else {
+                Diagnostic::report(m_sourceFilePath, m_currentLine, m_currentCol, true,
+                                   "Undeclared type '" + typeSpec.name + "'.", m_sourceText);
+                m_hadError = true;
                 baseType = llvm::Type::getInt64Ty(*m_context);
             }
         }
@@ -2914,6 +2921,31 @@ void LlvmEmitter::emitEnum(const EnumNode& enumNode) {
     }
 }
 
+void LlvmEmitter::emitInterface(const InterfaceNode& iface) {
+    std::vector<llvm::Type*> methodPtrTys;
+    for (size_t mi = 0; mi < iface.methods.size(); ++mi) {
+        methodPtrTys.push_back(llvm::PointerType::get(*m_context, 0));
+    }
+    if (methodPtrTys.empty()) {
+        methodPtrTys.push_back(llvm::PointerType::get(*m_context, 0));
+    }
+    llvm::StructType* ifaceSt = llvm::StructType::create(*m_context, iface.name);
+    ifaceSt->setBody(methodPtrTys, false);
+    m_structTypes[iface.name] = ifaceSt;
+    m_structTypes[toLower(iface.name)] = ifaceSt;
+    for (size_t mi = 0; mi < iface.methods.size(); ++mi) {
+        m_structFieldIndices[iface.name][toLower(iface.methods[mi].name)] = mi;
+        m_structFieldIndices[toLower(iface.name)][toLower(iface.methods[mi].name)] = mi;
+    }
+    m_interfaces[iface.name] = &iface;
+    m_interfaces[toLower(iface.name)] = &iface;
+}
+
+void LlvmEmitter::emitDelegate(const DelegateNode& del) {
+    m_delegates.insert(del.name);
+    m_delegates.insert(toLower(del.name));
+}
+
 void LlvmEmitter::emitWithStatement(const WithStmtNode& withNode) {
     if (!withNode.target) return;
     llvm::Value* basePtr = getPointerToExpr(withNode.target.get());
@@ -3083,6 +3115,9 @@ std::string LlvmEmitter::instantiateGenericProcedure(const std::string& baseName
     auto savedTryErrAllocaStack = m_tryErrAllocaStack;
     auto savedDiScopes = m_diScopes;
     bool savedUnsafe = m_currentProcIsUnsafe;
+    std::string savedProcName = m_currentProcName;
+    std::string savedScopeClass = m_currentScopeClass;
+    bool savedReturnAssigned = m_returnAssigned;
 
     llvm::DebugLoc savedDebugLoc;
     if (m_enableDebugInfo) {
@@ -3103,6 +3138,9 @@ std::string LlvmEmitter::instantiateGenericProcedure(const std::string& baseName
     m_tryErrAllocaStack = savedTryErrAllocaStack;
     m_diScopes = savedDiScopes;
     m_currentProcIsUnsafe = savedUnsafe;
+    m_currentProcName = savedProcName;
+    m_currentScopeClass = savedScopeClass;
+    m_returnAssigned = savedReturnAssigned;
 
     if (m_enableDebugInfo) {
         m_builder->SetCurrentDebugLocation(savedDebugLoc);
@@ -3175,6 +3213,12 @@ void LlvmEmitter::emitStructure(const StructureNode& structNode) {
 void LlvmEmitter::registerClassInstancing(const std::string& className, InstancingKind instancing) {
     m_classInstancing[className] = instancing;
     m_classInstancing[toLower(className)] = instancing;
+}
+
+void LlvmEmitter::registerPrivateField(const std::string& className, const std::string& fieldName) {
+    std::string key = className + "." + fieldName;
+    m_privateFields.insert(key);
+    m_privateFields.insert(toLower(key));
 }
 
 void LlvmEmitter::emitDimStatement(const DimStmtNode& dimNode) {
@@ -3336,6 +3380,10 @@ void LlvmEmitter::emitAssignStatement(const AssignStmtNode& assignNode) {
         }
 
         if (targetAlloca) {
+            if (toLower(var->name) == toLower(m_currentProcName) ||
+                (targetAlloca == m_retAlloca && m_retAlloca != nullptr)) {
+                m_returnAssigned = true;
+            }
             llvm::Value* val = emitExpression(assignNode.value.get());
             // Re-check m_namedValues in case a nested generic instantiation restored the map
             auto itRestored = m_namedValues.find(var->name);
@@ -3550,6 +3598,16 @@ void LlvmEmitter::emitAssignStatement(const AssignStmtNode& assignNode) {
                 auto fIt = pair.second.find(memberLower);
                 if (fIt != pair.second.end()) {
                     unsigned fieldIdx = fIt->second;
+                    std::string privKey = pair.first + "." + member->memberName;
+                    if (m_privateFields.count(privKey) || m_privateFields.count(toLower(privKey))) {
+                        if (toLower(m_currentScopeClass) != toLower(pair.first)) {
+                            Diagnostic::report(m_sourceFilePath, member->line > 0 ? member->line : m_currentLine,
+                                               member->column > 0 ? member->column : m_currentCol,
+                                               true, "Cannot access private member '" + member->memberName + "' of class '" + pair.first + "'.", m_sourceText);
+                            m_hadError = true;
+                            return;
+                        }
+                    }
                     auto stIt = m_structTypes.find(pair.first);
                     if (stIt != m_structTypes.end()) {
                         if (m_unionTypes.count(pair.first)) {
@@ -4239,6 +4297,14 @@ void LlvmEmitter::emitMatchStatement(const MatchStmtNode& matchNode) {
 }
 
 void LlvmEmitter::emitAsmStatement(const AsmStmtNode& asmNode) {
+    if (!m_currentProcIsUnsafe) {
+        Diagnostic::report(m_sourceFilePath, asmNode.line > 0 ? asmNode.line : m_currentLine,
+                           asmNode.column > 0 ? asmNode.column : m_currentCol,
+                           true, "Use of 'Asm' requires procedure to be marked 'Unsafe'.", m_sourceText);
+        m_hadError = true;
+        return;
+    }
+
     std::vector<llvm::Type*> paramTypes;
     std::vector<llvm::Value*> args;
 
@@ -5046,6 +5112,16 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
                 auto fIt = pair.second.find(memberLower);
                 if (fIt != pair.second.end()) {
                     unsigned fieldIdx = fIt->second;
+                    std::string privKey = pair.first + "." + member->memberName;
+                    if (m_privateFields.count(privKey) || m_privateFields.count(toLower(privKey))) {
+                        if (toLower(m_currentScopeClass) != toLower(pair.first)) {
+                            Diagnostic::report(m_sourceFilePath, member->line > 0 ? member->line : m_currentLine,
+                                               member->column > 0 ? member->column : m_currentCol,
+                                               true, "Cannot access private member '" + member->memberName + "' of class '" + pair.first + "'.", m_sourceText);
+                            m_hadError = true;
+                            return nullptr;
+                        }
+                    }
                     auto stIt = m_structTypes.find(pair.first);
                     if (stIt != m_structTypes.end()) {
                         if (m_unionTypes.count(pair.first)) {
@@ -5299,7 +5375,11 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
             TypeSpec fieldType;
             if (basePtr) {
                 std::string memberLower = toLower(call->funcName);
+                TypeSpec objType = deduceExprType(call->calleeExpr.get());
                 for (const auto& pair : m_structFieldIndices) {
+                    if (!objType.name.empty() && toLower(pair.first) != toLower(objType.name)) {
+                        continue;
+                    }
                     auto fIt = pair.second.find(memberLower);
                     if (fIt != pair.second.end()) {
                         unsigned fieldIdx = fIt->second;
@@ -6203,9 +6283,24 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
                 return m_builder->CreateCall(fnTy, fnPtrVal, args, "indirect.call");
             }
 
-            Diagnostic::report(m_sourceFilePath, call->line > 0 ? call->line : m_currentLine,
-                               call->column > 0 ? call->column : m_currentCol,
-                               true, "Undeclared function or subroutine '" + targetFuncName + "'.", m_sourceText);
+            if (!isQualifiedModuleCall && call->calleeExpr) {
+                TypeSpec calleeType = deduceExprType(call->calleeExpr.get());
+                if (calleeType.name.empty()) {
+                    if (auto varBase = dynamic_cast<VariableExprASTNode*>(call->calleeExpr.get())) {
+                        auto tIt = m_variableTypes.find(varBase->name);
+                        if (tIt == m_variableTypes.end()) tIt = m_variableTypes.find(toLower(varBase->name));
+                        if (tIt != m_variableTypes.end()) calleeType = tIt->second;
+                    }
+                }
+                std::string targetType = !calleeType.name.empty() ? calleeType.name : "Type";
+                Diagnostic::report(m_sourceFilePath, call->line > 0 ? call->line : m_currentLine,
+                                   call->column > 0 ? call->column : m_currentCol,
+                                   true, "Type '" + targetType + "' has no method or member named '" + call->funcName + "'.", m_sourceText);
+            } else {
+                Diagnostic::report(m_sourceFilePath, call->line > 0 ? call->line : m_currentLine,
+                                   call->column > 0 ? call->column : m_currentCol,
+                                   true, "Undeclared function or subroutine '" + targetFuncName + "'.", m_sourceText);
+            }
             m_hadError = true;
             return nullptr;
         }
@@ -6861,6 +6956,9 @@ llvm::Function* LlvmEmitter::emitProcedure(const ProcedureNode& procNode, const 
         return func;
     }
 
+    m_currentScopeClass = className;
+    m_currentProcName = procNode.name;
+    m_returnAssigned = false;
     m_currentProcIsUnsafe = procNode.isUnsafe;
     func->addFnAttr(llvm::Attribute::StackProtectStrong);
 
@@ -6994,6 +7092,13 @@ llvm::Function* LlvmEmitter::emitProcedure(const ProcedureNode& procNode, const 
             m_hadError = true;
         }
     }
+
+    if (procNode.isFunction && !procNode.isDeclare && !m_returnAssigned) {
+        Diagnostic::report(m_sourceFilePath, procNode.line > 0 ? procNode.line : 1,
+                           1, true,
+                           "Function '" + procNode.name + "' does not assign a return value.", m_sourceText);
+        m_hadError = true;
+    }
     if (!m_hadError) {
         llvm::verifyFunction(*func);
     }
@@ -7043,23 +7148,14 @@ bool LlvmEmitter::emitModule(const ModuleNode& moduleNode) {
     // 1.5 Emit Interfaces
     for (const auto& member : moduleNode.members) {
         if (auto iface = dynamic_cast<const InterfaceNode*>(member.get())) {
-            std::vector<llvm::Type*> methodPtrTys;
-            for (size_t mi = 0; mi < iface->methods.size(); ++mi) {
-                methodPtrTys.push_back(llvm::PointerType::get(*m_context, 0));
-            }
-            if (methodPtrTys.empty()) {
-                methodPtrTys.push_back(llvm::PointerType::get(*m_context, 0));
-            }
-            llvm::StructType* ifaceSt = llvm::StructType::create(*m_context, iface->name);
-            ifaceSt->setBody(methodPtrTys, false);
-            m_structTypes[iface->name] = ifaceSt;
-            m_structTypes[toLower(iface->name)] = ifaceSt;
-            for (size_t mi = 0; mi < iface->methods.size(); ++mi) {
-                m_structFieldIndices[iface->name][toLower(iface->methods[mi].name)] = mi;
-                m_structFieldIndices[toLower(iface->name)][toLower(iface->methods[mi].name)] = mi;
-            }
-            m_interfaces[iface->name] = iface;
-            m_interfaces[toLower(iface->name)] = iface;
+            emitInterface(*iface);
+        }
+    }
+
+    // 1.6 Emit Delegates
+    for (const auto& member : moduleNode.members) {
+        if (auto del = dynamic_cast<const DelegateNode*>(member.get())) {
+            emitDelegate(*del);
         }
     }
 
@@ -7149,6 +7245,9 @@ bool LlvmEmitter::emitModule(const ModuleNode& moduleNode) {
                 m_structFieldIndices[toLower(moduleNode.name)][toLower(dim->varName)] = fieldIndex;
                 m_structFieldTypes[moduleNode.name][toLower(dim->varName)] = dim->type;
                 m_structFieldTypes[toLower(moduleNode.name)][toLower(dim->varName)] = dim->type;
+                if (!dim->isPublic) {
+                    registerPrivateField(moduleNode.name, dim->varName);
+                }
                 fieldIndex++;
             }
         }

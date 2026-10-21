@@ -249,6 +249,18 @@ static std::string compileSourceFile(
 
     llbc::LlvmEmitter irEmitter(moduleAST->name, enableDebugInfo, targetTriple);
 
+    // Pre-register all interfaces and delegates discovered across the compilation unit
+    for (const auto& pair : g_parsedModules) {
+        if (!pair.second) continue;
+        for (const auto& member : pair.second->members) {
+            if (auto iface = dynamic_cast<const llbc::InterfaceNode*>(member.get())) {
+                irEmitter.emitInterface(*iface);
+            } else if (auto del = dynamic_cast<const llbc::DelegateNode*>(member.get())) {
+                irEmitter.emitDelegate(*del);
+            }
+        }
+    }
+
     // Inject exported symbols from all imported modules into this emitter
     for (const auto& imp : moduleAST->imports) {
         std::string impPath = resolveImportPath(imp, sourcePath);
@@ -377,6 +389,12 @@ static std::string compileSourceFile(
                     f.name = dim->varName;
                     f.type = dim->type;
                     classStruct.fields.push_back(f);
+                    if (!dim->isPublic) {
+                        irEmitter.registerPrivateField(targetMod->name, dim->varName);
+                        if (!useDir.aliasName.empty()) {
+                            irEmitter.registerPrivateField(useDir.aliasName, dim->varName);
+                        }
+                    }
                 }
             }
             irEmitter.emitStructure(classStruct);

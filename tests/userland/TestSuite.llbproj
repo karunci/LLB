@@ -40,6 +40,7 @@ Module = "ImportHelper.bas"
 ; --- Class fixtures ---
 Class = "ClassHelper.cls"
 Class = "SingleUseHelper.cls"
+Class = "DeviceWriter.cls"
 
 ; --- Main test runner ---
 Module = "TestSuite.bas"

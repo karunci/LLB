@@ -349,9 +349,95 @@ else
     ERR_COUNT=$((ERR_COUNT + 1))
 fi
 
+# 21. Undeclared type in Dim
+cat << 'CODE' > "$BUILD_DIR/bad_undef_type.bas"
+Module TestUndefType
+    Public Sub Foo()
+        Dim x As NonExistentType
+    End Sub
+End Module
+CODE
+$LLBC "$BUILD_DIR/bad_undef_type.bas" 2>&1 | grep -q "Undeclared type 'NonExistentType'"
+if [ $? -eq 0 ]; then
+    echo "[PASS] Rejection 21: Undeclared type correctly rejected"
+else
+    echo "[FAIL] Rejection 21: Undeclared type not rejected"
+    ERR_COUNT=$((ERR_COUNT + 1))
+fi
+
+# 22. Undeclared method on instance
+cat << 'CODE' > bad_undef_method.bas
+Module TestUndefMethod
+    Use ClassHelper In "ClassHelper.cls" As Helper
+    Public Sub Foo()
+        Use New Helper As h
+        h.Initialize 10
+        h.NonExistentMethod()
+    End Sub
+End Module
+CODE
+$LLBC ClassHelper.cls bad_undef_method.bas 2>&1 | grep -q "has no method or member named 'NonExistentMethod'"
+if [ $? -eq 0 ]; then
+    echo "[PASS] Rejection 22: Undeclared method on instance correctly rejected"
+else
+    echo "[FAIL] Rejection 22: Undeclared method on instance not rejected"
+    ERR_COUNT=$((ERR_COUNT + 1))
+fi
+
+# 23. Private member access outside class
+cat << 'CODE' > bad_private_member.bas
+Module TestPrivateAccess
+    Use ClassHelper In "ClassHelper.cls" As Helper
+    Public Sub Foo()
+        Use New Helper As h
+        h.Initialize 10
+        Dim v As Int32 = h.m_val
+    End Sub
+End Module
+CODE
+$LLBC ClassHelper.cls bad_private_member.bas 2>&1 | grep -q "Cannot access private member 'm_val'"
+if [ $? -eq 0 ]; then
+    echo "[PASS] Rejection 23: Private member access outside class correctly rejected"
+else
+    echo "[FAIL] Rejection 23: Private member access outside class not rejected"
+    ERR_COUNT=$((ERR_COUNT + 1))
+fi
+
+# 24. Missing return value assignment on function exit
+cat << 'CODE' > "$BUILD_DIR/bad_missing_return.bas"
+Module TestMissingReturn
+    Public Function CalcSomething() As Int32
+        Dim temp As Int32 = 42
+    End Function
+End Module
+CODE
+$LLBC "$BUILD_DIR/bad_missing_return.bas" 2>&1 | grep -q "Function 'CalcSomething' does not assign a return value"
+if [ $? -eq 0 ]; then
+    echo "[PASS] Rejection 24: Function missing return value correctly rejected"
+else
+    echo "[FAIL] Rejection 24: Function missing return value not rejected"
+    ERR_COUNT=$((ERR_COUNT + 1))
+fi
+
+# 25. Inline assembly inside non-Unsafe procedure
+cat << 'CODE' > "$BUILD_DIR/bad_non_unsafe_asm.bas"
+Module TestSafeAsm
+    Public Sub Dangerous()
+        Asm "nop"
+    End Sub
+End Module
+CODE
+$LLBC "$BUILD_DIR/bad_non_unsafe_asm.bas" 2>&1 | grep -q "requires procedure to be marked 'Unsafe'"
+if [ $? -eq 0 ]; then
+    echo "[PASS] Rejection 25: Asm in non-Unsafe procedure correctly rejected"
+else
+    echo "[FAIL] Rejection 25: Asm in non-Unsafe procedure not rejected"
+    ERR_COUNT=$((ERR_COUNT + 1))
+fi
+
 # Clean up temp files (sources in cwd, objects in build/)
-rm -f bad_uninit.bas bad_multi_singleuse.bas \
-      bad_uninit.o bad_multi_singleuse.o \
+rm -f bad_uninit.bas bad_multi_singleuse.bas bad_undef_method.bas bad_private_member.bas \
+      bad_uninit.o bad_multi_singleuse.o bad_undef_method.o bad_private_member.o \
       "$BUILD_DIR"/bad_*
 
 echo "========================================="

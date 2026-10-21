@@ -2510,6 +2510,63 @@ std::unique_ptr<InterfaceNode> Parser::parseInterface(bool isPublic) {
     return iface;
 }
 
+std::unique_ptr<DelegateNode> Parser::parseDelegate(bool isPublic) {
+    auto del = std::make_unique<DelegateNode>();
+    del->isPublic = isPublic;
+    del->line = m_currentToken.line;
+    del->column = m_currentToken.column;
+
+    if (m_currentToken.type == TokenType::KwSub || checkKeyword("Sub")) {
+        consume();
+        del->isFunction = false;
+    } else if (m_currentToken.type == TokenType::KwFunction || checkKeyword("Function")) {
+        consume();
+        del->isFunction = true;
+    }
+
+    del->name = m_currentToken.text;
+    expect(TokenType::Identifier, "Expected delegate name");
+
+    if (match(TokenType::LParen)) {
+        if (!check(TokenType::RParen)) {
+            do {
+                ParameterNode param;
+                if (m_currentToken.type == TokenType::KwByVal || checkKeyword("ByVal")) {
+                    consume();
+                    param.isByRef = false;
+                } else if (m_currentToken.type == TokenType::KwByRef || checkKeyword("ByRef")) {
+                    consume();
+                    param.isByRef = true;
+                }
+                param.name = m_currentToken.text;
+                expect(TokenType::Identifier, "Expected parameter name in delegate");
+                if (m_currentToken.type == TokenType::KwAs || checkKeyword("As")) {
+                    consume();
+                }
+                param.type = parseTypeSpec();
+                del->parameters.push_back(std::move(param));
+            } while (match(TokenType::Comma));
+        }
+        expect(TokenType::RParen, "Expected ')' after delegate parameters");
+    }
+
+    if (del->isFunction) {
+        if (m_currentToken.type == TokenType::KwAs || checkKeyword("As")) {
+            consume();
+        }
+        del->returnType = parseTypeSpec();
+    } else {
+        del->returnType = TypeSpec{"void"};
+    }
+
+    // Skip to end of statement line if any residual tokens remain
+    while (m_currentToken.type != TokenType::Eof && m_currentToken.line == del->line) {
+        consume();
+    }
+
+    return del;
+}
+
 std::unique_ptr<ModuleNode> Parser::parseModule() {
     auto moduleNode = std::make_unique<ModuleNode>();
 
@@ -2703,6 +2760,12 @@ std::unique_ptr<ModuleNode> Parser::parseModule() {
             continue;
         }
 
+        if (m_currentToken.type == TokenType::KwDelegate || checkKeyword("Delegate")) {
+            consume();
+            moduleNode->members.push_back(parseDelegate(true));
+            continue;
+        }
+
         // Public / Private declarations
         if (m_currentToken.type == TokenType::KwPublic || checkKeyword("Public") ||
             m_currentToken.type == TokenType::KwPrivate || checkKeyword("Private")) {
@@ -2710,6 +2773,11 @@ std::unique_ptr<ModuleNode> Parser::parseModule() {
             bool isPub = (m_currentToken.type == TokenType::KwPublic || checkKeyword("Public"));
             consume();
 
+            if (m_currentToken.type == TokenType::KwInterface || checkKeyword("Interface")) {
+                consume();
+                moduleNode->members.push_back(parseInterface(isPub));
+                continue;
+            }
             if (m_currentToken.type == TokenType::KwStructure || checkKeyword("Structure") ||
                 m_currentToken.type == TokenType::KwType || checkKeyword("Type")) {
                 consume();
@@ -2737,10 +2805,8 @@ std::unique_ptr<ModuleNode> Parser::parseModule() {
                 continue;
             }
             if (m_currentToken.type == TokenType::KwDelegate || checkKeyword("Delegate")) {
-                // Skip Delegate prototype declaration for now
-                while (m_currentToken.type != TokenType::Eof && m_currentToken.line == m_prevToken.line) {
-                    consume();
-                }
+                consume();
+                moduleNode->members.push_back(parseDelegate(isPub));
                 continue;
             }
 
@@ -2751,6 +2817,7 @@ std::unique_ptr<ModuleNode> Parser::parseModule() {
                 !checkKeyword("Unsafe")) {
                 
                 auto dimNode = std::make_unique<DimStmtNode>();
+                dimNode->isPublic = isPub;
                 dimNode->varName = m_currentToken.text;
                 consume();
 

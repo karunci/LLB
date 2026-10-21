@@ -30,10 +30,13 @@ public:
     bool emitModule(const ModuleNode& moduleNode);
     void registerExternalProcedure(const std::string& name, const TypeSpec& retType, const std::vector<TypeSpec>& paramTypes, const std::string& aliasName = "", const std::vector<ExprASTNode*>& defExprs = {});
     void registerClassInstancing(const std::string& className, InstancingKind instancing);
+    void registerPrivateField(const std::string& className, const std::string& fieldName);
     void declareConstant(const ConstStmtNode& constNode, const std::string& prefix = "");
     llvm::Function* emitProcedure(const ProcedureNode& procNode, const std::string& className = "", const std::vector<std::unique_ptr<ASTNode>>* bodyStatements = nullptr, bool isClassMethod = false);
 
     void emitStructure(const StructureNode& structNode);
+    void emitInterface(const InterfaceNode& ifaceNode);
+    void emitDelegate(const DelegateNode& delegateNode);
     void emitStatement(ASTNode* stmt);
     void emitDimStatement(const DimStmtNode& dimNode);
     void emitConstStatement(const ConstStmtNode& constNode);
@@ -142,6 +145,7 @@ private:
     std::unordered_set<std::string> m_initializedObjects;
     std::unordered_set<std::string> m_constants;
     std::unordered_map<std::string, const InterfaceNode*> m_interfaces;
+    std::unordered_set<std::string> m_delegates;
 
 
     std::string instantiateGenericStruct(const TypeSpec& typeSpec);
@@ -161,6 +165,10 @@ private:
     std::vector<llvm::BasicBlock*> m_catchStack;
     std::vector<llvm::AllocaInst*> m_tryErrAllocaStack;
     std::unordered_set<std::string> m_byRefParams;
+    std::unordered_set<std::string> m_privateFields;
+    std::string m_currentScopeClass;
+    std::string m_currentProcName;
+    bool m_returnAssigned{false};
     bool m_currentProcIsUnsafe{false};
 
     // DWARF Debug Information Generation (-g)

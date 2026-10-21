@@ -23,6 +23,8 @@
 16. [Project Manifest Specification (`.llbproj`)](#16-project-manifest-specification-llbproj)
 17. [Core Architectural Design & Comparison with Modern Languages](#17-core-architectural-design--comparison-with-modern-languages)
 18. [Freestanding Systems & Microkernel Runtime Model](#18-freestanding-systems--microkernel-runtime-model)
+19. [Compile-Time Safety & Diagnostics Guards](#19-compile-time-safety--diagnostics-guards)
+20. [Delegates & Function Pointer Types](#20-delegates--function-pointer-types)
 
 ---
 
@@ -284,6 +286,25 @@ Public Sub NativePluginEntry()
 End Sub
 ```
 
+### The `Unsafe` Modifier
+Procedures that execute raw pointer casting (`CPtr`), dereference raw pointers (`Pointer To T`), or execute inline assembly (`Asm`) must be decorated with `Unsafe`. Attempting low-level operations in a safe procedure triggers a compile-time rejection:
+```vb
+Public Unsafe Sub WritePort(ByVal port As UInt16, ByVal val As Byte)
+    Asm
+        "outb %al, %dx"
+        : : "d"(port), "a"(val)
+    End Asm
+End Sub
+```
+
+### Mandatory Return Value Assignment
+Functions returning a non-void value must assign a return value to the function name (e.g. `FunctionName = ...`) along all execution paths. Omitting the return assignment triggers a compile-time error:
+```vb
+Public Function CalculateArea(ByVal width As Int32, ByVal height As Int32) As Int32
+    CalculateArea = width * height ' Mandatory assignment
+End Function
+```
+
 ---
 
 ## 6. Operators & Expressions
@@ -472,6 +493,20 @@ Class SerialDriver
     End Function
 End Class
 ```
+
+### Private Member Isolation & Visibility
+Fields and members declared `Private` inside a `Class` or `Module` are strictly inaccessible from outside code. Accessing a `Private` field from an external scope produces a compile-time rejection:
+```vb
+Class Account
+    Private m_balance As Int32
+End Class
+
+' In external procedure:
+' acc.m_balance = 500  --> [Compile Error] Member 'm_balance' is Private to Class 'Account'.
+```
+
+### Static Method & Member Validation
+Attempting to invoke an undeclared method or access an undeclared field on a class or structure instance (e.g. `obj.UnknownMethod()`) is verified at compile-time and rejected with a caret diagnostic.
 
 ### Deterministic Scoped Cleanup (`Using ... End Using`)
 Ensures resources are safely disposed upon leaving the block:
@@ -742,4 +777,50 @@ In freestanding mode (`--nostdlib` or `[Project] Type = "BareMetalExecutable"`):
 - The standard startup file (`_start`) links directly to the target machine without host CRT objects (`crt1.o`, `crti.o`).
 - String operations use an in-tree, zero-dependency Bump Allocator (`__llbc_bump_malloc`) with no dependency on host `malloc`.
 - Dynamic structures like `HashMap` and `ArrayList` provide zero-heap stack buffer options suitable for initial paging tables, interrupt handlers, and early boot stages.
+
+---
+
+## 19. Compile-Time Safety & Diagnostics Guards
+
+Low-Level Basic pairs ahead-of-time LLVM code generation with comprehensive static verification:
+
+1. **Undeclared Symbol & Type Verification:**
+   - Any reference to an undeclared type in `Dim x As T`, field declarations, or procedure parameters produces an immediate compile error.
+   - Any call to an undeclared function or subroutine is halted at compile time.
+2. **Undeclared Method Rejection:**
+   - Invoking methods or members not present on a target class or structure instance (`obj.NoSuchMethod()`) is statically rejected.
+3. **Private Member Access Fencing:**
+   - Members declared `Private` inside a `Class` or `Module` cannot be accessed from outside code.
+4. **Mandatory Function Return Value:**
+   - Non-void `Function` definitions must assign to their function name (`Func = value`) along all execution paths before exiting.
+5. **Strict `Unsafe` Enforcement:**
+   - Any procedure using `CPtr`, raw pointer dereferencing (`ptr(i)`), or inline assembly (`Asm`) must be declared with `Unsafe`. Safe procedures attempting unsafe operations are rejected at compile time.
+6. **Class Instancing Invariants:**
+   - `<Instancing(SingleUse)>` classes can only be instantiated once per scope.
+   - Objects must be initialized via `.Initialize(...)` before members or methods can be accessed.
+7. **Arithmetic & Boundary Safety:**
+   - Compile-time division by zero (`x / 0`) and out-of-range bit shifts (`x LShift 64`) are caught during frontend evaluation.
+   - Fixed-size array indexing with constant indices is statically bounds-checked.
+
+---
+
+## 20. Delegates & Function Pointer Types
+
+Delegates declare strongly-typed signatures for function pointers, callbacks, and interrupt handlers:
+
+```vb
+' Declare a delegate signature for interrupt handlers
+Public Delegate Sub InterruptHandler(ByRef frame As InterruptFrame)
+
+' Declare a callback delegate
+Public Delegate Function Comparator(ByVal a As Int32, ByVal b As Int32) As Int32
+
+' Use delegate type in signatures
+Public Sub RegisterHandler(ByVal intNum As Byte, ByVal handler As InterruptHandler)
+    ' handler is passed as a typed function pointer
+End Sub
+```
+
+Delegates compile directly to LLVM function pointer types (`ptr`) with zero runtime abstraction overhead.
+
 

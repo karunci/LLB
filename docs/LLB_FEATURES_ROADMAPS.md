@@ -173,6 +173,8 @@ LLB fuses the safety and performance of modern systems languages with the approa
 | Pattern matching (`Match ... End Match`) | ✅ | Full algebraic pattern matching with `Ok(v)`, `Err(e)`, ranges `min To max`, values, and wildcards |
 | Async / Await | ⏳ Future Roadmap | Coroutine transformation pipelines for cooperative multitasking. |
 | Interfaces / Traits / Protocols | ✅ | `Interface ... End Interface`, `Implements` contracts & vtable definitions |
+| Delegates / Function Pointer Types | ✅ | `Public Delegate Sub/Function Name(...)` lowering to typed function pointers |
+| Class Instancing Models | ✅ | `<Instancing(Global/SingleUse/MultiUse)>` with stack/heap allocation & lifecycle checks |
 | Operator overloading | ⏳ Future Roadmap | Custom user-defined operators (`+`, `-`, `*`). |
 | Iterators / Generators (`Yield`) | ⏳ Future Roadmap | Generator coroutines for lazy sequences. |
 | Namespaces / Module nesting | ✅ | `Namespace Name ... End Namespace` hierarchical scope organization with dotted symbol normalization |

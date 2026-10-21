@@ -233,6 +233,19 @@ Class ConsoleGreeter
 End Class
 ```
 
+#### 5.1 Delegates (`Delegate Sub` / `Delegate Function`)
+
+Delegates provide strongly-typed function signatures for callbacks, function pointers, and interrupt handlers:
+
+```vb
+Public Delegate Sub InterruptHandler(ByRef frame As InterruptFrame)
+Public Delegate Function Transformer(ByVal val As Int32) As Int32
+
+Public Sub ApplyTransform(ByVal ptr As Transformer, ByVal input As Int32)
+    Dim res As Int32 = ptr(input)
+End Sub
+```
+
 #### 6. Namespaces & Hierarchical Organization (`Namespace`)
 
 Modules, classes, and subroutines can be encapsulated inside hierarchical namespaces. Identifiers within namespaces are resolved with standard dotted access:
@@ -325,6 +338,16 @@ source.bas:14:10: error: Expected '=' in constant declaration
 - **Error messages**: Bold red (`error:`) with cyan caret pointer (`^`) indicating exact token column.
 - **Source line context**: Gutter line number and the original source line context printed directly under the diagnostic.
 - **TTY Auto-detection**: Automatically enables colors on terminals/consoles (`isatty`) and falls back to plain text when piped or redirected.
+
+#### 11. Compile-Time Safety & Diagnostics Guards
+
+The compiler enforces strict compile-time verification across 25 automated rejection test categories:
+- **Strict `Unsafe` Enforcement:** Procedures utilizing `CPtr`, raw pointer dereferencing, or `Asm` blocks require explicit `Unsafe` decoration.
+- **Mandatory Return Values:** Non-void `Function` procedures must assign a return value along all paths.
+- **Static Member & Method Validation:** Methods and members accessed on instances (`obj.Method()`) are statically checked against class and structure definitions.
+- **Visibility Protection:** `Private` fields and members are isolated and inaccessible from external scopes.
+- **Type Existence Checking:** Undeclared types in `Dim x As T`, parameters, and fields are rejected immediately with column caret diagnostics.
+- **Lifecycle Guarantees:** Single-instance (`<Instancing(SingleUse)>`) constraints and constructor invocation order (`.Initialize`) are verified before members can be used.
 
 ---
 
@@ -1071,7 +1094,7 @@ Low-Level Basic (`LLB` / `llbc`) is engineered using an AI-assisted pair-program
 
 - **Human Architecture & Technical Direction:** Language syntax, type-system semantics, microkernel abstractions, memory layout invariants, and technical oversight are directed by the author (`karunci`).
 - **AI Pair Programming:** AST generation, LLVM IR emission routines, extensive test suites, and documentation scaffolding were iteratively developed with AI coding agents.
-- **Strict Verification Standards:** All code, compiler outputs, and kernel ELF binaries are tested against bare-metal execution targets in QEMU and 63 automated test suites.
+- **Strict Verification Standards:** All code, compiler outputs, and kernel ELF binaries are tested against bare-metal execution targets in QEMU, 25 compiler rejection tests, and 64 comprehensive automated test suites.
 
 For full disclosure regarding our development model and licensing restrictions, see [AI_DISCLOSURE.md](../AI_DISCLOSURE.md).
 

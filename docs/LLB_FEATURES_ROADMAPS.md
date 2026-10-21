@@ -175,6 +175,7 @@ LLB fuses the safety and performance of modern systems languages with the approa
 | Interfaces / Traits / Protocols | ✅ | `Interface ... End Interface`, `Implements` contracts & vtable definitions |
 | Delegates / Function Pointer Types | ✅ | `Public Delegate Sub/Function Name(...)` lowering to typed function pointers |
 | Class Instancing Models | ✅ | `<Instancing(Global/SingleUse/MultiUse)>` with stack/heap allocation & lifecycle checks |
+| Compile-Time Layout Intrinsics | ✅ | `SizeOf(Type)` and `OffsetOf(Struct, Field)` compile-time layout evaluations |
 | Operator overloading | ⏳ Future Roadmap | Custom user-defined operators (`+`, `-`, `*`). |
 | Iterators / Generators (`Yield`) | ⏳ Future Roadmap | Generator coroutines for lazy sequences. |
 | Namespaces / Module nesting | ✅ | `Namespace Name ... End Namespace` hierarchical scope organization with dotted symbol normalization |

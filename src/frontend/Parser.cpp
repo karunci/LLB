@@ -1873,6 +1873,27 @@ std::unique_ptr<ExprASTNode> Parser::parsePrimaryExpr() {
         return std::make_unique<CastExprASTNode>(CastExprASTNode::CastKind::CType, std::move(targetType), std::move(castExpr));
     }
 
+    // SizeOf(TypeName)
+    if (checkKeyword("SizeOf")) {
+        consume();
+        expect(TokenType::LParen, "Expected '(' after 'SizeOf'");
+        TypeSpec t = parseTypeSpec();
+        expect(TokenType::RParen, "Expected ')' after type in 'SizeOf'");
+        return std::make_unique<SizeOfExprASTNode>(std::move(t));
+    }
+
+    // OffsetOf(TypeName, FieldName)
+    if (checkKeyword("OffsetOf")) {
+        consume();
+        expect(TokenType::LParen, "Expected '(' after 'OffsetOf'");
+        TypeSpec t = parseTypeSpec();
+        expect(TokenType::Comma, "Expected ',' between type and field name in 'OffsetOf'");
+        std::string field = m_currentToken.text;
+        expect(TokenType::Identifier, "Expected field name in 'OffsetOf'");
+        expect(TokenType::RParen, "Expected ')' after field name in 'OffsetOf'");
+        return std::make_unique<OffsetOfExprASTNode>(std::move(t), field);
+    }
+
     // AddressOf funcName
     if (m_currentToken.type == TokenType::KwAddressOf || checkKeyword("AddressOf")) {
         consume();
@@ -1918,6 +1939,8 @@ std::unique_ptr<ExprASTNode> Parser::parsePrimaryExpr() {
         TypeSpec targetType = parseTypeSpec();
         return std::make_unique<TypeOfExprASTNode>(std::move(exprNode), std::move(targetType), isNot);
     }
+
+
 
     // Parenthesized Expression: (expr)
     if (match(TokenType::LParen)) {

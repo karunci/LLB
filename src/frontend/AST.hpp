@@ -108,6 +108,20 @@ public:
     explicit AddressOfExprASTNode(std::unique_ptr<ExprASTNode> expr) : targetExpr(std::move(expr)) {}
 };
 
+class SizeOfExprASTNode : public ExprASTNode {
+public:
+    TypeSpec targetType;
+    explicit SizeOfExprASTNode(TypeSpec t) : targetType(std::move(t)) {}
+};
+
+class OffsetOfExprASTNode : public ExprASTNode {
+public:
+    TypeSpec targetType;
+    std::string fieldName;
+    OffsetOfExprASTNode(TypeSpec t, std::string f)
+        : targetType(std::move(t)), fieldName(std::move(f)) {}
+};
+
 class MemberAccessExprASTNode : public ExprASTNode {
 public:
     std::unique_ptr<ExprASTNode> base;

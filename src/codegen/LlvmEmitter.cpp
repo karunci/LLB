@@ -6858,6 +6858,42 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
         return m_builder->CreatePointerCast(lambdaFn, llvm::PointerType::get(*m_context, 0), "lambda.ptr");
     }
 
+    if (auto sz = dynamic_cast<SizeOfExprASTNode*>(expr)) {
+        llvm::Type* targetTy = getLlvmType(sz->targetType);
+        const llvm::DataLayout& dl = m_module->getDataLayout();
+        uint64_t typeSize = dl.getTypeAllocSize(targetTy);
+        return llvm::ConstantInt::get(llvm::Type::getInt64Ty(*m_context), typeSize);
+    }
+
+    if (auto off = dynamic_cast<OffsetOfExprASTNode*>(expr)) {
+        std::string structName = off->targetType.name;
+        auto stIt = m_structTypes.find(structName);
+        if (stIt == m_structTypes.end()) stIt = m_structTypes.find(toLower(structName));
+        if (stIt == m_structTypes.end() || !stIt->second) {
+            Diagnostic::report(m_sourceFilePath, m_currentLine, m_currentCol, true,
+                               "Cannot find structure '" + structName + "' in OffsetOf.", m_sourceText);
+            m_hadError = true;
+            return llvm::ConstantInt::get(llvm::Type::getInt64Ty(*m_context), 0);
+        }
+        llvm::StructType* stTy = stIt->second;
+        std::string fieldLower = toLower(off->fieldName);
+        auto fIt = m_structFieldIndices[structName].find(fieldLower);
+        if (fIt == m_structFieldIndices[structName].end()) {
+            fIt = m_structFieldIndices[toLower(structName)].find(fieldLower);
+        }
+        if (fIt == m_structFieldIndices[structName].end() && fIt == m_structFieldIndices[toLower(structName)].end()) {
+            Diagnostic::report(m_sourceFilePath, m_currentLine, m_currentCol, true,
+                               "Structure '" + structName + "' has no member named '" + off->fieldName + "' in OffsetOf.", m_sourceText);
+            m_hadError = true;
+            return llvm::ConstantInt::get(llvm::Type::getInt64Ty(*m_context), 0);
+        }
+        unsigned fieldIdx = fIt->second;
+        const llvm::DataLayout& dl = m_module->getDataLayout();
+        const llvm::StructLayout* sl = dl.getStructLayout(stTy);
+        uint64_t fieldOffset = sl->getElementOffset(fieldIdx);
+        return llvm::ConstantInt::get(llvm::Type::getInt64Ty(*m_context), fieldOffset);
+    }
+
     return nullptr;
 }
 

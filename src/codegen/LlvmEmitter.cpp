@@ -309,7 +309,13 @@ llvm::Value* LlvmEmitter::getPointerToExpr(ExprASTNode* expr) {
         llvm::Value* basePtr = member->base ? getPointerToExpr(member->base.get()) : (!m_withStack.empty() ? m_withStack.back().first : nullptr);
         if (basePtr) {
             std::string memberLower = toLower(member->memberName);
+            TypeSpec baseType = member->base ? deduceExprType(member->base.get()) : (!m_withStack.empty() ? m_withStack.back().second : TypeSpec());
+            std::string explicitStructName = !baseType.name.empty() ? toLower(baseType.name) : "";
+
             for (const auto& pair : m_structFieldIndices) {
+                if (!explicitStructName.empty() && toLower(pair.first) != explicitStructName) {
+                    continue;
+                }
                 auto fIt = pair.second.find(memberLower);
                 if (fIt != pair.second.end()) {
                     unsigned fieldIdx = fIt->second;
@@ -3594,7 +3600,13 @@ void LlvmEmitter::emitAssignStatement(const AssignStmtNode& assignNode) {
         llvm::Value* val = emitExpression(assignNode.value.get());
         if (basePtr && val) {
             std::string memberLower = toLower(member->memberName);
+            TypeSpec baseType = member->base ? deduceExprType(member->base.get()) : (!m_withStack.empty() ? m_withStack.back().second : TypeSpec());
+            std::string explicitStructName = !baseType.name.empty() ? (!baseType.typeArgs.empty() ? toLower(instantiateGenericStruct(baseType)) : toLower(baseType.name)) : "";
+
             for (const auto& pair : m_structFieldIndices) {
+                if (!explicitStructName.empty() && toLower(pair.first) != explicitStructName) {
+                    continue;
+                }
                 auto fIt = pair.second.find(memberLower);
                 if (fIt != pair.second.end()) {
                     unsigned fieldIdx = fIt->second;
@@ -5108,7 +5120,13 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
         llvm::Value* basePtr = member->base ? getPointerToExpr(member->base.get()) : (!m_withStack.empty() ? m_withStack.back().first : nullptr);
         if (basePtr) {
             std::string memberLower = toLower(member->memberName);
+            TypeSpec baseType = member->base ? deduceExprType(member->base.get()) : (!m_withStack.empty() ? m_withStack.back().second : TypeSpec());
+            std::string explicitStructName = !baseType.name.empty() ? (!baseType.typeArgs.empty() ? toLower(instantiateGenericStruct(baseType)) : toLower(baseType.name)) : "";
+
             for (const auto& pair : m_structFieldIndices) {
+                if (!explicitStructName.empty() && toLower(pair.first) != explicitStructName) {
+                    continue;
+                }
                 auto fIt = pair.second.find(memberLower);
                 if (fIt != pair.second.end()) {
                     unsigned fieldIdx = fIt->second;
@@ -5914,14 +5932,11 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
                 } else {
                     val = llvm::ConstantInt::get(llvm::Type::getInt64Ty(*m_context), 0);
                 }
-                llvm::Value* resAlloca = m_builder->CreateAlloca(resTy, nullptr, "res.ok");
-                llvm::Value* okGep = m_builder->CreateStructGEP(resTy, resAlloca, 0, "ok.gep");
-                m_builder->CreateStore(llvm::ConstantInt::get(llvm::Type::getInt1Ty(*m_context), 1), okGep);
-                llvm::Value* errGep = m_builder->CreateStructGEP(resTy, resAlloca, 1, "err.gep");
-                m_builder->CreateStore(llvm::ConstantInt::get(llvm::Type::getInt32Ty(*m_context), 0), errGep);
-                llvm::Value* valGep = m_builder->CreateStructGEP(resTy, resAlloca, 2, "val.gep");
-                m_builder->CreateStore(val, valGep);
-                return m_builder->CreateLoad(resTy, resAlloca, "res.ok.val");
+                llvm::Value* resVal = llvm::ConstantAggregateZero::get(resTy);
+                resVal = m_builder->CreateInsertValue(resVal, llvm::ConstantInt::get(llvm::Type::getInt1Ty(*m_context), 1), 0, "res.ok.is_ok");
+                resVal = m_builder->CreateInsertValue(resVal, llvm::ConstantInt::get(llvm::Type::getInt32Ty(*m_context), 0), 1, "res.ok.err");
+                resVal = m_builder->CreateInsertValue(resVal, val, 2, "res.ok.val");
+                return resVal;
             }
             if (lowerFn == "err") {
                 llvm::Value* codeVal = nullptr;
@@ -5931,14 +5946,11 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
                 } else {
                     codeVal = llvm::ConstantInt::get(llvm::Type::getInt32Ty(*m_context), 1);
                 }
-                llvm::Value* resAlloca = m_builder->CreateAlloca(resTy, nullptr, "res.err");
-                llvm::Value* okGep = m_builder->CreateStructGEP(resTy, resAlloca, 0, "ok.gep");
-                m_builder->CreateStore(llvm::ConstantInt::get(llvm::Type::getInt1Ty(*m_context), 0), okGep);
-                llvm::Value* errGep = m_builder->CreateStructGEP(resTy, resAlloca, 1, "err.gep");
-                m_builder->CreateStore(codeVal, errGep);
-                llvm::Value* valGep = m_builder->CreateStructGEP(resTy, resAlloca, 2, "val.gep");
-                m_builder->CreateStore(llvm::ConstantInt::get(llvm::Type::getInt64Ty(*m_context), 0), valGep);
-                return m_builder->CreateLoad(resTy, resAlloca, "res.err.val");
+                llvm::Value* resVal = llvm::ConstantAggregateZero::get(resTy);
+                resVal = m_builder->CreateInsertValue(resVal, llvm::ConstantInt::get(llvm::Type::getInt1Ty(*m_context), 0), 0, "res.err.is_ok");
+                resVal = m_builder->CreateInsertValue(resVal, codeVal, 1, "res.err.err");
+                resVal = m_builder->CreateInsertValue(resVal, llvm::ConstantInt::get(llvm::Type::getInt64Ty(*m_context), 0), 2, "res.err.val");
+                return resVal;
             }
             if (lowerFn == "isok") {
                 if (!call->args.empty()) {
@@ -6463,14 +6475,33 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
                 llvm::Value* typedBuf = coerceType(rawBuf, callee->getFunctionType()->getParamType(args.size()));
                 args.push_back(typedBuf);
             } else {
+                std::string calleeName = callee->getName().str();
+                auto byRefIt = m_procParamByRef.find(calleeName);
+                if (byRefIt == m_procParamByRef.end()) {
+                    byRefIt = m_procParamByRef.find(toLower(calleeName));
+                }
+                if (byRefIt == m_procParamByRef.end()) {
+                    byRefIt = m_procParamByRef.find(targetFuncName);
+                }
+                if (byRefIt == m_procParamByRef.end()) {
+                    byRefIt = m_procParamByRef.find(toLower(targetFuncName));
+                }
+                if (byRefIt == m_procParamByRef.end() && targetFuncName != call->funcName) {
+                    byRefIt = m_procParamByRef.find(call->funcName);
+                }
+                if (byRefIt == m_procParamByRef.end() && targetFuncName != call->funcName) {
+                    byRefIt = m_procParamByRef.find(toLower(call->funcName));
+                }
+
                 for (size_t i = 0; i < call->args.size(); ++i) {
                     llvm::Value* argVal = nullptr;
                     size_t paramIdx = args.size();
-                    if (paramIdx < callee->getFunctionType()->getNumParams()) {
-                        llvm::Type* pTy = callee->getFunctionType()->getParamType(paramIdx);
-                        if (pTy->isPointerTy()) {
-                            argVal = getPointerToExpr(call->args[i].get());
-                        }
+                    bool isByRefParam = false;
+                    if (byRefIt != m_procParamByRef.end() && i < byRefIt->second.size()) {
+                        isByRefParam = byRefIt->second[i];
+                    }
+                    if (isByRefParam) {
+                        argVal = getPointerToExpr(call->args[i].get());
                     }
                     if (!argVal) {
                         argVal = emitExpression(call->args[i].get());
@@ -6830,7 +6861,7 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
     return nullptr;
 }
 
-void LlvmEmitter::registerExternalProcedure(const std::string& name, const TypeSpec& retType, const std::vector<TypeSpec>& paramTypes, const std::string& aliasName, const std::vector<ExprASTNode*>& defExprs) {
+void LlvmEmitter::registerExternalProcedure(const std::string& name, const TypeSpec& retType, const std::vector<TypeSpec>& paramTypes, const std::string& aliasName, const std::vector<ExprASTNode*>& defExprs, const std::vector<bool>& paramByRefs) {
     std::string mangledName = aliasName.empty() ? name : aliasName;
     m_procReturnTypes[name] = retType;
     m_procReturnTypes[toLower(name)] = retType;
@@ -6842,6 +6873,13 @@ void LlvmEmitter::registerExternalProcedure(const std::string& name, const TypeS
         m_procDefaults[toLower(name)] = defExprs;
         m_procDefaults[mangledName] = defExprs;
         m_procDefaults[toLower(mangledName)] = defExprs;
+    }
+
+    if (!paramByRefs.empty()) {
+        m_procParamByRef[name] = paramByRefs;
+        m_procParamByRef[toLower(name)] = paramByRefs;
+        m_procParamByRef[mangledName] = paramByRefs;
+        m_procParamByRef[toLower(mangledName)] = paramByRefs;
     }
 
     if (!aliasName.empty()) {
@@ -6900,8 +6938,8 @@ llvm::Function* LlvmEmitter::emitProcedure(const ProcedureNode& procNode, const 
 
     // 3. Create Function Prototype
     llvm::FunctionType* funcType = llvm::FunctionType::get(retType, paramTypes, false);
-    llvm::GlobalValue::LinkageTypes linkage = procNode.isPublic ? llvm::Function::ExternalLinkage 
-                                                                : llvm::Function::InternalLinkage;
+    llvm::GlobalValue::LinkageTypes linkage = (procNode.isPublic || procNode.isDeclare) ? llvm::Function::ExternalLinkage 
+                                                                                         : llvm::Function::InternalLinkage;
 
     std::string mangledName = procNode.name;
     if (procNode.isDeclare && !procNode.aliasName.empty()) {
@@ -6937,18 +6975,22 @@ llvm::Function* LlvmEmitter::emitProcedure(const ProcedureNode& procNode, const 
     // Track default parameter values for optional parameters
     std::vector<ExprASTNode*> defExprs;
     std::vector<std::string> paramNames;
+    std::vector<bool> paramByRefs;
     bool hasParamArray = false;
     for (const auto& param : procNode.parameters) {
         defExprs.push_back(param.defaultValue.get());
         paramNames.push_back(param.name);
+        paramByRefs.push_back(param.isByRef);
         if (param.isParamArray) hasParamArray = true;
     }
     m_procDefaults[procNode.name] = defExprs;
     m_procParamNames[procNode.name] = paramNames;
+    m_procParamByRef[procNode.name] = paramByRefs;
     m_procParamArray[procNode.name] = hasParamArray;
     if (mangledName != procNode.name) {
         m_procDefaults[mangledName] = defExprs;
         m_procParamNames[mangledName] = paramNames;
+        m_procParamByRef[mangledName] = paramByRefs;
         m_procParamArray[mangledName] = hasParamArray;
     }
 
@@ -7378,27 +7420,31 @@ bool LlvmEmitter::emitModule(const ModuleNode& moduleNode) {
             // Track procedure parameter metadata early for call-site resolution
             std::vector<ExprASTNode*> defExprs;
             std::vector<std::string> paramNames;
+            std::vector<bool> paramByRefs;
             bool hasParamArray = false;
             for (const auto& param : proc->parameters) {
                 defExprs.push_back(param.defaultValue.get());
                 paramNames.push_back(param.name);
+                paramByRefs.push_back(param.isByRef);
                 if (param.isParamArray) hasParamArray = true;
             }
             m_procDefaults[proc->name] = defExprs;
             m_procParamNames[proc->name] = paramNames;
+            m_procParamByRef[proc->name] = paramByRefs;
             m_procParamArray[proc->name] = hasParamArray;
             m_procReturnTypes[proc->name] = proc->returnType;
             m_procReturnTypes[toLower(proc->name)] = proc->returnType;
             if (mangledName != proc->name) {
                 m_procDefaults[mangledName] = defExprs;
                 m_procParamNames[mangledName] = paramNames;
+                m_procParamByRef[mangledName] = paramByRefs;
                 m_procParamArray[mangledName] = hasParamArray;
                 m_procReturnTypes[mangledName] = proc->returnType;
                 m_procReturnTypes[toLower(mangledName)] = proc->returnType;
             }
 
             if (!m_module->getFunction(mangledName)) {
-                llvm::GlobalValue::LinkageTypes linkage = proc->isPublic ? llvm::Function::ExternalLinkage : llvm::Function::InternalLinkage;
+                llvm::GlobalValue::LinkageTypes linkage = (proc->isPublic || proc->isDeclare) ? llvm::Function::ExternalLinkage : llvm::Function::InternalLinkage;
                 llvm::Function::Create(funcType, linkage, mangledName, m_module.get());
             }
         }

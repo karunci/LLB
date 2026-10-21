@@ -28,7 +28,7 @@ public:
     explicit LlvmEmitter(const std::string& moduleName, bool enableDebugInfo = false, const std::string& targetTriple = "");
 
     bool emitModule(const ModuleNode& moduleNode);
-    void registerExternalProcedure(const std::string& name, const TypeSpec& retType, const std::vector<TypeSpec>& paramTypes, const std::string& aliasName = "", const std::vector<ExprASTNode*>& defExprs = {});
+    void registerExternalProcedure(const std::string& name, const TypeSpec& retType, const std::vector<TypeSpec>& paramTypes, const std::string& aliasName = "", const std::vector<ExprASTNode*>& defExprs = {}, const std::vector<bool>& paramByRefs = {});
     void registerClassInstancing(const std::string& className, InstancingKind instancing);
     void registerPrivateField(const std::string& className, const std::string& fieldName);
     void declareConstant(const ConstStmtNode& constNode, const std::string& prefix = "");
@@ -136,6 +136,7 @@ private:
     std::unordered_map<std::string, std::string> m_funcAliases;
     std::unordered_map<std::string, std::vector<ExprASTNode*>> m_procDefaults;
     std::unordered_map<std::string, std::vector<std::string>> m_procParamNames;
+    std::unordered_map<std::string, std::vector<bool>> m_procParamByRef;
     std::unordered_map<std::string, bool> m_procParamArray;
     std::unordered_map<std::string, const StructureNode*> m_genericStructTemplates;
     std::unordered_map<std::string, const ProcedureNode*> m_genericProcTemplates;

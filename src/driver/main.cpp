@@ -287,6 +287,16 @@ static std::string compileSourceFile(
             else if (auto st = dynamic_cast<const llbc::StructureNode*>(member.get())) {
                 if (imp.symbolName.empty() || imp.symbolName == st->name) {
                     irEmitter.emitStructure(*st);
+                    if (!targetMod->name.empty()) {
+                        llbc::StructureNode qualSt = *st;
+                        qualSt.name = targetMod->name + "." + st->name;
+                        irEmitter.emitStructure(qualSt);
+                    }
+                    if (!imp.moduleName.empty() && imp.moduleName != targetMod->name) {
+                        llbc::StructureNode qualSt = *st;
+                        qualSt.name = imp.moduleName + "." + st->name;
+                        irEmitter.emitStructure(qualSt);
+                    }
                 }
             }
             // Import Constants
@@ -310,8 +320,10 @@ static std::string compileSourceFile(
                         llbc::TypeSpec retType = proc->isFunction ? proc->returnType : llbc::TypeSpec{"void"};
 
                         std::vector<llbc::ExprASTNode*> defExprs;
+                        std::vector<bool> paramByRefs;
                         for (const auto& p : proc->parameters) {
                             defExprs.push_back(p.defaultValue.get());
+                            paramByRefs.push_back(p.isByRef);
                         }
 
                         // If the procedure comes from a dotted module (e.g., Drivers.Terminal),
@@ -326,16 +338,16 @@ static std::string compileSourceFile(
 
                         std::string symbolMangled = !targetPrefix.empty() ? (targetPrefix + "_" + proc->name) : proc->name;
                         std::string alias = (!imp.aliasName.empty() && !imp.symbolName.empty()) ? imp.aliasName : symbolMangled;
-                        irEmitter.registerExternalProcedure(proc->name, retType, pTypes, alias, defExprs);
+                        irEmitter.registerExternalProcedure(proc->name, retType, pTypes, alias, defExprs, paramByRefs);
 
                         // If imported as ModuleName.ProcName, also register qualified name
                         if (!imp.moduleName.empty()) {
                             std::string qual = imp.moduleName + "." + proc->name;
-                            irEmitter.registerExternalProcedure(qual, retType, pTypes, symbolMangled, defExprs);
+                            irEmitter.registerExternalProcedure(qual, retType, pTypes, symbolMangled, defExprs, paramByRefs);
                         }
                         if (targetMod->name != imp.moduleName) {
                             std::string qualTarget = targetMod->name + "." + proc->name;
-                            irEmitter.registerExternalProcedure(qualTarget, retType, pTypes, symbolMangled, defExprs);
+                            irEmitter.registerExternalProcedure(qualTarget, retType, pTypes, symbolMangled, defExprs, paramByRefs);
                         }
                     }
                 }
@@ -421,18 +433,23 @@ static std::string compileSourceFile(
                     llbc::TypeSpec retType = proc->isFunction ? proc->returnType : llbc::TypeSpec{"void"};
 
                     std::vector<llbc::ExprASTNode*> defExprs;
+                    std::vector<bool> paramByRefs;
+                    if (targetMod->isClass) {
+                        paramByRefs.push_back(false); // Me pointer is passed by value
+                    }
                     for (const auto& p : proc->parameters) {
                         defExprs.push_back(p.defaultValue.get());
+                        paramByRefs.push_back(p.isByRef);
                     }
 
                     std::string symbolMangled = targetMod->name + "_" + proc->name;
                     for (auto& ch : symbolMangled) if (ch == '.') ch = '_';
 
-                    irEmitter.registerExternalProcedure(targetMod->name + "." + proc->name, retType, pTypes, symbolMangled, defExprs);
-                    irEmitter.registerExternalProcedure(targetMod->name + "_" + proc->name, retType, pTypes, symbolMangled, defExprs);
+                    irEmitter.registerExternalProcedure(targetMod->name + "." + proc->name, retType, pTypes, symbolMangled, defExprs, paramByRefs);
+                    irEmitter.registerExternalProcedure(targetMod->name + "_" + proc->name, retType, pTypes, symbolMangled, defExprs, paramByRefs);
                     if (!useDir.aliasName.empty()) {
-                        irEmitter.registerExternalProcedure(useDir.aliasName + "." + proc->name, retType, pTypes, symbolMangled, defExprs);
-                        irEmitter.registerExternalProcedure(useDir.aliasName + "_" + proc->name, retType, pTypes, symbolMangled, defExprs);
+                        irEmitter.registerExternalProcedure(useDir.aliasName + "." + proc->name, retType, pTypes, symbolMangled, defExprs, paramByRefs);
+                        irEmitter.registerExternalProcedure(useDir.aliasName + "_" + proc->name, retType, pTypes, symbolMangled, defExprs, paramByRefs);
                     }
                 }
             }
@@ -454,7 +471,8 @@ static std::string compileSourceFile(
         }
     }
 
-    std::string stem = moduleAST->name + ".o";
+    std::string sourceStem = fs::path(sourcePath).stem().string();
+    std::string stem = sourceStem + ".o";
     std::string objFilename = outDir.empty() ? stem
                                              : (fs::path(outDir) / stem).lexically_normal().string();
     llbc::TargetConfig targetConfig;

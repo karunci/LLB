@@ -122,6 +122,7 @@ private:
 
     std::unordered_map<std::string, llvm::AllocaInst*> m_namedValues;
     std::unordered_map<std::string, TypeSpec> m_variableTypes;
+    std::unordered_map<std::string, TypeSpec> m_globalVariableTypes;
     std::unordered_map<std::string, llvm::StructType*> m_structTypes;
     std::unordered_set<std::string> m_unionTypes;
     std::unordered_map<std::string, std::unordered_map<std::string, unsigned>> m_structFieldIndices;
@@ -139,6 +140,8 @@ private:
     std::unordered_map<std::string, llvm::GlobalVariable*> m_classSingletons;
     std::unordered_set<std::string> m_singleUseInstantiated;
     std::unordered_set<std::string> m_initializedObjects;
+    std::unordered_set<std::string> m_constants;
+    std::unordered_map<std::string, const InterfaceNode*> m_interfaces;
 
 
     std::string instantiateGenericStruct(const TypeSpec& typeSpec);

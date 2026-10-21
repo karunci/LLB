@@ -318,21 +318,39 @@ llvm::Value* LlvmEmitter::getPointerToExpr(ExprASTNode* expr) {
         }
     }
 
-    // CallExprASTNode: pointer-to-struct indexing like entriesPtr(slot1)
-    // Returns the GEP (pointer to element) without loading the struct value.
+    // CallExprASTNode: array or pointer indexing like entriesPtr(slot1) or idtEntries(0)
+    // Returns the GEP (pointer to element) without loading the value.
     if (auto call = dynamic_cast<CallExprASTNode*>(expr)) {
         if (!call->calleeExpr && !call->args.empty()) {
             auto it = m_namedValues.find(call->funcName);
-            if (it != m_namedValues.end()) {
-                TypeSpec baseType = m_variableTypes[call->funcName];
-                if (baseType.pointerDepth > 0) {
-                    llvm::Value* baseVal = m_builder->CreateLoad(
-                        it->second->getAllocatedType(), it->second, call->funcName);
+            auto tIt = m_variableTypes.find(call->funcName);
+            if (tIt == m_variableTypes.end()) tIt = m_variableTypes.find(toLower(call->funcName));
+            llvm::GlobalVariable* gVar = nullptr;
+            if (it == m_namedValues.end() && tIt != m_variableTypes.end()) {
+                gVar = findGlobalCaseInsensitive(m_module.get(), call->funcName);
+            }
+            if (it != m_namedValues.end() || gVar) {
+                TypeSpec baseType = (tIt != m_variableTypes.end()) ? tIt->second : TypeSpec();
+                if (gVar && baseType.name.empty() && gVar->getValueType()->isArrayTy()) {
+                    baseType.isArray = true;
+                }
+                llvm::Value* baseVal = nullptr;
+                if (it != m_namedValues.end()) {
+                    if (baseType.isArray) {
+                        baseVal = it->second;
+                    } else {
+                        baseVal = m_builder->CreateLoad(it->second->getAllocatedType(), it->second, call->funcName);
+                    }
+                } else if (gVar) {
+                    baseVal = gVar;
+                }
+
+                if (baseVal && (baseType.pointerDepth > 0 || baseType.isArray)) {
                     llvm::Value* idxVal = emitExpression(call->args[0].get());
                     if (idxVal) {
                         llvm::Type* elemType = getElementType(baseType);
                         idxVal = coerceType(idxVal, llvm::Type::getInt64Ty(*m_context));
-                        return m_builder->CreateGEP(elemType, baseVal, idxVal, "ptridxgep");
+                        return m_builder->CreateGEP(elemType, baseVal, idxVal, "callidxgep");
                     }
                 }
             }
@@ -3177,6 +3195,15 @@ void LlvmEmitter::emitDimStatement(const DimStmtNode& dimNode) {
         // We track instances so any method call prior to .Initialize throws a compile error
     }
 
+    if (m_namedValues.find(dimNode.varName) != m_namedValues.end() ||
+        m_namedValues.find(toLower(dimNode.varName)) != m_namedValues.end()) {
+        Diagnostic::report(m_sourceFilePath, dimNode.line > 0 ? dimNode.line : m_currentLine,
+                           dimNode.column > 0 ? dimNode.column : m_currentCol,
+                           true, "Duplicate variable declaration '" + dimNode.varName + "' in the same scope.", m_sourceText);
+        m_hadError = true;
+        return;
+    }
+
     llvm::Function* currentFunc = m_builder->GetInsertBlock()->getParent();
     llvm::Type* varType = getLlvmType(dimNode.type);
 
@@ -3267,6 +3294,8 @@ void LlvmEmitter::emitConstStatement(const ConstStmtNode& constNode) {
     m_namedValues[toLower(constNode.name)] = alloca;
     m_variableTypes[constNode.name] = constNode.type;
     m_variableTypes[toLower(constNode.name)] = constNode.type;
+    m_constants.insert(constNode.name);
+    m_constants.insert(toLower(constNode.name));
 
     if (constNode.value) {
         checkConstantOverflow(constNode.type, constNode.value.get(), constNode.line, constNode.column);
@@ -3283,6 +3312,14 @@ void LlvmEmitter::emitAssignStatement(const AssignStmtNode& assignNode) {
 
     // Case 1: Variable assignment (var = val) or Module Property Let (Prop = val)
     if (auto var = dynamic_cast<VariableExprASTNode*>(assignNode.target.get())) {
+        if (m_constants.count(var->name) || m_constants.count(toLower(var->name))) {
+            Diagnostic::report(m_sourceFilePath, assignNode.line > 0 ? assignNode.line : m_currentLine,
+                               assignNode.column > 0 ? assignNode.column : m_currentCol,
+                               true, "Cannot assign to constant '" + var->name + "'.", m_sourceText);
+            m_hadError = true;
+            return;
+        }
+
         auto tItCheck = m_variableTypes.find(var->name);
         if (tItCheck == m_variableTypes.end()) tItCheck = m_variableTypes.find(toLower(var->name));
         if (tItCheck != m_variableTypes.end()) {
@@ -3447,6 +3484,16 @@ void LlvmEmitter::emitAssignStatement(const AssignStmtNode& assignNode) {
 
         if (baseVal && flatIdx && val) {
             if (baseType.isArray && baseType.arraySize > 0) {
+                ExprASTNode* rawIdxExpr = !idx->indices.empty() ? idx->indices[0].get() : idx->index.get();
+                if (auto numIdx = dynamic_cast<NumberExprASTNode*>(rawIdxExpr)) {
+                    if (!numIdx->isFloat && (numIdx->val < 0 || static_cast<uint64_t>(numIdx->val) >= baseType.arraySize)) {
+                        Diagnostic::report(m_sourceFilePath, idx->line > 0 ? idx->line : m_currentLine,
+                                           idx->column > 0 ? idx->column : m_currentCol,
+                                           true, "Array index " + std::to_string(numIdx->val) + " is out of bounds for array of size " + std::to_string(baseType.arraySize) + " [0.." + std::to_string(baseType.arraySize - 1) + "].", m_sourceText);
+                        m_hadError = true;
+                        return;
+                    }
+                }
                 emitBoundsCheck(flatIdx, baseType.arraySize, "array_write");
             }
 
@@ -5037,23 +5084,36 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
     // New ClassName[(args...)]
     if (auto newExpr = dynamic_cast<NewExprASTNode*>(expr)) {
         // Find struct type
+        std::string clsName = newExpr->className;
+        auto aIt = m_funcAliases.find(clsName);
+        if (aIt != m_funcAliases.end()) clsName = aIt->second;
+        else {
+            auto aItLower = m_funcAliases.find(toLower(clsName));
+            if (aItLower != m_funcAliases.end()) clsName = aItLower->second;
+        }
+
         llvm::StructType* st = nullptr;
-        auto stIt = m_structTypes.find(newExpr->className);
+        auto stIt = m_structTypes.find(clsName);
         if (stIt != m_structTypes.end()) {
             st = stIt->second;
         } else {
-            auto stLowerIt = m_structTypes.find(toLower(newExpr->className));
+            auto stLowerIt = m_structTypes.find(toLower(clsName));
             if (stLowerIt != m_structTypes.end()) {
                 st = stLowerIt->second;
             }
         }
 
-        uint64_t allocSize = 64; // default minimum
-        if (st) {
-            const llvm::DataLayout& dl = m_module->getDataLayout();
-            allocSize = dl.getTypeAllocSize(st);
-            if (allocSize == 0) allocSize = 64;
+        if (!st) {
+            Diagnostic::report(m_sourceFilePath, newExpr->line > 0 ? newExpr->line : m_currentLine,
+                               newExpr->column > 0 ? newExpr->column : m_currentCol,
+                               true, "Cannot find class or structure '" + newExpr->className + "' in this scope.", m_sourceText);
+            m_hadError = true;
+            return nullptr;
         }
+
+        const llvm::DataLayout& dl = m_module->getDataLayout();
+        uint64_t allocSize = dl.getTypeAllocSize(st);
+        if (allocSize == 0) allocSize = 64;
 
         llvm::Function* mallocFn = getOrCreateMalloc();
         llvm::Value* rawPtr = m_builder->CreateCall(
@@ -5117,6 +5177,16 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
 
         if (baseVal && flatIdx) {
             if (baseType.isArray && baseType.arraySize > 0) {
+                ExprASTNode* rawIdxExpr = !idx->indices.empty() ? idx->indices[0].get() : idx->index.get();
+                if (auto numIdx = dynamic_cast<NumberExprASTNode*>(rawIdxExpr)) {
+                    if (!numIdx->isFloat && (numIdx->val < 0 || static_cast<uint64_t>(numIdx->val) >= baseType.arraySize)) {
+                        Diagnostic::report(m_sourceFilePath, idx->line > 0 ? idx->line : m_currentLine,
+                                           idx->column > 0 ? idx->column : m_currentCol,
+                                           true, "Array index " + std::to_string(numIdx->val) + " is out of bounds for array of size " + std::to_string(baseType.arraySize) + " [0.." + std::to_string(baseType.arraySize - 1) + "].", m_sourceText);
+                        m_hadError = true;
+                        return nullptr;
+                    }
+                }
                 emitBoundsCheck(flatIdx, baseType.arraySize, "array_read");
             }
 
@@ -6076,6 +6146,7 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
             // Indirect function pointer call: e.g. fnPtr(arg1, arg2)
             llvm::Value* fnPtrVal = nullptr;
             auto it = m_namedValues.find(targetFuncName);
+            if (it == m_namedValues.end()) it = m_namedValues.find(toLower(targetFuncName));
             if (it != m_namedValues.end()) {
                 fnPtrVal = m_builder->CreateLoad(it->second->getAllocatedType(), it->second, targetFuncName + ".fnptr");
             } else if (call->calleeExpr) {
@@ -6087,6 +6158,12 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
                 if (m_structTypes.find(cType.name) == m_structTypes.end() &&
                     m_structTypes.find(toLower(cType.name)) == m_structTypes.end()) {
                     fnPtrVal = emitExpression(call->calleeExpr.get());
+                }
+            }
+
+            if (fnPtrVal) {
+                if (fnPtrVal->getType()->isIntegerTy()) {
+                    fnPtrVal = m_builder->CreateIntToPtr(fnPtrVal, llvm::PointerType::get(*m_context, 0), "fnptr.cast");
                 }
             }
 
@@ -6112,6 +6189,10 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
                 return m_builder->CreateCall(fnTy, fnPtrVal, args, "indirect.call");
             }
 
+            Diagnostic::report(m_sourceFilePath, call->line > 0 ? call->line : m_currentLine,
+                               call->column > 0 ? call->column : m_currentCol,
+                               true, "Undeclared function or subroutine '" + targetFuncName + "'.", m_sourceText);
+            m_hadError = true;
             return nullptr;
         }
 
@@ -6450,12 +6531,30 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
         if (op == "-") return m_builder->CreateSub(l, r, "subtmp");
         if (op == "*") return m_builder->CreateMul(l, r, "multmp");
         if (op == "/") {
+            if (auto numR = dynamic_cast<NumberExprASTNode*>(bin->rhs.get())) {
+                if (!numR->isFloat && numR->val == 0) {
+                    Diagnostic::report(m_sourceFilePath, bin->line > 0 ? bin->line : m_currentLine,
+                                       bin->column > 0 ? bin->column : m_currentCol,
+                                       true, "Division by zero at compile time in operator '" + bin->op + "'.", m_sourceText);
+                    m_hadError = true;
+                    return nullptr;
+                }
+            }
             if (!m_currentProcIsUnsafe && l->getType()->isIntegerTy()) {
                 emitZeroDivCheck(r, "/");
             }
             return isUnsigned ? m_builder->CreateUDiv(l, r, "udivtmp") : m_builder->CreateSDiv(l, r, "sdivtmp");
         }
         if (op == "mod") {
+            if (auto numR = dynamic_cast<NumberExprASTNode*>(bin->rhs.get())) {
+                if (!numR->isFloat && numR->val == 0) {
+                    Diagnostic::report(m_sourceFilePath, bin->line > 0 ? bin->line : m_currentLine,
+                                       bin->column > 0 ? bin->column : m_currentCol,
+                                       true, "Division by zero at compile time in operator '" + bin->op + "'.", m_sourceText);
+                    m_hadError = true;
+                    return nullptr;
+                }
+            }
             if (!m_currentProcIsUnsafe && l->getType()->isIntegerTy()) {
                 emitZeroDivCheck(r, "Mod");
             }
@@ -6465,8 +6564,20 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
         if (op == "and") return m_builder->CreateAnd(l, r, "andtmp");
         if (op == "or")  return m_builder->CreateOr(l, r, "ortmp");
         if (op == "xor") return m_builder->CreateXor(l, r, "xortmp");
-        if (op == "lshift") return m_builder->CreateShl(l, r, "shltmp");
-        if (op == "rshift") {
+        if (op == "lshift" || op == "rshift") {
+            if (auto numR = dynamic_cast<NumberExprASTNode*>(bin->rhs.get())) {
+                if (!numR->isFloat) {
+                    unsigned bitWidth = l->getType()->isIntegerTy() ? l->getType()->getIntegerBitWidth() : 64;
+                    if (numR->val < 0 || static_cast<uint64_t>(numR->val) >= bitWidth) {
+                        Diagnostic::report(m_sourceFilePath, bin->line > 0 ? bin->line : m_currentLine,
+                                           bin->column > 0 ? bin->column : m_currentCol,
+                                           true, "Shift count " + std::to_string(numR->val) + " is out of range for integer of width " + std::to_string(bitWidth) + " [0.." + std::to_string(bitWidth - 1) + "].", m_sourceText);
+                        m_hadError = true;
+                        return nullptr;
+                    }
+                }
+            }
+            if (op == "lshift") return m_builder->CreateShl(l, r, "shltmp");
             return isUnsigned ? m_builder->CreateLShr(l, r, "lshrtmp") : m_builder->CreateAShr(l, r, "ashrtmp");
         }
 
@@ -6644,7 +6755,7 @@ llvm::Function* LlvmEmitter::emitProcedure(const ProcedureNode& procNode, const 
 
 
     m_namedValues.clear();
-    m_variableTypes.clear();
+    m_variableTypes = m_globalVariableTypes;
 
 
     // 1. Resolve Return Type
@@ -6907,6 +7018,8 @@ bool LlvmEmitter::emitModule(const ModuleNode& moduleNode) {
                 m_structFieldIndices[iface->name][toLower(iface->methods[mi].name)] = mi;
                 m_structFieldIndices[toLower(iface->name)][toLower(iface->methods[mi].name)] = mi;
             }
+            m_interfaces[iface->name] = iface;
+            m_interfaces[toLower(iface->name)] = iface;
         }
     }
 
@@ -6946,6 +7059,8 @@ bool LlvmEmitter::emitModule(const ModuleNode& moduleNode) {
                 initVal,
                 c->name
             );
+            m_constants.insert(c->name);
+            m_constants.insert(toLower(c->name));
         }
     }
 
@@ -6953,6 +7068,36 @@ bool LlvmEmitter::emitModule(const ModuleNode& moduleNode) {
     if (moduleNode.isClass) {
         m_classInstancing[moduleNode.name] = moduleNode.instancing;
         m_classInstancing[toLower(moduleNode.name)] = moduleNode.instancing;
+
+        // Interface Implementation Validation
+        for (const auto& ifaceName : moduleNode.implementsInterfaces) {
+            auto ifIt = m_interfaces.find(ifaceName);
+            if (ifIt == m_interfaces.end()) ifIt = m_interfaces.find(toLower(ifaceName));
+            if (ifIt == m_interfaces.end()) {
+                Diagnostic::report(m_sourceFilePath, 1, 1, true,
+                                   "Cannot find interface '" + ifaceName + "' implemented by class '" + moduleNode.name + "'.", m_sourceText);
+                m_hadError = true;
+            } else {
+                const InterfaceNode* targetIface = ifIt->second;
+                for (const auto& requiredMethod : targetIface->methods) {
+                    bool foundMethod = false;
+                    std::string reqLower = toLower(requiredMethod.name);
+                    for (const auto& member : moduleNode.members) {
+                        if (auto proc = dynamic_cast<const ProcedureNode*>(member.get())) {
+                            if (toLower(proc->name) == reqLower) {
+                                foundMethod = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (!foundMethod) {
+                        Diagnostic::report(m_sourceFilePath, 1, 1, true,
+                                           "Class '" + moduleNode.name + "' does not implement required interface method '" + requiredMethod.name + "' from interface '" + targetIface->name + "'.", m_sourceText);
+                        m_hadError = true;
+                    }
+                }
+            }
+        }
 
         std::vector<llvm::Type*> memberTypes;
         unsigned fieldIndex = 0;
@@ -7023,6 +7168,8 @@ bool LlvmEmitter::emitModule(const ModuleNode& moduleNode) {
             }
             m_variableTypes[dim->varName] = dim->type;
             m_variableTypes[toLower(dim->varName)] = dim->type;
+            m_globalVariableTypes[dim->varName] = dim->type;
+            m_globalVariableTypes[toLower(dim->varName)] = dim->type;
             llvm::GlobalValue::LinkageTypes linkage = llvm::GlobalValue::InternalLinkage;
             new llvm::GlobalVariable(
                 *m_module,

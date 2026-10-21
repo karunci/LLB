@@ -1083,6 +1083,10 @@ std::unique_ptr<ASTNode> Parser::parseAssignOrCallStatement() {
                         }
                     }
                 }
+                if (auto member = dynamic_cast<MemberAccessExprASTNode*>(node.get())) {
+                    member->base = convertCallToIndex(std::move(member->base));
+                    return node;
+                }
                 return node;
             };
         targetExpr = convertCallToIndex(std::move(targetExpr));

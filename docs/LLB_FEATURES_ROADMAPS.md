@@ -188,6 +188,63 @@ LLB fuses the safety and performance of modern systems languages with the approa
 
 ---
 
+## H. Modern Compiler Alignment: Compile-Time Safety & Diagnostics Guards
+
+Comprehensive comparison of compile-time verification in LLB against modern systems compilers (Rust `rustc`, Zig, Clang):
+
+### 1. Declaration & Symbol Resolution Guards
+
+| Guard Description | Current `llbc` Status | Behavior in `llbc` | Modern Compiler Equivalent (`rustc` / Clang) |
+| :--- | :---: | :--- | :--- |
+| **Undeclared Variable Access** | ✅ Implemented | Reports compile error with file, line, column caret | `rustc` `cannot find value in this scope` (E0425) |
+| **Undeclared Function / Subroutine Call** | ✅ Implemented | Reports compile-time error with line and column caret; preserves indirect calls and delegate pointers | `rustc` `cannot find function in this scope` (E0425) |
+| **Undeclared Method on Instance** (`obj.Foo()`) | ⏳ In Progress | Silently returns `nullptr` or attempts indirect call | `rustc` `no method named on type` (E0599) |
+| **Undeclared Class in `New ClassName`** | ✅ Implemented | Rejects unknown class name with compile error instead of silent `malloc(64)` | `rustc` `cannot find struct or type in this scope` (E0422) |
+| **Undeclared Type in `Dim x As T` / Params** | ⏳ In Progress | `getLlvmType` silently defaults to `i64` without diagnostic | `rustc` `cannot find type in this scope` (E0412) |
+| **Missing Module / Import File** | ✅ Implemented | Driver halts compilation and reports missing imported file path | `rustc` `file not found for module` (E0583) |
+| **Undeclared Interface in `Implements`** | ⏳ In Progress | Parsed into AST array but never checked or validated | `rustc` `cannot find trait in this scope` (E0405) |
+| **Duplicate Variable in Same Local Scope** | ✅ Implemented | Rejects duplicate `Dim` declaration in the same local procedure scope | `rustc` `the name is defined multiple times` (E0428) |
+| **Duplicate Procedure in Same Module** | ⏳ In Progress | Emits duplicate function symbol or silently overwrites prototype | `rustc` `duplicate definition of item` (E0428) |
+| **Duplicate Field in `Structure`** | ⏳ In Progress | Struct accepts identical field names and silently overrides index | `rustc` `field is already declared` (E0124) |
+| **Duplicate Enum Member Constant** | ⏳ In Progress | Later enum member silently overwrites earlier value in map | `rustc` `discriminant value is already defined` |
+| **Undefined Label in `GoTo Label`** | ⏳ In Progress | Crashes LLVM IR Verifier (`Basic Block has no terminator`) | `clang` `use of undeclared label` |
+
+### 2. Type Checking, Safety & Mutability Guards
+
+| Guard Description | Current `llbc` Status | Behavior in `llbc` | Modern Compiler Equivalent (`rustc` / Clang) |
+| :--- | :---: | :--- | :--- |
+| **String Intrinsics Type Mismatch** (`Trim(123)`) | ✅ Implemented | Reports explicit compile error requiring `CStr()`/`Str()` | `rustc` `mismatched types` (E0308) |
+| **Non-Existent Member / Field Access** (`pt.Z`) | ⏳ In Progress | Silently returns `nullptr` without error | `rustc` `no field on type` (E0609) |
+| **`Const` Re-assignment Guard** | ✅ Implemented | Rejects assignment to constants (`Cannot assign to constant 'X'`) | `rustc` `cannot assign to immutable variable` (E0384) |
+| **SingleUse Class Multiple Instantiation** | ✅ Implemented | Rejection test: throws error if instantiated more than once | `rustc` Singleton / OnceCell invariants |
+| **Uninitialized Object Method Call** | ✅ Implemented | Rejection test: throws error if method called prior to `.Initialize` | `rustc` `use of uninitialized value` (E0381) |
+| **Missing `<Instancing(...)>` on Class** | ✅ Implemented | Rejection test: enforces Global/SingleUse/MultiUse attribute | `rustc` Attribute validation |
+| **Duplicate `New` in `Use` Statement** | ✅ Implemented | Rejection test: rejects `Use New ... As New ...` | `rustc` Syntax redundancy rejection |
+| **Strict `Unsafe` Enforcement** | ⏳ In Progress | `CPtr`, `Asm`, and raw pointer math don't require `Unsafe` declaration | `rustc` `call to unsafe function requires unsafe block` |
+| **Private Member Access from Outside** | ⏳ In Progress | Frontend does not report compile-time visibility violations | `rustc` `field is private` (E0616) |
+
+### 3. Arithmetic & Evaluation Guards
+
+| Guard Description | Current `llbc` Status | Behavior in `llbc` | Modern Compiler Equivalent (`rustc` / Clang) |
+| :--- | :---: | :--- | :--- |
+| **Constant Integer Overflow on `Dim`/`Const`/Assign** | ✅ Implemented | Rejects literals exceeding range (e.g. `Byte = 300`) | `rustc` `overflowing_literals`, `clang -Woverflow` |
+| **Compile-Time Division by Zero** (`10 / 0`) | ✅ Implemented | Rejects constant integer division and modulo by 0 at compile time | `rustc` `attempt to divide by zero` (E0080) |
+| **Shift Count Out of Range** (`x LShift 64`) | ✅ Implemented | Rejects shift count `< 0` or `>= bitWidth` at compile time | `rustc` `exceeding_bitshifts` |
+| **Constant Out-of-Bounds Array Indexing** | ✅ Implemented | Rejects constant index out of bounds for fixed-size arrays on read and write | `rustc` `index out of bounds` (E0080) |
+
+### 4. Control Flow & Interface Guards
+
+| Guard Description | Current `llbc` Status | Behavior in `llbc` | Modern Compiler Equivalent (`rustc` / Clang) |
+| :--- | :---: | :--- | :--- |
+| **Call Argument Count Mismatch (Arity)** | ⏳ In Progress | Fails in LLVM IR Verifier assertion instead of clean diagnostic | `rustc` `takes N arguments but M were supplied` (E0061) |
+| **Missing Interface Method Implementation** | ✅ Implemented | Validates that classes declaring `Implements Iface` implement all required methods | `rustc` `not all trait items implemented` (E0046) |
+| **Loop Exit Outside of Loop** (`Exit For`/`Do`) | ⏳ In Progress | Silently compiles without error | `rustc` `cannot break outside of loop` (E0268) |
+| **Missing Return Value on Function Exit** | ⏳ In Progress | Exiting function without assigning return returns 0/null | `rustc` `mismatched types / expected return value` |
+| **Unreachable / Dead Code Detection** | ⏳ In Progress | Statements after `Return`, `Exit`, or `Raise` emit unchecked IR | `rustc` `unreachable_code`, `clang -Wunreachable-code` |
+| **Enum / Result Exhaustiveness in `Match`** | ⏳ In Progress | Unhandled match arms fall through to runtime null | `rustc` `non-exhaustive patterns` (E0004) |
+
+---
+
 ## Recommended Priority Roadmap
 
 ### Phase 1: Language Completeness (Immediate) — COMPLETE ✅

@@ -252,10 +252,17 @@ static std::string compileSourceFile(
     // Inject exported symbols from all imported modules into this emitter
     for (const auto& imp : moduleAST->imports) {
         std::string impPath = resolveImportPath(imp, sourcePath);
-        if (impPath.empty()) continue;
+        if (impPath.empty()) {
+            std::string impTarget = !imp.moduleName.empty() ? imp.moduleName : imp.filePath;
+            llbc::Diagnostic::report(sourcePath, 1, 1, true, "Could not find imported module or file '" + impTarget + "'.");
+            return "";
+        }
 
         auto targetMod = getOrParseModule(impPath);
-        if (!targetMod) continue;
+        if (!targetMod) {
+            llbc::Diagnostic::report(sourcePath, 1, 1, true, "Failed to parse imported module '" + impPath + "'.");
+            return "";
+        }
 
         for (const auto& member : targetMod->members) {
             // Import Enums

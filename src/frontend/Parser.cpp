@@ -2287,6 +2287,19 @@ std::unique_ptr<StructureNode> Parser::parseStructure(bool isPacked, int alignme
         field.type.arraySize = arraySize;
         field.type.dimensions = dimensions;
 
+        if (match(TokenType::Asterisk)) {
+            if (m_currentToken.type == TokenType::NumberLiteral) {
+                try {
+                    field.bitfieldWidth = static_cast<uint32_t>(std::stoul(m_currentToken.text));
+                } catch (...) {
+                    field.bitfieldWidth = 0;
+                }
+                consume();
+            } else {
+                expect(TokenType::NumberLiteral, "Expected bit count after '*' in bitfield declaration");
+            }
+        }
+
         std::string lowerFieldName = field.name;
         for (auto& c : lowerFieldName) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
         for (const auto& existing : structNode->fields) {
@@ -2382,6 +2395,19 @@ std::unique_ptr<StructureNode> Parser::parseUnion(bool isPacked, int alignment) 
         field.type.isArray = isArray;
         field.type.arraySize = arraySize;
         field.type.dimensions = dimensions;
+
+        if (match(TokenType::Asterisk)) {
+            if (m_currentToken.type == TokenType::NumberLiteral) {
+                try {
+                    field.bitfieldWidth = static_cast<uint32_t>(std::stoul(m_currentToken.text));
+                } catch (...) {
+                    field.bitfieldWidth = 0;
+                }
+                consume();
+            } else {
+                expect(TokenType::NumberLiteral, "Expected bit count after '*' in bitfield declaration");
+            }
+        }
 
         std::string lowerFieldName = field.name;
         for (auto& c : lowerFieldName) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));

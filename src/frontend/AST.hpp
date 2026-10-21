@@ -209,6 +209,12 @@ public:
     bool isPublic{false};
 };
 
+class StaticAssertStmtNode : public ASTNode {
+public:
+    std::unique_ptr<ExprASTNode> condition;
+    std::string message;
+};
+
 class ConstStmtNode : public ASTNode {
 public:
     std::string name;
@@ -434,6 +440,7 @@ struct StructureField {
     std::string name;
     TypeSpec type;
     bool isPublic{true};
+    uint32_t bitfieldWidth{0}; // 0 = standard field; > 0 = bitfield width in bits
 };
 
 class StructureNode : public ASTNode {

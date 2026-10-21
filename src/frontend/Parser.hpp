@@ -78,6 +78,7 @@ private:
     std::unique_ptr<EnumNode> parseEnum(bool isPublic = true);
     std::unique_ptr<InterfaceNode> parseInterface(bool isPublic = true);
     std::unique_ptr<DelegateNode> parseDelegate(bool isPublic = true);
+    std::unique_ptr<StaticAssertStmtNode> parseStaticAssert();
     void parseTypeAlias();
     ImportDirective parseImportStatement();
     UseDirective parseUseStatement();

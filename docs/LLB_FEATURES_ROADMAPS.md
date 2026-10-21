@@ -291,7 +291,7 @@ Comprehensive comparison of compile-time verification in LLB against modern syst
 
 ### Phase 5: Bare-Metal Systems & Toolchain Enhancements (VB6-Idiomatic)
 
-1. **Bitfield Structure Declarations (VB6 Fixed-Length Style):**
+1. ~~**Bitfield Structure Declarations (VB6 Fixed-Length Style):**~~ — **Done** ✅
    - Syntax:
      ```vb
      <Packed>
@@ -308,14 +308,15 @@ Comprehensive comparison of compile-time verification in LLB against modern syst
          Public FrameAddress As UInt64 * 52
      End Structure
      ```
-   - Matches classic VB fixed-length syntax (`Dim s As String * 30`), making bitfields clean and natural to read.
+   - Matches classic VB fixed-length syntax (`Dim s As String * 30`), making bitfields clean and natural to read. Supported in both `Structure` and `Union` declarations.
 
-2. **Compile-Time Size & Offset Intrinsics (`SizeOf` / `OffsetOf`):**
+2. ~~**Compile-Time Size & Offset Intrinsics (`SizeOf` / `OffsetOf`):**~~ — **Done** ✅
    - Syntax:
      ```vb
      Dim structSize As UInt64 = SizeOf(IdtEntry)
      Dim fieldOffset As UInt64 = OffsetOf(IdtEntry, BaseHigh)
      ```
+   - Evaluated purely at compile-time during AST emission against LLVM DataLayout with zero runtime calculation overhead.
 
 3. ~~**Interrupt Handler Procedures (`<Interrupt>` Attribute):**~~ — **Done** ✅
    - Syntax:
@@ -338,6 +339,45 @@ Comprehensive comparison of compile-time verification in LLB against modern syst
 
 ---
 
+## I. Modern Memory Safety Evolution Roadmap & Gap Analysis
+
+While LLB enforces robust syntactic safety quarantines (`Unsafe` blocks for raw pointer casting and inline assembly), true **Modern Memory Safety** (comparable to Rust, Swift, or safe-mode Zig) requires closing specific memory layout and lifetime gaps.
+
+### 1. Safety Pillars Comparative Status
+
+| Safety Pillar | Target Standard (Rust / Zig) | Current LLB Status | Gap / Concrete Action Item |
+| :--- | :--- | :---: | :--- |
+| **Syntactic Unsafe Fencing** | `unsafe` keyword required for raw memory ops | ✅ Complete | `CPtr`, pointer arithmetic, and `Asm` are statically quarantined to `Unsafe` procedures. |
+| **Compile-Time Guards** | Mandatory return values, arity checks, undeclared symbol/type rejection | ✅ Complete | 25 compiler rejection tests pass covering undeclared types, methods, private fields, and loops. |
+| **Spatial Safety (Slices & Bounds)** | Fat pointers `[]T` (`{ptr, len}`) with checked indexing | ⏳ Roadmap (Phase 7.1) | Fixed array constant bounds are checked at compile time; runtime array and pointer indexing (`ptr(i)`) require safe slices `Slice Of T` with panic traps. |
+| **Pointer Nullability Safety** | Non-null by default; explicit `Optional Pointer To T` or `?*T` | ⏳ Roadmap (Phase 7.2) | `Result(T, E)` exists for functions, but raw `Pointer To T` can be null without mandatory unwrapping checks. |
+| **Static Assertions** | `#Assert` / `static_assert` for ABI & struct layout invariants | ⏳ Roadmap (Phase 7.3) | Parser AST node created; requires codegen constant-fold hook to validate struct sizes against target layout. |
+| **Definite Assignment** | Reject reads of uninitialized local variables | ⏳ Roadmap (Phase 7.4) | Enforced on `Use` class instances (`.Initialize`); primitives currently fallback to zero-initialization. |
+| **Temporal Safety (Lifetimes)** | Prevention of Use-After-Free / dangling references | ⏳ Roadmap (Phase 8) | Scoped cleanup (`Using ... End Using`) exists; need to restrict manual `Delete` in safe scope or introduce Arena allocators. |
+
+### 2. Implementation Action Plan
+
+#### Phase 7: Spatial & Type Safety Foundations
+1. **First-Class Safe Slices (`Slice Of T`):**
+   - Syntax:
+     ```vb
+     Dim buf As Slice Of Byte = GetBuffer()
+     Dim b As Byte = buf(0) ' In safe procedures, bounds check is emitted automatically
+     ```
+   - Lowers to LLVM `{ ptr, i64 }`. When compiling in safe mode, out-of-bounds indexing triggers `__llbc_bounds_panic` or kernel trap.
+2. **Explicit Nullability (`Pointer? To T` or `Optional Pointer To T`):**
+   - Safe pointers cannot be null. Pointers that can be null must be unwrapped using `If Not ptr Is Nothing Then ...`.
+3. **Compile-Time Static Assertions (`#Assert`):**
+   - Combine with `SizeOf` and `OffsetOf` to lock down ABI structure layouts at compile time.
+
+#### Phase 8: Temporal Safety & Allocator Architecture
+1. **Arena / Region Allocators (`Arena` Subsystem):**
+   - Provide standard freestanding arena allocators for microkernel and driver initialization, avoiding use-after-free and memory fragmentation without garbage collection.
+2. **Move Semantics & Linear Types:**
+   - Enforce single ownership on disposable resources wrapped in `Using ... End Using`.
+
+---
+
 ### Phase 6: Temporary Discussion & Review Roadmap (For Next Review)
 
 1. **Standard Library Packaging Model:**
@@ -348,6 +388,7 @@ Comprehensive comparison of compile-time verification in LLB against modern syst
    - Bundled target architectures (`x86_64-kernel`, `aarch64-rpi4`, `riscv64-virt`) in `.llbproj`.
 4. **Standard String & Type Inspection Intrinsics:**
    - Built-in freestanding runtime helpers (`IsNumericString(s)`, `IsAlpha(s)`, `IsWhitespace(s)`).
+
 
 
 

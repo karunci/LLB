@@ -25,6 +25,9 @@
 18. [Freestanding Systems & Microkernel Runtime Model](#18-freestanding-systems--microkernel-runtime-model)
 19. [Compile-Time Safety & Diagnostics Guards](#19-compile-time-safety--diagnostics-guards)
 20. [Delegates & Function Pointer Types](#20-delegates--function-pointer-types)
+21. [Bitfield Declarations in Structures & Unions](#21-bitfield-declarations-in-structures--unions)
+22. [Compile-Time Layout Intrinsics (`SizeOf` & `OffsetOf`)](#22-compile-time-layout-intrinsics-sizeof--offsetof)
+23. [Bare-Metal Interrupt Handlers (`<Interrupt>`)](#23-bare-metal-interrupt-handlers-interrupt)
 
 ---
 
@@ -822,5 +825,66 @@ End Sub
 ```
 
 Delegates compile directly to LLVM function pointer types (`ptr`) with zero runtime abstraction overhead.
+
+---
+
+## 21. Bitfield Declarations in Structures & Unions
+
+Structures and Unions can specify explicit bitfield widths using classic BASIC fixed-length notation (`* Bits`):
+
+```vb
+<Packed>
+Structure PageTableEntry
+    Public Present         As Byte * 1
+    Public Writable        As Byte * 1
+    Public UserAccessible  As Byte * 1
+    Public WriteThrough    As Byte * 1
+    Public CacheDisabled   As Byte * 1
+    Public Accessed        As Byte * 1
+    Public Dirty           As Byte * 1
+    Public HugePage        As Byte * 1
+    Public Reserved        As Byte * 4
+    Public FrameAddress    As UInt64 * 52
+End Structure
+```
+
+Bitfield width specifications allow zero-overhead, direct hardware register mapping for MMIO peripherals, descriptor tables, and hardware page tables without manual bit-shifting or mask boilerplate.
+
+---
+
+## 22. Compile-Time Layout Intrinsics (`SizeOf` & `OffsetOf`)
+
+LLB provides zero-overhead compile-time layout intrinsics evaluated directly against the target architecture's DataLayout:
+
+- **`SizeOf(T)`**: Evaluates to the exact size of type or structure `T` in bytes as a compile-time constant `UInt64`.
+- **`OffsetOf(T, Field)`**: Evaluates to the byte offset of `Field` within structure `T` as a compile-time constant `UInt64`.
+
+```vb
+' Compile-time static constants
+Dim idtSize As UInt64 = SizeOf(IdtEntry)
+Dim baseHighOffset As UInt64 = OffsetOf(IdtEntry, BaseHigh)
+
+' Inlined directly without runtime function calls or overhead
+```
+
+---
+
+## 23. Bare-Metal Interrupt Handlers (`<Interrupt>`)
+
+For bare-metal microkernels and freestanding OS development, procedures handling CPU exceptions and hardware IRQs can be decorated with the `<Interrupt>` attribute:
+
+```vb
+<Interrupt>
+Public Unsafe Sub KeyboardInterruptHandler(ByVal frame As Pointer To InterruptStackFrame)
+    ' Handler code
+    Drivers.Keyboard.HandleScancode
+End Sub
+```
+
+### Compiler Invariants:
+1. **Calling Convention:** Compiles to the target architecture's native interrupt calling convention (`x86_intr` on x86_64).
+2. **Register Preservation:** Automatically pushes and restores all general-purpose registers (including scratch registers) across the call.
+3. **Hardware Return:** Automatically terminates with the native interrupt return instruction (`iretq` on x86_64) instead of standard procedure return (`ret`).
+
 
 

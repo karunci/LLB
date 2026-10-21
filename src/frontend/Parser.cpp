@@ -664,7 +664,9 @@ std::unique_ptr<ForStmtNode> Parser::parseForStatement() {
         forNode->stepExpr = parseExpression();
     }
 
+    m_forDepth++;
     forNode->body = parseStatementBlock({"Next"});
+    m_forDepth--;
 
     if (m_currentToken.type == TokenType::KwNext || checkKeyword("Next")) {
         consume();
@@ -692,7 +694,9 @@ std::unique_ptr<ForEachStmtNode> Parser::parseForEachStatement() {
 
     forEachNode->collectionExpr = parseExpression();
 
+    m_forDepth++;
     forEachNode->body = parseStatementBlock({"Next"});
+    m_forDepth--;
 
     if (m_currentToken.type == TokenType::KwNext || checkKeyword("Next")) {
         consume();
@@ -720,7 +724,9 @@ std::unique_ptr<DoLoopStmtNode> Parser::parseDoLoopStatement() {
         doNode->loopType = DoLoopStmtNode::LoopType::Infinite;
     }
 
+    m_doDepth++;
     doNode->body = parseStatementBlock({"Loop"});
+    m_doDepth--;
 
     if (m_currentToken.type == TokenType::KwLoop || checkKeyword("Loop")) {
         consume();
@@ -742,7 +748,9 @@ std::unique_ptr<WhileStmtNode> Parser::parseWhileStatement() {
     auto whileNode = std::make_unique<WhileStmtNode>();
     whileNode->condition = parseExpression();
 
+    m_whileDepth++;
     whileNode->body = parseStatementBlock({"Wend"});
+    m_whileDepth--;
 
     if (m_currentToken.type == TokenType::KwWend || checkKeyword("Wend")) {
         consume();
@@ -761,14 +769,23 @@ std::unique_ptr<ExitStmtNode> Parser::parseExitStatement() {
         return std::make_unique<ExitStmtNode>(ExitStmtNode::ExitKind::Function);
     }
     if (m_currentToken.type == TokenType::KwFor || checkKeyword("For")) {
+        if (m_forDepth == 0) {
+            throw std::runtime_error("'Exit For' statement not within 'For' loop");
+        }
         consume();
         return std::make_unique<ExitStmtNode>(ExitStmtNode::ExitKind::For);
     }
     if (m_currentToken.type == TokenType::KwDo || checkKeyword("Do")) {
+        if (m_doDepth == 0) {
+            throw std::runtime_error("'Exit Do' statement not within 'Do' loop");
+        }
         consume();
         return std::make_unique<ExitStmtNode>(ExitStmtNode::ExitKind::Do);
     }
     if (m_currentToken.type == TokenType::KwWhile || checkKeyword("While")) {
+        if (m_whileDepth == 0) {
+            throw std::runtime_error("'Exit While' statement not within 'While' loop");
+        }
         consume();
         return std::make_unique<ExitStmtNode>(ExitStmtNode::ExitKind::While);
     }
@@ -2245,6 +2262,16 @@ std::unique_ptr<StructureNode> Parser::parseStructure(bool isPacked, int alignme
         field.type.isArray = isArray;
         field.type.arraySize = arraySize;
         field.type.dimensions = dimensions;
+
+        std::string lowerFieldName = field.name;
+        for (auto& c : lowerFieldName) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        for (const auto& existing : structNode->fields) {
+            std::string existingLower = existing.name;
+            for (auto& c : existingLower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            if (existingLower == lowerFieldName) {
+                throw std::runtime_error("Duplicate field '" + field.name + "' in structure '" + structNode->name + "'");
+            }
+        }
         structNode->fields.push_back(field);
     }
 
@@ -2331,6 +2358,16 @@ std::unique_ptr<StructureNode> Parser::parseUnion(bool isPacked, int alignment) 
         field.type.isArray = isArray;
         field.type.arraySize = arraySize;
         field.type.dimensions = dimensions;
+
+        std::string lowerFieldName = field.name;
+        for (auto& c : lowerFieldName) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        for (const auto& existing : unionNode->fields) {
+            std::string existingLower = existing.name;
+            for (auto& c : existingLower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            if (existingLower == lowerFieldName) {
+                throw std::runtime_error("Duplicate field '" + field.name + "' in union '" + unionNode->name + "'");
+            }
+        }
         unionNode->fields.push_back(field);
     }
 
@@ -2383,6 +2420,16 @@ std::unique_ptr<EnumNode> Parser::parseEnum(bool isPublic) {
             }
         } else {
             member.value = nextValue++;
+        }
+
+        std::string lowerMemberName = member.name;
+        for (auto& c : lowerMemberName) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        for (const auto& existing : enumNode->members) {
+            std::string existingLower = existing.name;
+            for (auto& c : existingLower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            if (existingLower == lowerMemberName) {
+                throw std::runtime_error("Duplicate member '" + member.name + "' in enum '" + enumNode->name + "'");
+            }
         }
 
         enumNode->members.push_back(member);
@@ -2524,6 +2571,7 @@ std::unique_ptr<ModuleNode> Parser::parseModule() {
         expect(TokenType::Identifier, "Expected identifier after '.' in module/class name");
     }
     moduleNode->name = modName;
+    m_definedProcedures.clear();
 
     while (m_currentToken.type != TokenType::Eof) {
         while (match(TokenType::Colon)) {}
@@ -2760,6 +2808,15 @@ std::unique_ptr<ModuleNode> Parser::parseModule() {
 
             // Procedure (Sub / Function / Property / Declare / Unsafe)
             auto proc = parseProcedure(isPub, isInline, isNoReturn, isExport);
+            std::string procKey = proc->name;
+            if (proc->propertyKind == ProcedureNode::PropertyKind::Get) procKey += ":Get";
+            else if (proc->propertyKind == ProcedureNode::PropertyKind::Let || proc->propertyKind == ProcedureNode::PropertyKind::Set) procKey += ":Set";
+            std::string procKeyLower = procKey;
+            for (auto& c : procKeyLower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            if (m_definedProcedures.count(procKeyLower)) {
+                throw std::runtime_error("Duplicate procedure definition '" + proc->name + "' in " + (moduleNode->isClass ? "class '" : "module '") + moduleNode->name + "'");
+            }
+            m_definedProcedures.insert(procKeyLower);
             moduleNode->members.push_back(std::move(proc));
             continue;
         }
@@ -2769,7 +2826,17 @@ std::unique_ptr<ModuleNode> Parser::parseModule() {
             m_currentToken.type == TokenType::KwProperty || checkKeyword("Property") ||
             m_currentToken.type == TokenType::KwUnsafe || checkKeyword("Unsafe") ||
             m_currentToken.type == TokenType::KwDeclare || checkKeyword("Declare")) {
-            moduleNode->members.push_back(parseProcedure(true, isInline, isNoReturn, isExport));
+            auto proc = parseProcedure(true, isInline, isNoReturn, isExport);
+            std::string procKey = proc->name;
+            if (proc->propertyKind == ProcedureNode::PropertyKind::Get) procKey += ":Get";
+            else if (proc->propertyKind == ProcedureNode::PropertyKind::Let || proc->propertyKind == ProcedureNode::PropertyKind::Set) procKey += ":Set";
+            std::string procKeyLower = procKey;
+            for (auto& c : procKeyLower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            if (m_definedProcedures.count(procKeyLower)) {
+                throw std::runtime_error("Duplicate procedure definition '" + proc->name + "' in " + (moduleNode->isClass ? "class '" : "module '") + moduleNode->name + "'");
+            }
+            m_definedProcedures.insert(procKeyLower);
+            moduleNode->members.push_back(std::move(proc));
             continue;
         }
 

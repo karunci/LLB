@@ -204,9 +204,9 @@ Comprehensive comparison of compile-time verification in LLB against modern syst
 | **Missing Module / Import File** | ✅ Implemented | Driver halts compilation and reports missing imported file path | `rustc` `file not found for module` (E0583) |
 | **Undeclared Interface in `Implements`** | ⏳ In Progress | Parsed into AST array but never checked or validated | `rustc` `cannot find trait in this scope` (E0405) |
 | **Duplicate Variable in Same Local Scope** | ✅ Implemented | Rejects duplicate `Dim` declaration in the same local procedure scope | `rustc` `the name is defined multiple times` (E0428) |
-| **Duplicate Procedure in Same Module** | ⏳ In Progress | Emits duplicate function symbol or silently overwrites prototype | `rustc` `duplicate definition of item` (E0428) |
-| **Duplicate Field in `Structure`** | ⏳ In Progress | Struct accepts identical field names and silently overrides index | `rustc` `field is already declared` (E0124) |
-| **Duplicate Enum Member Constant** | ⏳ In Progress | Later enum member silently overwrites earlier value in map | `rustc` `discriminant value is already defined` |
+| **Duplicate Procedure in Same Module** | ✅ Implemented | Rejects duplicate procedure definitions with clean compile-time error | `rustc` `duplicate definition of item` (E0428) |
+| **Duplicate Field in `Structure`** | ✅ Implemented | Rejects duplicate field names in structures and unions | `rustc` `field is already declared` (E0124) |
+| **Duplicate Enum Member Constant** | ✅ Implemented | Rejects duplicate member names within enum declarations | `rustc` `discriminant value is already defined` |
 | **Undefined Label in `GoTo Label`** | ⏳ In Progress | Crashes LLVM IR Verifier (`Basic Block has no terminator`) | `clang` `use of undeclared label` |
 
 ### 2. Type Checking, Safety & Mutability Guards
@@ -214,7 +214,7 @@ Comprehensive comparison of compile-time verification in LLB against modern syst
 | Guard Description | Current `llbc` Status | Behavior in `llbc` | Modern Compiler Equivalent (`rustc` / Clang) |
 | :--- | :---: | :--- | :--- |
 | **String Intrinsics Type Mismatch** (`Trim(123)`) | ✅ Implemented | Reports explicit compile error requiring `CStr()`/`Str()` | `rustc` `mismatched types` (E0308) |
-| **Non-Existent Member / Field Access** (`pt.Z`) | ⏳ In Progress | Silently returns `nullptr` without error | `rustc` `no field on type` (E0609) |
+| **Non-Existent Member / Field Access** (`pt.Z`) | ✅ Implemented | Reports compile-time error with line and column caret when member does not exist | `rustc` `no field on type` (E0609) |
 | **`Const` Re-assignment Guard** | ✅ Implemented | Rejects assignment to constants (`Cannot assign to constant 'X'`) | `rustc` `cannot assign to immutable variable` (E0384) |
 | **SingleUse Class Multiple Instantiation** | ✅ Implemented | Rejection test: throws error if instantiated more than once | `rustc` Singleton / OnceCell invariants |
 | **Uninitialized Object Method Call** | ✅ Implemented | Rejection test: throws error if method called prior to `.Initialize` | `rustc` `use of uninitialized value` (E0381) |
@@ -236,9 +236,9 @@ Comprehensive comparison of compile-time verification in LLB against modern syst
 
 | Guard Description | Current `llbc` Status | Behavior in `llbc` | Modern Compiler Equivalent (`rustc` / Clang) |
 | :--- | :---: | :--- | :--- |
-| **Call Argument Count Mismatch (Arity)** | ⏳ In Progress | Fails in LLVM IR Verifier assertion instead of clean diagnostic | `rustc` `takes N arguments but M were supplied` (E0061) |
+| **Call Argument Count Mismatch (Arity)** | ✅ Implemented | Validates exact parameter count before emitting call, reporting clear error diagnostic | `rustc` `takes N arguments but M were supplied` (E0061) |
 | **Missing Interface Method Implementation** | ✅ Implemented | Validates that classes declaring `Implements Iface` implement all required methods | `rustc` `not all trait items implemented` (E0046) |
-| **Loop Exit Outside of Loop** (`Exit For`/`Do`) | ⏳ In Progress | Silently compiles without error | `rustc` `cannot break outside of loop` (E0268) |
+| **Loop Exit Outside of Loop** (`Exit For`/`Do`/`While`) | ✅ Implemented | Rejects `Exit For`, `Exit Do`, or `Exit While` outside their respective loop scopes | `rustc` `cannot break outside of loop` (E0268) |
 | **Missing Return Value on Function Exit** | ⏳ In Progress | Exiting function without assigning return returns 0/null | `rustc` `mismatched types / expected return value` |
 | **Unreachable / Dead Code Detection** | ⏳ In Progress | Statements after `Return`, `Exit`, or `Raise` emit unchecked IR | `rustc` `unreachable_code`, `clang -Wunreachable-code` |
 | **Enum / Result Exhaustiveness in `Match`** | ⏳ In Progress | Unhandled match arms fall through to runtime null | `rustc` `non-exhaustive patterns` (E0004) |

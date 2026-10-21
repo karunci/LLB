@@ -211,6 +211,113 @@ else
     ERR_COUNT=$((ERR_COUNT + 1))
 fi
 
+# 13. Call argument count mismatch (arity)
+cat << 'CODE' > "$BUILD_DIR/bad_call_arity.bas"
+Module TestArity
+    Public Sub Add(a As Int32, b As Int32)
+    End Sub
+    Public Sub Main()
+        Add 1
+    End Sub
+End Module
+CODE
+$LLBC "$BUILD_DIR/bad_call_arity.bas" 2>&1 | grep -q "expects 2 argument(s), but 1 were supplied"
+if [ $? -eq 0 ]; then
+    echo "[PASS] Rejection 13: Call argument count mismatch correctly rejected"
+else
+    echo "[FAIL] Rejection 13: Call argument count mismatch not rejected"
+    ERR_COUNT=$((ERR_COUNT + 1))
+fi
+
+# 14. Exit For outside of loop
+cat << 'CODE' > "$BUILD_DIR/bad_exit_for.bas"
+Module TestExitFor
+    Public Sub Main()
+        Exit For
+    End Sub
+End Module
+CODE
+$LLBC "$BUILD_DIR/bad_exit_for.bas" 2>&1 | grep -q "'Exit For' statement not within 'For' loop"
+if [ $? -eq 0 ]; then
+    echo "[PASS] Rejection 14: 'Exit For' outside loop correctly rejected"
+else
+    echo "[FAIL] Rejection 14: 'Exit For' outside loop not rejected"
+    ERR_COUNT=$((ERR_COUNT + 1))
+fi
+
+# 15. Non-existent struct member access
+cat << 'CODE' > "$BUILD_DIR/bad_no_member.bas"
+Module TestNoMember
+    Public Structure Point
+        Public X As Int32
+        Public Y As Int32
+    End Structure
+    Public Sub Main()
+        Dim pt As Point
+        Dim z As Int32
+        z = pt.NonExistentField
+    End Sub
+End Module
+CODE
+$LLBC "$BUILD_DIR/bad_no_member.bas" 2>&1 | grep -q "Type has no member named 'NonExistentField'"
+if [ $? -eq 0 ]; then
+    echo "[PASS] Rejection 15: Non-existent structure member access correctly rejected"
+else
+    echo "[FAIL] Rejection 15: Non-existent structure member access not rejected"
+    ERR_COUNT=$((ERR_COUNT + 1))
+fi
+
+# 16. Duplicate procedure definition in same module
+cat << 'CODE' > "$BUILD_DIR/bad_dup_proc.bas"
+Module TestDupProc
+    Public Sub Compute()
+    End Sub
+    Public Sub Compute()
+    End Sub
+End Module
+CODE
+$LLBC "$BUILD_DIR/bad_dup_proc.bas" 2>&1 | grep -q "Duplicate procedure definition 'Compute'"
+if [ $? -eq 0 ]; then
+    echo "[PASS] Rejection 16: Duplicate procedure definition correctly rejected"
+else
+    echo "[FAIL] Rejection 16: Duplicate procedure definition not rejected"
+    ERR_COUNT=$((ERR_COUNT + 1))
+fi
+
+# 17. Duplicate field in structure
+cat << 'CODE' > "$BUILD_DIR/bad_dup_field.bas"
+Module TestDupField
+    Public Structure Point
+        Public X As Int32
+        Public X As Int32
+    End Structure
+End Module
+CODE
+$LLBC "$BUILD_DIR/bad_dup_field.bas" 2>&1 | grep -q "Duplicate field 'X' in structure 'Point'"
+if [ $? -eq 0 ]; then
+    echo "[PASS] Rejection 17: Duplicate field in structure correctly rejected"
+else
+    echo "[FAIL] Rejection 17: Duplicate field in structure not rejected"
+    ERR_COUNT=$((ERR_COUNT + 1))
+fi
+
+# 18. Duplicate member in enum
+cat << 'CODE' > "$BUILD_DIR/bad_dup_enum.bas"
+Module TestDupEnum
+    Public Enum Colors
+        Red = 1
+        Red = 2
+    End Enum
+End Module
+CODE
+$LLBC "$BUILD_DIR/bad_dup_enum.bas" 2>&1 | grep -q "Duplicate member 'Red' in enum 'Colors'"
+if [ $? -eq 0 ]; then
+    echo "[PASS] Rejection 18: Duplicate enum member correctly rejected"
+else
+    echo "[FAIL] Rejection 18: Duplicate enum member not rejected"
+    ERR_COUNT=$((ERR_COUNT + 1))
+fi
+
 # Clean up temp files (sources in cwd, objects in build/)
 rm -f bad_uninit.bas bad_multi_singleuse.bas \
       bad_uninit.o bad_multi_singleuse.o \

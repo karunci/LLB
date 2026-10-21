@@ -15,6 +15,7 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace llbc {
 
@@ -61,6 +62,10 @@ private:
     bool matchKeyword(const std::string& kw);
 
     size_t m_withDepth{0};
+    size_t m_forDepth{0};
+    size_t m_doDepth{0};
+    size_t m_whileDepth{0};
+    std::unordered_set<std::string> m_definedProcedures;
 
     // Types
     TypeSpec parseTypeSpec();

@@ -3597,6 +3597,12 @@ void LlvmEmitter::emitAssignStatement(const AssignStmtNode& assignNode) {
                     return;
                 }
             }
+
+            Diagnostic::report(m_sourceFilePath, member->line > 0 ? member->line : m_currentLine,
+                               member->column > 0 ? member->column : m_currentCol,
+                               true, "Type has no member named '" + member->memberName + "'.", m_sourceText);
+            m_hadError = true;
+            return;
         }
         return;
     }
@@ -5077,6 +5083,12 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
                     return m_builder->CreateCall(getFn, {}, "propget");
                 }
             }
+
+            Diagnostic::report(m_sourceFilePath, member->line > 0 ? member->line : m_currentLine,
+                               member->column > 0 ? member->column : m_currentCol,
+                               true, "Type has no member named '" + member->memberName + "'.", m_sourceText);
+            m_hadError = true;
+            return nullptr;
         }
         return nullptr;
     }
@@ -6384,10 +6396,11 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
             while (args.size() < callee->getFunctionType()->getNumParams() && args.size() < defVec.size()) {
                 size_t paramIdx = args.size();
                 ExprASTNode* defExpr = defVec[paramIdx];
-                llvm::Value* defVal = nullptr;
-                if (defExpr) {
-                    defVal = emitExpression(defExpr);
+                if (!defExpr) {
+                    // This parameter is required (not optional) - do not invent default argument
+                    break;
                 }
+                llvm::Value* defVal = emitExpression(defExpr);
                 if (!defVal) {
                     llvm::Type* pTy = callee->getFunctionType()->getParamType(paramIdx);
                     if (pTy->isFloatingPointTy()) {
@@ -6401,6 +6414,19 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
                     defVal = coerceType(defVal, callee->getFunctionType()->getParamType(paramIdx));
                 }
                 args.push_back(defVal);
+            }
+        }
+
+        if (!callee->isVarArg()) {
+            size_t expectedParams = callee->getFunctionType()->getNumParams();
+            if (args.size() != expectedParams) {
+                Diagnostic::report(m_sourceFilePath, call->line > 0 ? call->line : m_currentLine,
+                                   call->column > 0 ? call->column : m_currentCol,
+                                   true, "Procedure '" + targetFuncName + "' expects " +
+                                   std::to_string(expectedParams) + " argument(s), but " +
+                                   std::to_string(args.size()) + " were supplied.", m_sourceText);
+                m_hadError = true;
+                return nullptr;
             }
         }
 

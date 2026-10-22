@@ -3,7 +3,7 @@
 # Summary: Stage-0 C++ build file linking complete LLVM target set and LLD drivers.
 
 cmake_minimum_required(VERSION 3.18)
-project(llbc_stage0 CXX)
+project(llbc_stage0 C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

@@ -191,6 +191,73 @@ The compiler driver `llbc-stage0` compiles single files or `.llbproj` project ma
 
 ---
 
+## 🔧 Building from Source
+
+### Primary Build Environment
+
+This project is primarily developed and compiled on **Termux (Android)** using the following toolchain:
+
+| Component | Version |
+|-----------|---------|
+| Platform  | Termux on Android (AArch64) |
+| Compiler  | Clang / Clang++ |
+| Build system | CMake + Make |
+| Backend  | LLVM 21 + LLD |
+
+```bash
+# Termux packages
+pkg install clang llvm lld cmake make
+```
+
+### Building on Other Host Systems
+
+> [!IMPORTANT]
+> CMake requires **both C and C++** languages to be enabled (for LLVM's internal `FindLibEdit` probe). This is already set correctly in `CMakeLists.txt` — if you hit the `"Unknown extension .c"` error, make sure you are using the latest `CMakeLists.txt` from this repo.
+
+#### Debian / Ubuntu
+```bash
+sudo apt install build-essential cmake clang llvm-dev liblld-dev libedit-dev
+```
+
+#### Arch Linux
+```bash
+sudo pacman -S base-devel cmake clang llvm lld libedit
+```
+
+#### Fedora / RHEL
+```bash
+sudo dnf install gcc gcc-c++ cmake clang llvm-devel lld libedit-devel
+```
+
+#### macOS (Homebrew)
+```bash
+brew install cmake llvm lld libedit
+# Homebrew LLVM is keg-only; point CMake to it:
+export PATH="$(brew --prefix llvm)/bin:$PATH"
+export LDFLAGS="-L$(brew --prefix llvm)/lib"
+export CPPFLAGS="-I$(brew --prefix llvm)/include"
+```
+
+#### NixOS / nix-shell
+```bash
+nix-shell -p cmake clang llvm lld libedit
+```
+
+### Build Steps (all platforms)
+```bash
+git clone https://github.com/karunci/LLB.git
+cd LLB/llbc
+
+mkdir build && cd build
+cmake ..
+cmake --build . -j$(nproc)   # or: make -j$(nproc)
+
+# The compiler binary will be at:
+./build/llbc-stage0   # (or ./build/llbc symlink)
+```
+
+---
+
 ## 📖 Complete Documentation
 
 Comprehensive documentation, full language grammar, type specifications, FFI rules, and bare-metal kernel references are available in the [`docs/`](docs/) directory:

@@ -149,6 +149,15 @@ static std::string resolveImportPath(const llbc::ImportDirective& imp, const std
             imp.moduleName + ".bas", imp.moduleName + ".cls",
             lowerMod + ".bas", lowerMod + ".cls"
         };
+        size_t dotPos = imp.moduleName.rfind('.');
+        if (dotPos != std::string::npos && dotPos + 1 < imp.moduleName.size()) {
+            std::string tail = imp.moduleName.substr(dotPos + 1);
+            std::string lowerTail = toLowerStr(tail);
+            candidates.push_back(tail + ".bas");
+            candidates.push_back(tail + ".cls");
+            candidates.push_back(lowerTail + ".bas");
+            candidates.push_back(lowerTail + ".cls");
+        }
 
         fs::path currentDir = fs::path(currentFilePath).parent_path();
         for (const auto& cand : candidates) {
@@ -188,7 +197,52 @@ static std::shared_ptr<llbc::ModuleNode> getOrParseModule(const std::string& sou
     if (mod) {
         mod->sourceFilePath = sourcePath;
         g_parsedModules[sourcePath] = mod;
-        g_moduleFileIndex[toLowerStr(mod->name)] = sourcePath;
+
+        std::string modNameLower = toLowerStr(mod->name);
+        g_moduleFileIndex[modNameLower] = sourcePath;
+
+        // Also index short name if dotted (e.g. "Gdt" for "Arch.X86_64.Gdt")
+        size_t lastDot = modNameLower.rfind('.');
+        if (lastDot != std::string::npos && lastDot + 1 < modNameLower.size()) {
+            std::string shortName = modNameLower.substr(lastDot + 1);
+            if (g_moduleFileIndex.find(shortName) == g_moduleFileIndex.end()) {
+                g_moduleFileIndex[shortName] = sourcePath;
+            }
+        }
+        // Also index namespace prefix if applicable (e.g. "Arch.X86_64")
+        if (lastDot != std::string::npos) {
+            std::string nsPrefix = modNameLower.substr(0, lastDot);
+            if (g_moduleFileIndex.find(nsPrefix) == g_moduleFileIndex.end()) {
+                g_moduleFileIndex[nsPrefix] = sourcePath;
+            }
+        }
+
+        std::function<void(const std::shared_ptr<llbc::ModuleNode>&)> indexInner = [&](const std::shared_ptr<llbc::ModuleNode>& m) {
+            if (!m) return;
+            for (const auto& member : m->members) {
+                if (auto iface = dynamic_cast<const llbc::InterfaceNode*>(member.get())) {
+                    std::string ifLower = toLowerStr(iface->name);
+                    g_moduleFileIndex[ifLower] = sourcePath;
+                    if (!m->name.empty() && ifLower.find('.') == std::string::npos) {
+                        g_moduleFileIndex[toLowerStr(m->name + "." + iface->name)] = sourcePath;
+                    }
+                }
+            }
+            for (const auto& inMod : m->innerModules) {
+                if (!inMod) continue;
+                std::string inLower = toLowerStr(inMod->name);
+                g_moduleFileIndex[inLower] = sourcePath;
+                size_t d = inLower.rfind('.');
+                if (d != std::string::npos && d + 1 < inLower.size()) {
+                    std::string sName = inLower.substr(d + 1);
+                    if (g_moduleFileIndex.find(sName) == g_moduleFileIndex.end()) {
+                        g_moduleFileIndex[sName] = sourcePath;
+                    }
+                }
+                indexInner(inMod);
+            }
+        };
+        indexInner(mod);
     }
     return mod;
 }
@@ -249,16 +303,31 @@ static std::string compileSourceFile(
 
     llbc::LlvmEmitter irEmitter(moduleAST->name, enableDebugInfo, targetTriple);
 
-    // Pre-register all interfaces and delegates discovered across the compilation unit
-    for (const auto& pair : g_parsedModules) {
-        if (!pair.second) continue;
-        for (const auto& member : pair.second->members) {
+    // Pre-register all interfaces, delegates, structures, and enums discovered across the compilation unit
+    std::function<void(const std::shared_ptr<llbc::ModuleNode>&)> preRegisterAll = [&](const std::shared_ptr<llbc::ModuleNode>& m) {
+        if (!m) return;
+        for (const auto& member : m->members) {
             if (auto iface = dynamic_cast<const llbc::InterfaceNode*>(member.get())) {
                 irEmitter.emitInterface(*iface);
             } else if (auto del = dynamic_cast<const llbc::DelegateNode*>(member.get())) {
                 irEmitter.emitDelegate(*del);
+            } else if (auto st = dynamic_cast<const llbc::StructureNode*>(member.get())) {
+                irEmitter.emitStructure(*st);
+                if (!m->name.empty()) {
+                    llbc::StructureNode qualSt = *st;
+                    qualSt.name = m->name + "." + st->name;
+                    irEmitter.emitStructure(qualSt);
+                }
+            } else if (auto en = dynamic_cast<const llbc::EnumNode*>(member.get())) {
+                irEmitter.emitEnum(*en);
             }
         }
+        for (const auto& inMod : m->innerModules) {
+            preRegisterAll(inMod);
+        }
+    };
+    for (const auto& pair : g_parsedModules) {
+        preRegisterAll(pair.second);
     }
 
     // Inject exported symbols from all imported modules into this emitter
@@ -276,78 +345,128 @@ static std::string compileSourceFile(
             return "";
         }
 
-        for (const auto& member : targetMod->members) {
-            // Import Enums
-            if (auto en = dynamic_cast<const llbc::EnumNode*>(member.get())) {
-                if (en->isPublic && (imp.symbolName.empty() || imp.symbolName == en->name)) {
-                    irEmitter.emitEnum(*en);
-                }
+        std::vector<std::shared_ptr<llbc::ModuleNode>> targetList;
+        std::function<void(const std::shared_ptr<llbc::ModuleNode>&)> collectTargets = [&](const std::shared_ptr<llbc::ModuleNode>& m) {
+            if (!m) return;
+            targetList.push_back(m);
+            for (const auto& inMod : m->innerModules) {
+                collectTargets(inMod);
             }
-            // Import Structures & Unions
-            else if (auto st = dynamic_cast<const llbc::StructureNode*>(member.get())) {
-                if (imp.symbolName.empty() || imp.symbolName == st->name) {
-                    irEmitter.emitStructure(*st);
-                    if (!targetMod->name.empty()) {
-                        llbc::StructureNode qualSt = *st;
-                        qualSt.name = targetMod->name + "." + st->name;
-                        irEmitter.emitStructure(qualSt);
-                    }
-                    if (!imp.moduleName.empty() && imp.moduleName != targetMod->name) {
-                        llbc::StructureNode qualSt = *st;
-                        qualSt.name = imp.moduleName + "." + st->name;
-                        irEmitter.emitStructure(qualSt);
-                    }
-                }
-            }
-            // Import Constants
-            else if (auto c = dynamic_cast<const llbc::ConstStmtNode*>(member.get())) {
-                if (c->isPublic && (imp.symbolName.empty() || imp.symbolName == c->name)) {
-                    std::string pref = !imp.moduleName.empty() ? imp.moduleName : targetMod->name;
-                    irEmitter.declareConstant(*c, pref);
-                }
-            }
-            // Import Procedures (Public Functions & Subs)
-            else if (auto proc = dynamic_cast<const llbc::ProcedureNode*>(member.get())) {
-                if (proc->isPublic) {
-                    bool matchSymbol = imp.symbolName.empty() || imp.symbolName == proc->name;
-                    if (matchSymbol) {
-                        std::vector<llbc::TypeSpec> pTypes;
-                        for (const auto& p : proc->parameters) {
-                            llbc::TypeSpec pt = p.type;
-                            if (p.isByRef) pt.pointerDepth++;
-                            pTypes.push_back(pt);
-                        }
-                        llbc::TypeSpec retType = proc->isFunction ? proc->returnType : llbc::TypeSpec{"void"};
+        };
 
-                        std::vector<llbc::ExprASTNode*> defExprs;
-                        std::vector<bool> paramByRefs;
-                        for (const auto& p : proc->parameters) {
-                            defExprs.push_back(p.defaultValue.get());
-                            paramByRefs.push_back(p.isByRef);
-                        }
+        std::shared_ptr<llbc::ModuleNode> specificChild = nullptr;
+        std::function<void(const std::shared_ptr<llbc::ModuleNode>&)> findChild = [&](const std::shared_ptr<llbc::ModuleNode>& m) {
+            if (!m || specificChild) return;
+            if (toLowerStr(m->name) == toLowerStr(imp.moduleName)) {
+                specificChild = m;
+                return;
+            }
+            for (const auto& inMod : m->innerModules) {
+                findChild(inMod);
+            }
+        };
+        if (!imp.moduleName.empty() && toLowerStr(targetMod->name) != toLowerStr(imp.moduleName)) {
+            findChild(targetMod);
+        }
+        if (specificChild) {
+            collectTargets(specificChild);
+        } else {
+            collectTargets(targetMod);
+        }
 
-                        // If the procedure comes from a dotted module (e.g., Drivers.Terminal),
-                        // its mangled symbol in the object file is ModulePrefix_ProcName (e.g. Drivers_Terminal_Initialize).
-                        std::string targetPrefix = "";
-                        if (targetMod->name.find('.') != std::string::npos) {
-                            targetPrefix = targetMod->name;
-                            for (auto& ch : targetPrefix) {
-                                if (ch == '.') ch = '_';
+        for (const auto& curMod : targetList) {
+            if (curMod->isClass) {
+                irEmitter.registerClassInstancing(curMod->name, curMod->instancing);
+                if (!imp.moduleName.empty() && imp.moduleName == curMod->name) {
+                    irEmitter.registerClassInstancing(imp.moduleName, curMod->instancing);
+                }
+                llbc::StructureNode classStruct;
+                classStruct.name = curMod->name;
+                for (const auto& m : curMod->members) {
+                    if (auto dim = dynamic_cast<const llbc::DimStmtNode*>(m.get())) {
+                        llbc::StructureField f;
+                        f.name = dim->varName;
+                        f.type = dim->type;
+                        classStruct.fields.push_back(f);
+                    }
+                }
+                irEmitter.emitStructure(classStruct);
+                if (!imp.moduleName.empty() && imp.moduleName != curMod->name && imp.moduleName == curMod->name) {
+                    classStruct.name = imp.moduleName;
+                    irEmitter.emitStructure(classStruct);
+                }
+            }
+
+            for (const auto& member : curMod->members) {
+                // Import Enums
+                if (auto en = dynamic_cast<const llbc::EnumNode*>(member.get())) {
+                    if (en->isPublic && (imp.symbolName.empty() || imp.symbolName == en->name)) {
+                        irEmitter.emitEnum(*en);
+                    }
+                }
+                // Import Structures & Unions
+                else if (auto st = dynamic_cast<const llbc::StructureNode*>(member.get())) {
+                    if (imp.symbolName.empty() || imp.symbolName == st->name) {
+                        irEmitter.emitStructure(*st);
+                        if (!curMod->name.empty()) {
+                            llbc::StructureNode qualSt = *st;
+                            qualSt.name = curMod->name + "." + st->name;
+                            irEmitter.emitStructure(qualSt);
+                        }
+                    }
+                }
+                // Import Constants
+                else if (auto c = dynamic_cast<const llbc::ConstStmtNode*>(member.get())) {
+                    if (c->isPublic && (imp.symbolName.empty() || imp.symbolName == c->name)) {
+                        std::string pref = curMod->name;
+                        irEmitter.declareConstant(*c, pref);
+                    }
+                }
+                // Import Procedures (Public Functions & Subs)
+                else if (auto proc = dynamic_cast<const llbc::ProcedureNode*>(member.get())) {
+                    if (proc->isPublic) {
+                        bool matchSymbol = imp.symbolName.empty() || imp.symbolName == proc->name || imp.symbolName == curMod->name;
+                        if (matchSymbol) {
+                            std::vector<llbc::TypeSpec> pTypes;
+                            std::vector<bool> paramByRefs;
+                            if (curMod->isClass) {
+                                pTypes.push_back(llbc::TypeSpec{curMod->name, 1}); // Me pointer
+                                paramByRefs.push_back(false);
                             }
-                        }
+                            for (const auto& p : proc->parameters) {
+                                llbc::TypeSpec pt = p.type;
+                                if (p.isByRef) pt.pointerDepth++;
+                                pTypes.push_back(pt);
+                                paramByRefs.push_back(p.isByRef);
+                            }
+                            llbc::TypeSpec retType = proc->isFunction ? proc->returnType : llbc::TypeSpec{"void"};
 
-                        std::string symbolMangled = !targetPrefix.empty() ? (targetPrefix + "_" + proc->name) : proc->name;
-                        std::string alias = (!imp.aliasName.empty() && !imp.symbolName.empty()) ? imp.aliasName : symbolMangled;
-                        irEmitter.registerExternalProcedure(proc->name, retType, pTypes, alias, defExprs, paramByRefs);
+                            std::vector<llbc::ExprASTNode*> defExprs;
+                            if (curMod->isClass) {
+                                defExprs.push_back(nullptr); // Me default
+                            }
+                            for (const auto& p : proc->parameters) {
+                                defExprs.push_back(p.defaultValue.get());
+                            }
 
-                        // If imported as ModuleName.ProcName, also register qualified name
-                        if (!imp.moduleName.empty()) {
-                            std::string qual = imp.moduleName + "." + proc->name;
-                            irEmitter.registerExternalProcedure(qual, retType, pTypes, symbolMangled, defExprs, paramByRefs);
-                        }
-                        if (targetMod->name != imp.moduleName) {
-                            std::string qualTarget = targetMod->name + "." + proc->name;
+                            std::string targetPrefix = "";
+                            if (curMod->name.find('.') != std::string::npos) {
+                                targetPrefix = curMod->name;
+                                for (auto& ch : targetPrefix) {
+                                    if (ch == '.') ch = '_';
+                                }
+                            }
+
+                            std::string symbolMangled = !targetPrefix.empty() ? (targetPrefix + "_" + proc->name) : proc->name;
+                            std::string alias = (!imp.aliasName.empty() && !imp.symbolName.empty()) ? imp.aliasName : symbolMangled;
+                            irEmitter.registerExternalProcedure(proc->name, retType, pTypes, alias, defExprs, paramByRefs);
+
+                            std::string qualTarget = curMod->name + "." + proc->name;
                             irEmitter.registerExternalProcedure(qualTarget, retType, pTypes, symbolMangled, defExprs, paramByRefs);
+                            if (!imp.moduleName.empty() && imp.moduleName == curMod->name) {
+                                std::string qual = imp.moduleName + "." + proc->name;
+                                irEmitter.registerExternalProcedure(qual, retType, pTypes, symbolMangled, defExprs, paramByRefs);
+                            }
                         }
                     }
                 }
@@ -388,68 +507,91 @@ static std::string compileSourceFile(
         auto targetMod = getOrParseModule(targetFilePath);
         if (!targetMod) continue;
 
-        if (targetMod->isClass) {
-            irEmitter.registerClassInstancing(targetMod->name, targetMod->instancing);
-            if (!useDir.aliasName.empty()) {
-                irEmitter.registerClassInstancing(useDir.aliasName, targetMod->instancing);
+        std::vector<std::shared_ptr<llbc::ModuleNode>> useTargets;
+        if (!targetMod->innerModules.empty()) {
+            for (const auto& inMod : targetMod->innerModules) {
+                std::string inLower = toLowerStr(inMod->name);
+                std::string reqLower = toLowerStr(useDir.targetPath);
+                bool matchPath = (inLower == reqLower) || reqLower.empty();
+                std::string suffix = "." + reqLower;
+                if (!matchPath && inLower.size() >= suffix.size() && inLower.compare(inLower.size() - suffix.size(), suffix.size(), suffix) == 0) {
+                    matchPath = true;
+                }
+                if (matchPath) {
+                    useTargets.push_back(inMod);
+                }
             }
-            llbc::StructureNode classStruct;
-            classStruct.name = targetMod->name;
-            for (const auto& m : targetMod->members) {
-                if (auto dim = dynamic_cast<const llbc::DimStmtNode*>(m.get())) {
-                    llbc::StructureField f;
-                    f.name = dim->varName;
-                    f.type = dim->type;
-                    classStruct.fields.push_back(f);
-                    if (!dim->isPublic) {
-                        irEmitter.registerPrivateField(targetMod->name, dim->varName);
-                        if (!useDir.aliasName.empty()) {
-                            irEmitter.registerPrivateField(useDir.aliasName, dim->varName);
+            if (useTargets.empty()) {
+                useTargets.push_back(targetMod);
+            }
+        } else {
+            useTargets.push_back(targetMod);
+        }
+
+        for (const auto& curMod : useTargets) {
+            if (curMod->isClass) {
+                irEmitter.registerClassInstancing(curMod->name, curMod->instancing);
+                if (!useDir.aliasName.empty()) {
+                    irEmitter.registerClassInstancing(useDir.aliasName, curMod->instancing);
+                }
+                llbc::StructureNode classStruct;
+                classStruct.name = curMod->name;
+                for (const auto& m : curMod->members) {
+                    if (auto dim = dynamic_cast<const llbc::DimStmtNode*>(m.get())) {
+                        llbc::StructureField f;
+                        f.name = dim->varName;
+                        f.type = dim->type;
+                        classStruct.fields.push_back(f);
+                        if (!dim->isPublic) {
+                            irEmitter.registerPrivateField(curMod->name, dim->varName);
+                            if (!useDir.aliasName.empty()) {
+                                irEmitter.registerPrivateField(useDir.aliasName, dim->varName);
+                            }
                         }
                     }
                 }
-            }
-            irEmitter.emitStructure(classStruct);
-            if (!useDir.aliasName.empty() && useDir.aliasName != targetMod->name) {
-                classStruct.name = useDir.aliasName;
                 irEmitter.emitStructure(classStruct);
+                if (!useDir.aliasName.empty() && useDir.aliasName != curMod->name) {
+                    classStruct.name = useDir.aliasName;
+                    irEmitter.emitStructure(classStruct);
+                }
             }
-        }
 
-        // Register the class and its methods
-        for (const auto& member : targetMod->members) {
-            if (auto proc = dynamic_cast<const llbc::ProcedureNode*>(member.get())) {
-                if (proc->isPublic) {
-                    std::vector<llbc::TypeSpec> pTypes;
-                    // First parameter for class method is Me (pointer to class struct)
-                    if (targetMod->isClass) {
-                        pTypes.push_back(llbc::TypeSpec{targetMod->name, 1});
-                    }
-                    for (const auto& p : proc->parameters) {
-                        llbc::TypeSpec pt = p.type;
-                        if (p.isByRef) pt.pointerDepth++;
-                        pTypes.push_back(pt);
-                    }
-                    llbc::TypeSpec retType = proc->isFunction ? proc->returnType : llbc::TypeSpec{"void"};
+            // Register the class and its methods
+            for (const auto& member : curMod->members) {
+                if (auto proc = dynamic_cast<const llbc::ProcedureNode*>(member.get())) {
+                    if (proc->isPublic) {
+                        std::vector<llbc::TypeSpec> pTypes;
+                        // First parameter for class method is Me (pointer to class struct)
+                        if (curMod->isClass) {
+                            pTypes.push_back(llbc::TypeSpec{curMod->name, 1});
+                        }
+                        for (const auto& p : proc->parameters) {
+                            llbc::TypeSpec pt = p.type;
+                            if (p.isByRef) pt.pointerDepth++;
+                            pTypes.push_back(pt);
+                        }
+                        llbc::TypeSpec retType = proc->isFunction ? proc->returnType : llbc::TypeSpec{"void"};
 
-                    std::vector<llbc::ExprASTNode*> defExprs;
-                    std::vector<bool> paramByRefs;
-                    if (targetMod->isClass) {
-                        paramByRefs.push_back(false); // Me pointer is passed by value
-                    }
-                    for (const auto& p : proc->parameters) {
-                        defExprs.push_back(p.defaultValue.get());
-                        paramByRefs.push_back(p.isByRef);
-                    }
+                        std::vector<llbc::ExprASTNode*> defExprs;
+                        std::vector<bool> paramByRefs;
+                        if (curMod->isClass) {
+                            paramByRefs.push_back(false); // Me pointer is passed by value
+                        }
+                        for (const auto& p : proc->parameters) {
+                            defExprs.push_back(p.defaultValue.get());
+                            paramByRefs.push_back(p.isByRef);
+                        }
 
-                    std::string symbolMangled = targetMod->name + "_" + proc->name;
-                    for (auto& ch : symbolMangled) if (ch == '.') ch = '_';
+                        std::string symbolMangled = curMod->name + "_" + proc->name;
+                        for (auto& ch : symbolMangled) if (ch == '.') ch = '_';
 
-                    irEmitter.registerExternalProcedure(targetMod->name + "." + proc->name, retType, pTypes, symbolMangled, defExprs, paramByRefs);
-                    irEmitter.registerExternalProcedure(targetMod->name + "_" + proc->name, retType, pTypes, symbolMangled, defExprs, paramByRefs);
-                    if (!useDir.aliasName.empty()) {
-                        irEmitter.registerExternalProcedure(useDir.aliasName + "." + proc->name, retType, pTypes, symbolMangled, defExprs, paramByRefs);
-                        irEmitter.registerExternalProcedure(useDir.aliasName + "_" + proc->name, retType, pTypes, symbolMangled, defExprs, paramByRefs);
+                        irEmitter.registerExternalProcedure(curMod->name + "." + proc->name, retType, pTypes, symbolMangled, defExprs, paramByRefs);
+                        irEmitter.registerExternalProcedure(curMod->name + "_" + proc->name, retType, pTypes, symbolMangled, defExprs, paramByRefs);
+                        if (!useDir.aliasName.empty()) {
+                            irEmitter.registerExternalProcedure(useDir.aliasName + "." + proc->name, retType, pTypes, symbolMangled, defExprs, paramByRefs);
+                            irEmitter.registerExternalProcedure(useDir.aliasName + "_" + proc->name, retType, pTypes, symbolMangled, defExprs, paramByRefs);
+                        }
                     }
                 }
             }

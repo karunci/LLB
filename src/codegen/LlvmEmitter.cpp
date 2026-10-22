@@ -142,10 +142,33 @@ llvm::Type* LlvmEmitter::getLlvmType(const TypeSpec& typeSpec) {
             } else if (m_interfaces.count(resolvedName) || m_interfaces.count(toLower(resolvedName))) {
                 baseType = llvm::PointerType::get(*m_context, 0);
             } else {
-                Diagnostic::report(m_sourceFilePath, m_currentLine, m_currentCol, true,
-                                   "Undeclared type '" + typeSpec.name + "'.", m_sourceText);
-                m_hadError = true;
-                baseType = llvm::Type::getInt64Ty(*m_context);
+                // Suffix matching for imported namespaces: e.g. Sync.Spinlock -> SpinlockOps.Spinlock
+                llvm::Type* foundTy = nullptr;
+                for (const auto& pair : m_structTypes) {
+                    if (pair.first.find('.') != std::string::npos) {
+                        std::string shortName = pair.first.substr(pair.first.rfind('.') + 1);
+                        if (toLower(shortName) == toLower(resolvedName)) {
+                            foundTy = pair.second;
+                            break;
+                        }
+                        size_t dotPos = resolvedName.rfind('.');
+                        if (dotPos != std::string::npos) {
+                            std::string reqShort = resolvedName.substr(dotPos + 1);
+                            if (toLower(shortName) == toLower(reqShort)) {
+                                foundTy = pair.second;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (foundTy) {
+                    baseType = foundTy;
+                } else {
+                    Diagnostic::report(m_sourceFilePath, m_currentLine, m_currentCol, true,
+                                       "Undeclared type '" + typeSpec.name + "'.", m_sourceText);
+                    m_hadError = true;
+                    baseType = llvm::Type::getInt64Ty(*m_context);
+                }
             }
         }
     }
@@ -253,6 +276,24 @@ llvm::Value* LlvmEmitter::getPointerToExpr(ExprASTNode* expr) {
         }
         if (gVar) {
             return gVar;
+        }
+
+        // Implicit Me member lookup within class methods
+        if (!m_currentScopeClass.empty() && m_namedValues.count("Me")) {
+            std::string varLower = toLower(var->name);
+            auto fIt = m_structFieldIndices[m_currentScopeClass].find(varLower);
+            if (fIt == m_structFieldIndices[m_currentScopeClass].end()) {
+                fIt = m_structFieldIndices[toLower(m_currentScopeClass)].find(varLower);
+            }
+            if (fIt != m_structFieldIndices[m_currentScopeClass].end()) {
+                llvm::Value* mePtr = m_namedValues["Me"];
+                llvm::Value* thisPtr = m_builder->CreateLoad(llvm::PointerType::get(*m_context, 0), mePtr, "me.this");
+                auto stIt = m_structTypes.find(m_currentScopeClass);
+                if (stIt == m_structTypes.end()) stIt = m_structTypes.find(toLower(m_currentScopeClass));
+                if (stIt != m_structTypes.end()) {
+                    return m_builder->CreateStructGEP(stIt->second, thisPtr, fIt->second, var->name + ".gep");
+                }
+            }
         }
         return nullptr;
     }
@@ -502,6 +543,15 @@ TypeSpec LlvmEmitter::deduceExprType(ExprASTNode* expr) {
         if (it != m_variableTypes.end()) return it->second;
         auto itLower = m_variableTypes.find(toLower(var->name));
         if (itLower != m_variableTypes.end()) return itLower->second;
+        if (!m_currentScopeClass.empty()) {
+            std::string varLower = toLower(var->name);
+            auto sIt = m_structFieldTypes.find(m_currentScopeClass);
+            if (sIt == m_structFieldTypes.end()) sIt = m_structFieldTypes.find(toLower(m_currentScopeClass));
+            if (sIt != m_structFieldTypes.end()) {
+                auto fIt = sIt->second.find(varLower);
+                if (fIt != sIt->second.end()) return fIt->second;
+            }
+        }
     }
     if (auto cast = dynamic_cast<CastExprASTNode*>(expr)) {
         return cast->targetType;
@@ -3534,6 +3584,30 @@ void LlvmEmitter::emitAssignStatement(const AssignStmtNode& assignNode) {
             return;
         }
 
+        // Implicit Me member assignment within class methods
+        if (!m_currentScopeClass.empty() && m_namedValues.count("Me")) {
+            std::string varLower = toLower(var->name);
+            auto fIt = m_structFieldIndices[m_currentScopeClass].find(varLower);
+            if (fIt == m_structFieldIndices[m_currentScopeClass].end()) {
+                fIt = m_structFieldIndices[toLower(m_currentScopeClass)].find(varLower);
+            }
+            if (fIt != m_structFieldIndices[m_currentScopeClass].end()) {
+                llvm::Value* mePtr = m_namedValues["Me"];
+                llvm::Value* thisPtr = m_builder->CreateLoad(llvm::PointerType::get(*m_context, 0), mePtr, "me.this");
+                auto stIt = m_structTypes.find(m_currentScopeClass);
+                if (stIt == m_structTypes.end()) stIt = m_structTypes.find(toLower(m_currentScopeClass));
+                if (stIt != m_structTypes.end()) {
+                    llvm::Value* gep = m_builder->CreateStructGEP(stIt->second, thisPtr, fIt->second, var->name + ".gep");
+                    llvm::Value* val = emitExpression(assignNode.value.get());
+                    if (val) {
+                        val = coerceType(val, stIt->second->getElementType(fIt->second));
+                        m_builder->CreateStore(val, gep);
+                    }
+                    return;
+                }
+            }
+        }
+
         // Undeclared variable assignment guard
         Diagnostic::report(m_sourceFilePath, var->line > 0 ? var->line : m_currentLine,
                            var->column > 0 ? var->column : m_currentCol,
@@ -3563,6 +3637,27 @@ void LlvmEmitter::emitAssignStatement(const AssignStmtNode& assignNode) {
                 llvm::GlobalVariable* gVar = findGlobalCaseInsensitive(m_module.get(), var->name);
                 if (gVar) {
                     baseVal = gVar;
+                } else if (!m_currentScopeClass.empty() && m_namedValues.count("Me")) {
+                    std::string varLower = toLower(var->name);
+                    auto fIt = m_structFieldIndices[m_currentScopeClass].find(varLower);
+                    if (fIt == m_structFieldIndices[m_currentScopeClass].end()) {
+                        fIt = m_structFieldIndices[toLower(m_currentScopeClass)].find(varLower);
+                    }
+                    if (fIt != m_structFieldIndices[m_currentScopeClass].end()) {
+                        llvm::Value* mePtr = m_namedValues["Me"];
+                        llvm::Value* thisPtr = m_builder->CreateLoad(llvm::PointerType::get(*m_context, 0), mePtr, "me.this");
+                        auto stIt = m_structTypes.find(m_currentScopeClass);
+                        if (stIt == m_structTypes.end()) stIt = m_structTypes.find(toLower(m_currentScopeClass));
+                        if (stIt != m_structTypes.end()) {
+                            baseVal = m_builder->CreateStructGEP(stIt->second, thisPtr, fIt->second, var->name + ".gep");
+                            auto ftIt = m_structFieldTypes.find(m_currentScopeClass);
+                            if (ftIt == m_structFieldTypes.end()) ftIt = m_structFieldTypes.find(toLower(m_currentScopeClass));
+                            if (ftIt != m_structFieldTypes.end()) {
+                                auto tIt2 = ftIt->second.find(varLower);
+                                if (tIt2 != ftIt->second.end()) baseType = tIt2->second;
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -4446,9 +4541,85 @@ void LlvmEmitter::emitAsmStatement(const AsmStmtNode& asmNode) {
         return;
     }
 
+    // 1. Gather outputs
+    std::vector<llvm::Value*> outPtrs;
+    std::vector<llvm::Type*> outTypes;
+    for (const auto& op : asmNode.outputOperands) {
+        llvm::Value* ptr = nullptr;
+        llvm::Type* ty = nullptr;
+        if (auto var = dynamic_cast<VariableExprASTNode*>(op.get())) {
+            auto it = m_namedValues.find(var->name);
+            if (it == m_namedValues.end()) it = m_namedValues.find(toLower(var->name));
+            if (it != m_namedValues.end()) {
+                if (m_byRefParams.count(var->name) || m_byRefParams.count(toLower(var->name))) {
+                    auto tIt = m_variableTypes.find(var->name);
+                    if (tIt == m_variableTypes.end()) tIt = m_variableTypes.find(toLower(var->name));
+                    if (tIt != m_variableTypes.end() && tIt->second.pointerDepth == 0) {
+                        ptr = m_builder->CreateLoad(it->second->getAllocatedType(), it->second, var->name + ".ptr");
+                        ty = getLlvmType(tIt->second);
+                    }
+                }
+                if (!ptr) {
+                    ptr = it->second;
+                    auto tIt = m_variableTypes.find(var->name);
+                    if (tIt == m_variableTypes.end()) tIt = m_variableTypes.find(toLower(var->name));
+                    if (tIt != m_variableTypes.end()) ty = getLlvmType(tIt->second);
+                    else ty = it->second->getAllocatedType();
+                }
+            } else {
+                llvm::GlobalVariable* gVar = findGlobalCaseInsensitive(m_module.get(), var->name);
+                if (gVar) {
+                    ptr = gVar;
+                    ty = gVar->getValueType();
+                } else if (!m_currentScopeClass.empty() && m_namedValues.count("Me")) {
+                    std::string varLower = toLower(var->name);
+                    auto fIt = m_structFieldIndices[m_currentScopeClass].find(varLower);
+                    if (fIt == m_structFieldIndices[m_currentScopeClass].end()) {
+                        fIt = m_structFieldIndices[toLower(m_currentScopeClass)].find(varLower);
+                    }
+                    if (fIt != m_structFieldIndices[m_currentScopeClass].end()) {
+                        llvm::Value* mePtr = m_namedValues["Me"];
+                        llvm::Value* thisPtr = m_builder->CreateLoad(llvm::PointerType::get(*m_context, 0), mePtr, "me.this");
+                        auto stIt = m_structTypes.find(m_currentScopeClass);
+                        if (stIt == m_structTypes.end()) stIt = m_structTypes.find(toLower(m_currentScopeClass));
+                        if (stIt != m_structTypes.end()) {
+                            ptr = m_builder->CreateStructGEP(stIt->second, thisPtr, fIt->second, var->name + ".gep");
+                            ty = stIt->second->getElementType(fIt->second);
+                        }
+                    }
+                }
+            }
+        } else {
+            ptr = getPointerToExpr(op.get());
+            TypeSpec ts = deduceExprType(op.get());
+            if (!ts.name.empty() || ts.pointerDepth > 0 || ts.isArray) {
+                ty = getLlvmType(ts);
+            }
+        }
+
+        if (ptr && ty) {
+            outPtrs.push_back(ptr);
+            outTypes.push_back(ty);
+        } else {
+            Diagnostic::report(m_sourceFilePath, asmNode.line > 0 ? asmNode.line : m_currentLine,
+                               asmNode.column > 0 ? asmNode.column : m_currentCol,
+                               true, "Cannot resolve lvalue address for Asm output operand.", m_sourceText);
+            m_hadError = true;
+            return;
+        }
+    }
+
+    // 2. Determine return type
+    llvm::Type* retTy = llvm::Type::getVoidTy(*m_context);
+    if (outTypes.size() == 1) {
+        retTy = outTypes[0];
+    } else if (outTypes.size() > 1) {
+        retTy = llvm::StructType::get(*m_context, outTypes);
+    }
+
+    // 3. Gather inputs
     std::vector<llvm::Type*> paramTypes;
     std::vector<llvm::Value*> args;
-
     for (const auto& op : asmNode.inputOperands) {
         llvm::Value* val = emitExpression(op.get());
         if (val) {
@@ -4457,21 +4628,74 @@ void LlvmEmitter::emitAsmStatement(const AsmStmtNode& asmNode) {
         }
     }
 
-    // Convert GCC inline assembly operand placeholders (%0, %1, etc.) to LLVM format ($0, $1, etc.)
+    // 4. Normalize constraints
+    std::string normalizedConstraints;
+    std::stringstream ss(asmNode.constraints);
+    std::string token;
+    while (std::getline(ss, token, ',')) {
+        size_t first = token.find_first_not_of(" \t\r\n");
+        if (first == std::string::npos) continue;
+        size_t last = token.find_last_not_of(" \t\r\n");
+        token = token.substr(first, (last - first + 1));
+
+        std::string norm = token;
+        if (token == "=a") norm = "={ax}";
+        else if (token == "a") norm = "{ax}";
+        else if (token == "=b") norm = "={bx}";
+        else if (token == "b") norm = "{bx}";
+        else if (token == "=c") norm = "={cx}";
+        else if (token == "c") norm = "{cx}";
+        else if (token == "=d") norm = "={dx}";
+        else if (token == "d") norm = "{dx}";
+        else if (token == "=S") norm = "={si}";
+        else if (token == "S") norm = "{si}";
+        else if (token == "=D") norm = "={di}";
+        else if (token == "D") norm = "{di}";
+        else if (token == "Nd") norm = "N{dx}";
+        else if (token == "memory") norm = "~{memory}";
+
+        if (!normalizedConstraints.empty()) normalizedConstraints += ",";
+        normalizedConstraints += norm;
+    }
+
+    // 5. Convert template string
     std::string llvmAsmCode;
     const std::string& rawAsm = asmNode.assemblyCode;
     for (size_t i = 0; i < rawAsm.size(); ++i) {
-        if (rawAsm[i] == '%' && i + 1 < rawAsm.size() && std::isdigit(static_cast<unsigned char>(rawAsm[i + 1]))) {
-            llvmAsmCode += '$';
+        if (rawAsm[i] == '$') {
+            llvmAsmCode += "$$";
+        } else if (rawAsm[i] == '%' && i + 1 < rawAsm.size()) {
+            if (rawAsm[i + 1] == '%') {
+                llvmAsmCode += '%';
+                ++i;
+            } else if (std::isdigit(static_cast<unsigned char>(rawAsm[i + 1]))) {
+                llvmAsmCode += '$';
+            } else {
+                llvmAsmCode += rawAsm[i];
+            }
         } else {
             llvmAsmCode += rawAsm[i];
         }
     }
 
-    llvm::FunctionType* asmTy = llvm::FunctionType::get(llvm::Type::getVoidTy(*m_context), paramTypes, false);
-    llvm::InlineAsm* inlineAsm = llvm::InlineAsm::get(asmTy, llvmAsmCode, asmNode.constraints, true);
-    m_builder->CreateCall(inlineAsm, args);
+    // 6. Create InlineAsm & Call
+    llvm::FunctionType* asmTy = llvm::FunctionType::get(retTy, paramTypes, false);
+    llvm::InlineAsm* inlineAsm = llvm::InlineAsm::get(asmTy, llvmAsmCode, normalizedConstraints, true);
+    llvm::Value* result = m_builder->CreateCall(inlineAsm, args);
+
+    // 7. Store outputs
+    if (outTypes.size() == 1) {
+        llvm::Value* coerced = coerceType(result, outTypes[0]);
+        m_builder->CreateStore(coerced, outPtrs[0]);
+    } else if (outTypes.size() > 1) {
+        for (size_t i = 0; i < outTypes.size(); ++i) {
+            llvm::Value* extracted = m_builder->CreateExtractValue(result, { static_cast<unsigned>(i) });
+            llvm::Value* coerced = coerceType(extracted, outTypes[i]);
+            m_builder->CreateStore(coerced, outPtrs[i]);
+        }
+    }
 }
+
 
 void LlvmEmitter::emitStatement(ASTNode* stmt) {
     if (!stmt) return;
@@ -5158,6 +5382,25 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
             return m_builder->CreateCall(getFn, {}, "propget");
         }
 
+        // Implicit Me member lookup within class methods
+        if (!m_currentScopeClass.empty() && m_namedValues.count("Me")) {
+            std::string varLower = toLower(var->name);
+            auto fIt = m_structFieldIndices[m_currentScopeClass].find(varLower);
+            if (fIt == m_structFieldIndices[m_currentScopeClass].end()) {
+                fIt = m_structFieldIndices[toLower(m_currentScopeClass)].find(varLower);
+            }
+            if (fIt != m_structFieldIndices[m_currentScopeClass].end()) {
+                llvm::Value* mePtr = m_namedValues["Me"];
+                llvm::Value* thisPtr = m_builder->CreateLoad(llvm::PointerType::get(*m_context, 0), mePtr, "me.this");
+                auto stIt = m_structTypes.find(m_currentScopeClass);
+                if (stIt == m_structTypes.end()) stIt = m_structTypes.find(toLower(m_currentScopeClass));
+                if (stIt != m_structTypes.end()) {
+                    llvm::Value* gep = m_builder->CreateStructGEP(stIt->second, thisPtr, fIt->second, var->name + ".gep");
+                    return m_builder->CreateLoad(stIt->second->getElementType(fIt->second), gep, var->name);
+                }
+            }
+        }
+
         // Undeclared variable guard
         Diagnostic::report(m_sourceFilePath, var->line > 0 ? var->line : m_currentLine,
                            var->column > 0 ? var->column : m_currentCol,
@@ -5468,6 +5711,27 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
                 llvm::GlobalVariable* gVar = findGlobalCaseInsensitive(m_module.get(), var->name);
                 if (gVar) {
                     baseVal = gVar;
+                } else if (!m_currentScopeClass.empty() && m_namedValues.count("Me")) {
+                    std::string varLower = toLower(var->name);
+                    auto fIt = m_structFieldIndices[m_currentScopeClass].find(varLower);
+                    if (fIt == m_structFieldIndices[m_currentScopeClass].end()) {
+                        fIt = m_structFieldIndices[toLower(m_currentScopeClass)].find(varLower);
+                    }
+                    if (fIt != m_structFieldIndices[m_currentScopeClass].end()) {
+                        llvm::Value* mePtr = m_namedValues["Me"];
+                        llvm::Value* thisPtr = m_builder->CreateLoad(llvm::PointerType::get(*m_context, 0), mePtr, "me.this");
+                        auto stIt = m_structTypes.find(m_currentScopeClass);
+                        if (stIt == m_structTypes.end()) stIt = m_structTypes.find(toLower(m_currentScopeClass));
+                        if (stIt != m_structTypes.end()) {
+                            baseVal = m_builder->CreateStructGEP(stIt->second, thisPtr, fIt->second, var->name + ".gep");
+                            auto ftIt = m_structFieldTypes.find(m_currentScopeClass);
+                            if (ftIt == m_structFieldTypes.end()) ftIt = m_structFieldTypes.find(toLower(m_currentScopeClass));
+                            if (ftIt != m_structFieldTypes.end()) {
+                                auto tIt2 = ftIt->second.find(varLower);
+                                if (tIt2 != ftIt->second.end()) baseType = tIt2->second;
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -5525,24 +5789,50 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
             auto tIt = m_variableTypes.find(call->funcName);
             if (tIt == m_variableTypes.end()) tIt = m_variableTypes.find(toLower(call->funcName));
             llvm::GlobalVariable* gVar = nullptr;
+            llvm::Value* meFieldBaseVal = nullptr;
+            TypeSpec meFieldBaseType;
             if (it == m_namedValues.end() && tIt != m_variableTypes.end()) {
                 gVar = findGlobalCaseInsensitive(m_module.get(), call->funcName);
             }
-            if (it != m_namedValues.end() || gVar) {
-                TypeSpec baseType = (tIt != m_variableTypes.end()) ? tIt->second : TypeSpec();
+            if (it == m_namedValues.end() && !gVar && !m_currentScopeClass.empty() && m_namedValues.count("Me")) {
+                std::string varLower = toLower(call->funcName);
+                auto fIt = m_structFieldIndices[m_currentScopeClass].find(varLower);
+                if (fIt == m_structFieldIndices[m_currentScopeClass].end()) {
+                    fIt = m_structFieldIndices[toLower(m_currentScopeClass)].find(varLower);
+                }
+                if (fIt != m_structFieldIndices[m_currentScopeClass].end()) {
+                    llvm::Value* mePtr = m_namedValues["Me"];
+                    llvm::Value* thisPtr = m_builder->CreateLoad(llvm::PointerType::get(*m_context, 0), mePtr, "me.this");
+                    auto stIt = m_structTypes.find(m_currentScopeClass);
+                    if (stIt == m_structTypes.end()) stIt = m_structTypes.find(toLower(m_currentScopeClass));
+                    if (stIt != m_structTypes.end()) {
+                        meFieldBaseVal = m_builder->CreateStructGEP(stIt->second, thisPtr, fIt->second, call->funcName + ".gep");
+                        auto ftIt = m_structFieldTypes.find(m_currentScopeClass);
+                        if (ftIt == m_structFieldTypes.end()) ftIt = m_structFieldTypes.find(toLower(m_currentScopeClass));
+                        if (ftIt != m_structFieldTypes.end()) {
+                            auto tIt2 = ftIt->second.find(varLower);
+                            if (tIt2 != ftIt->second.end()) meFieldBaseType = tIt2->second;
+                        }
+                    }
+                }
+            }
+            if (it != m_namedValues.end() || gVar || meFieldBaseVal) {
+                TypeSpec baseType = meFieldBaseVal ? meFieldBaseType : ((tIt != m_variableTypes.end()) ? tIt->second : TypeSpec());
                 if (gVar && baseType.name.empty() && gVar->getValueType()->isArrayTy()) {
                     baseType.isArray = true;
                 }
                 if (baseType.pointerDepth > 0 || baseType.isArray || toLower(baseType.name) == "string") {
-                    llvm::Value* baseVal = nullptr;
-                    if (it != m_namedValues.end()) {
-                        if (baseType.isArray) {
-                            baseVal = it->second;
-                        } else {
-                            baseVal = m_builder->CreateLoad(it->second->getAllocatedType(), it->second, call->funcName);
+                    llvm::Value* baseVal = meFieldBaseVal;
+                    if (!baseVal) {
+                        if (it != m_namedValues.end()) {
+                            if (baseType.isArray) {
+                                baseVal = it->second;
+                            } else {
+                                baseVal = m_builder->CreateLoad(it->second->getAllocatedType(), it->second, call->funcName);
+                            }
+                        } else if (gVar) {
+                            baseVal = gVar;
                         }
-                    } else if (gVar) {
-                        baseVal = gVar;
                     }
 
                     // Compute flat index: for 2D matrix(rows, cols), idx = r * cols + c
@@ -6314,18 +6604,19 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
             return llvm::ConstantInt::get(llvm::Type::getInt64Ty(*m_context), 0);
         }
 
+        std::function<std::string(ExprASTNode*)> getDottedPrefix = [&](ExprASTNode* e) -> std::string {
+            if (auto v = dynamic_cast<VariableExprASTNode*>(e)) return v->name;
+            if (auto m = dynamic_cast<MemberAccessExprASTNode*>(e)) {
+                std::string p = getDottedPrefix(m->base.get());
+                return p.empty() ? m->memberName : (p + "." + m->memberName);
+            }
+            return "";
+        };
+
         std::string targetFuncName = call->funcName;
         bool isQualifiedModuleCall = false;
         // If calleeExpr is a chain of identifiers (e.g. Drivers.Terminal), reconstruct the qualified name
         if (call->calleeExpr) {
-            std::function<std::string(ExprASTNode*)> getDottedPrefix = [&](ExprASTNode* e) -> std::string {
-                if (auto v = dynamic_cast<VariableExprASTNode*>(e)) return v->name;
-                if (auto m = dynamic_cast<MemberAccessExprASTNode*>(e)) {
-                    std::string p = getDottedPrefix(m->base.get());
-                    return p.empty() ? m->memberName : (p + "." + m->memberName);
-                }
-                return "";
-            };
             std::string dotted = getDottedPrefix(call->calleeExpr.get());
             if (!dotted.empty()) {
                 // If dotted prefix is NOT a local variable or struct instance, treat as qualified module call
@@ -6445,6 +6736,16 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
                 }
                 callee = findFunctionCaseInsensitive(m_module.get(), modPref + "_" + targetFuncName);
             }
+            if (!callee && !m_currentScopeClass.empty()) {
+                std::string classPref = m_currentScopeClass;
+                for (auto& ch : classPref) {
+                    if (ch == '.') ch = '_';
+                }
+                callee = findFunctionCaseInsensitive(m_module.get(), classPref + "_" + targetFuncName);
+                if (callee) {
+                    targetFuncName = classPref + "_" + targetFuncName;
+                }
+            }
         }
 
         if (!callee) {
@@ -6517,14 +6818,56 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
         }
 
         std::vector<llvm::Value*> args;
-        if (!isQualifiedModuleCall && call->calleeExpr && callee->getFunctionType()->getNumParams() == call->args.size() + 1) {
+        std::string prefixClass = "";
+        if (call->calleeExpr) {
+            prefixClass = getDottedPrefix(call->calleeExpr.get());
+            if (prefixClass.empty()) {
+                if (auto v = dynamic_cast<VariableExprASTNode*>(call->calleeExpr.get())) {
+                    prefixClass = v->name;
+                }
+            }
+        }
+        if (prefixClass.empty()) {
+            size_t dotPos = targetFuncName.rfind('.');
+            if (dotPos != std::string::npos) {
+                prefixClass = targetFuncName.substr(0, dotPos);
+            }
+            if (prefixClass.empty()) {
+                size_t callDot = call->funcName.rfind('.');
+                if (callDot != std::string::npos) {
+                    prefixClass = call->funcName.substr(0, callDot);
+                }
+            }
+            if (prefixClass.empty()) {
+                for (const auto& pair : m_classInstancing) {
+                    std::string norm = pair.first;
+                    for (auto& ch : norm) if (ch == '.') ch = '_';
+                    if (targetFuncName.rfind(norm + "_", 0) == 0) {
+                        prefixClass = pair.first;
+                        break;
+                    }
+                }
+            }
+        }
+
+        std::string normClass = prefixClass;
+        for (auto& ch : normClass) if (ch == '.') ch = '_';
+        bool isClassSingletonCall = (!prefixClass.empty() && 
+            (m_classSingletons.count(prefixClass) || m_classSingletons.count(toLower(prefixClass)) ||
+             m_classSingletons.count(normClass) || m_classSingletons.count(toLower(normClass)) ||
+             m_classInstancing.count(prefixClass) || m_classInstancing.count(toLower(prefixClass)) ||
+             m_classInstancing.count(normClass) || m_classInstancing.count(toLower(normClass))));
+
+        if (!isQualifiedModuleCall && call->calleeExpr && callee->getFunctionType()->getNumParams() >= call->args.size() + 1) {
             std::string instanceName = "";
             if (auto varNode = dynamic_cast<VariableExprASTNode*>(call->calleeExpr.get())) {
                 instanceName = varNode->name;
             }
             if (!instanceName.empty()) {
                 std::string lowerInst = toLower(instanceName);
-                if (toLower(call->funcName) == "initialize") {
+                if (lowerInst == "me" || lowerInst == "this") {
+                    // Me/this is always considered initialized inside class methods
+                } else if (toLower(call->funcName) == "initialize") {
                     m_initializedObjects.insert(lowerInst);
                 } else if (!m_initializedObjects.count(lowerInst)) {
                     // Check if variable is a Class type with an Initialize constructor
@@ -6550,25 +6893,32 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
 
             llvm::Value* thisPtr = getPointerToExpr(call->calleeExpr.get());
             args.push_back(thisPtr);
-        } else if (callee->getFunctionType()->getNumParams() == call->args.size() + 1) {
-            // Check if calling a method directly on a Global or SingleUse Class singleton
-            std::string prefixClass = "";
-            if (call->calleeExpr) {
-                if (auto v = dynamic_cast<VariableExprASTNode*>(call->calleeExpr.get())) {
-                    prefixClass = v->name;
-                }
+        } else if (!call->calleeExpr && !m_currentScopeClass.empty() && m_namedValues.count("Me") &&
+                   callee->getFunctionType()->getNumParams() >= call->args.size() + 1) {
+            args.push_back(m_namedValues["Me"]);
+        } else if (isClassSingletonCall && callee->getFunctionType()->getNumParams() >= call->args.size() + 1) {
+            auto sIt = m_classSingletons.find(prefixClass);
+            if (sIt == m_classSingletons.end()) sIt = m_classSingletons.find(toLower(prefixClass));
+            if (sIt == m_classSingletons.end()) sIt = m_classSingletons.find(normClass);
+            if (sIt == m_classSingletons.end()) sIt = m_classSingletons.find(toLower(normClass));
+            if (sIt != m_classSingletons.end()) {
+                args.push_back(sIt->second);
             } else {
-                size_t dotPos = targetFuncName.rfind('.');
-                if (dotPos != std::string::npos) {
-                    prefixClass = targetFuncName.substr(0, dotPos);
+                std::string singName = "__singleton_" + normClass;
+                llvm::GlobalVariable* gVar = m_module->getGlobalVariable(singName);
+                if (!gVar) {
+                    auto stIt = m_structTypes.find(prefixClass);
+                    if (stIt == m_structTypes.end()) stIt = m_structTypes.find(toLower(prefixClass));
+                    if (stIt == m_structTypes.end()) stIt = m_structTypes.find(normClass);
+                    if (stIt == m_structTypes.end()) stIt = m_structTypes.find(toLower(normClass));
+                    llvm::Type* stTy = (stIt != m_structTypes.end()) ? (llvm::Type*)stIt->second : (llvm::Type*)llvm::Type::getInt8Ty(*m_context);
+                    gVar = new llvm::GlobalVariable(*m_module, stTy, false, llvm::GlobalValue::ExternalLinkage, nullptr, singName);
                 }
-            }
-            if (!prefixClass.empty()) {
-                auto sIt = m_classSingletons.find(prefixClass);
-                if (sIt == m_classSingletons.end()) sIt = m_classSingletons.find(toLower(prefixClass));
-                if (sIt != m_classSingletons.end()) {
-                    args.push_back(sIt->second);
-                }
+                m_classSingletons[prefixClass] = gVar;
+                m_classSingletons[toLower(prefixClass)] = gVar;
+                m_classSingletons[normClass] = gVar;
+                m_classSingletons[toLower(normClass)] = gVar;
+                args.push_back(gVar);
             }
         }
 
@@ -7181,13 +7531,18 @@ llvm::Function* LlvmEmitter::emitProcedure(const ProcedureNode& procNode, const 
         mangledName = procNode.aliasName;
         m_funcAliases[procNode.name] = procNode.aliasName;
     } else if (!className.empty()) {
+        std::string normClass = className;
+        for (auto& ch : normClass) if (ch == '.') ch = '_';
         if (procNode.propertyKind == ProcedureNode::PropertyKind::Get) {
-            mangledName = className + "_get_" + procNode.name;
+            mangledName = normClass + "_get_" + procNode.name;
         } else if (procNode.propertyKind == ProcedureNode::PropertyKind::Let || procNode.propertyKind == ProcedureNode::PropertyKind::Set) {
-            mangledName = className + "_set_" + procNode.name;
+            mangledName = normClass + "_set_" + procNode.name;
         } else {
-            mangledName = className + "_" + procNode.name;
+            mangledName = normClass + "_" + procNode.name;
         }
+        m_funcAliases[className + "." + procNode.name] = mangledName;
+        m_funcAliases[className + "_" + procNode.name] = mangledName;
+        m_funcAliases[normClass + "_" + procNode.name] = mangledName;
     } else {
         if (procNode.propertyKind == ProcedureNode::PropertyKind::Get) {
             mangledName = "get_" + procNode.name;
@@ -7301,6 +7656,8 @@ llvm::Function* LlvmEmitter::emitProcedure(const ProcedureNode& procNode, const 
             TypeSpec meType{className, 1};
             m_variableTypes["Me"] = meType;
             m_variableTypes["me"] = meType;
+            m_initializedObjects.insert("Me");
+            m_initializedObjects.insert("me");
             hasMe = false;
             continue;
         }
@@ -7400,7 +7757,7 @@ bool LlvmEmitter::emitModule(const ModuleNode& moduleNode) {
         }
     }
 
-    if (m_enableDebugInfo && m_diBuilder) {
+    if (m_enableDebugInfo && m_diBuilder && !m_diCompileUnit) {
         std::string sourceFile = m_sourceFilePath;
         std::string dir = ".";
         std::string filename = sourceFile;
@@ -7498,6 +7855,24 @@ bool LlvmEmitter::emitModule(const ModuleNode& moduleNode) {
         for (const auto& ifaceName : moduleNode.implementsInterfaces) {
             auto ifIt = m_interfaces.find(ifaceName);
             if (ifIt == m_interfaces.end()) ifIt = m_interfaces.find(toLower(ifaceName));
+            if (ifIt == m_interfaces.end() && !moduleNode.name.empty()) {
+                size_t dotPos = moduleNode.name.rfind('.');
+                if (dotPos != std::string::npos) {
+                    std::string qual = moduleNode.name.substr(0, dotPos + 1) + ifaceName;
+                    ifIt = m_interfaces.find(qual);
+                    if (ifIt == m_interfaces.end()) ifIt = m_interfaces.find(toLower(qual));
+                }
+            }
+            if (ifIt == m_interfaces.end()) {
+                for (const auto& pair : m_interfaces) {
+                    size_t ifDot = pair.first.rfind('.');
+                    std::string shortName = (ifDot != std::string::npos) ? pair.first.substr(ifDot + 1) : pair.first;
+                    if (toLower(shortName) == toLower(ifaceName)) {
+                        ifIt = m_interfaces.find(pair.first);
+                        break;
+                    }
+                }
+            }
             if (ifIt == m_interfaces.end()) {
                 Diagnostic::report(m_sourceFilePath, 1, 1, true,
                                    "Cannot find interface '" + ifaceName + "' implemented by class '" + moduleNode.name + "'.", m_sourceText);
@@ -7548,18 +7923,25 @@ bool LlvmEmitter::emitModule(const ModuleNode& moduleNode) {
         m_structTypes[moduleNode.name] = classSt;
         m_structTypes[toLower(moduleNode.name)] = classSt;
 
-        // If marked <Instancing(Global)> or <Instancing(SingleUse)>, create internal static singleton instance in .bss
+        // If marked <Instancing(Global)> or <Instancing(SingleUse)>, create static singleton instance in .bss
         if (moduleNode.instancing == InstancingKind::Global || moduleNode.instancing == InstancingKind::SingleUse) {
+            std::string normName = moduleNode.name;
+            for (auto& ch : normName) if (ch == '.') ch = '_';
+            llvm::GlobalValue::LinkageTypes link = (moduleNode.instancing == InstancingKind::SingleUse) 
+                ? llvm::GlobalValue::ExternalLinkage 
+                : llvm::GlobalValue::InternalLinkage;
             llvm::GlobalVariable* singletonVar = new llvm::GlobalVariable(
                 *m_module,
                 classSt,
                 false, // isConstant
-                llvm::GlobalValue::InternalLinkage,
+                link,
                 llvm::ConstantAggregateZero::get(classSt),
-                "__singleton_" + moduleNode.name
+                "__singleton_" + normName
             );
             m_classSingletons[moduleNode.name] = singletonVar;
             m_classSingletons[toLower(moduleNode.name)] = singletonVar;
+            m_classSingletons[normName] = singletonVar;
+            m_classSingletons[toLower(normName)] = singletonVar;
         }
     }
 
@@ -7647,13 +8029,18 @@ bool LlvmEmitter::emitModule(const ModuleNode& moduleNode) {
                     m_funcAliases[proc->name] = proc->aliasName;
                 }
             } else if (!className.empty()) {
+                std::string normClass = className;
+                for (auto& ch : normClass) if (ch == '.') ch = '_';
                 if (proc->propertyKind == ProcedureNode::PropertyKind::Get) {
-                    mangledName = className + "_get_" + proc->name;
+                    mangledName = normClass + "_get_" + proc->name;
                 } else if (proc->propertyKind == ProcedureNode::PropertyKind::Let || proc->propertyKind == ProcedureNode::PropertyKind::Set) {
-                    mangledName = className + "_set_" + proc->name;
+                    mangledName = normClass + "_set_" + proc->name;
                 } else {
-                    mangledName = className + "_" + proc->name;
+                    mangledName = normClass + "_" + proc->name;
                 }
+                m_funcAliases[className + "." + proc->name] = mangledName;
+                m_funcAliases[className + "_" + proc->name] = mangledName;
+                m_funcAliases[normClass + "_" + proc->name] = mangledName;
             } else if (!modulePrefix.empty()) {
                 mangledName = modulePrefix + "_" + proc->name;
                 m_funcAliases[moduleNode.name + "." + proc->name] = mangledName;
@@ -7708,10 +8095,17 @@ bool LlvmEmitter::emitModule(const ModuleNode& moduleNode) {
         }
     }
 
+    // 5.5 Emit Inner Modules / Classes
+    for (const auto& inMod : moduleNode.innerModules) {
+        if (inMod) {
+            emitModule(*inMod);
+        }
+    }
+
     // 6. Synthesize C 'main' wrapper if LLB 'Main' exists and no 'main' is defined
     llvm::Function* mainFn = m_module->getFunction("main");
     llvm::Function* llbMain = m_module->getFunction("Main");
-    if (!mainFn && llbMain) {
+    if (!mainFn && llbMain && !moduleNode.isNamespace) {
         llvm::FunctionType* cMainType = llvm::FunctionType::get(
             llvm::Type::getInt32Ty(*m_context),
             {llvm::Type::getInt32Ty(*m_context), llvm::PointerType::get(*m_context, 0)},

@@ -449,6 +449,22 @@ else
     ERR_COUNT=$((ERR_COUNT + 1))
 fi
 
+# 27. Invalid Instancing category
+cat << 'CODE' > "$BUILD_DIR/bad_invalid_instancing.bas"
+Namespace TestInvalidInst
+    <Instancing(InvalidCategory)>
+    Class BadClass
+    End Class
+End Namespace
+CODE
+$LLBC "$BUILD_DIR/bad_invalid_instancing.bas" 2>&1 | grep -q "Invalid Instancing category"
+if [ $? -eq 0 ]; then
+    echo "[PASS] Rejection 27: Invalid Instancing category attribute correctly rejected"
+else
+    echo "[FAIL] Rejection 27: Invalid Instancing category not rejected"
+    ERR_COUNT=$((ERR_COUNT + 1))
+fi
+
 # Clean up temp files (sources in cwd, objects in build/)
 rm -f bad_uninit.bas bad_multi_singleuse.bas bad_undef_method.bas bad_private_member.bas \
       bad_uninit.o bad_multi_singleuse.o bad_undef_method.o bad_private_member.o \

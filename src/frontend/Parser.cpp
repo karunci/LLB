@@ -355,6 +355,12 @@ TypeSpec Parser::parseTypeSpec() {
         spec.name = m_currentToken.text;
         consume();
 
+        // Support dotted type names: e.g. Sync.Spinlock or Arch.X86_64.GdtPtr
+        while (match(TokenType::Dot)) {
+            spec.name += "." + m_currentToken.text;
+            expect(TokenType::Identifier, "Expected identifier after '.' in type name");
+        }
+
         // Support generic type arguments: e.g. Box(Of T) or Pair(Of K, V)
         if (match(TokenType::LParen)) {
             if (m_currentToken.type == TokenType::KwOf || checkKeyword("Of")) {
@@ -906,60 +912,88 @@ std::unique_ptr<MatchStmtNode> Parser::parseMatchStatement() {
 }
 
 std::unique_ptr<AsmStmtNode> Parser::parseAsmStatement() {
-    // Single-line Asm on same line, e.g.: Asm "hlt"
-    if (m_currentToken.type == TokenType::StringLiteral && !m_currentToken.hasLeadingNewline) {
-        std::string code = m_currentToken.text;
-        consume();
-        return std::make_unique<AsmStmtNode>(code);
-    }
+    size_t asmStartLine = m_currentToken.line;
 
-    // Multiline Asm block until 'End Asm'
+    // If followed by string literal, gather assembly template string(s)
     std::string fullCode;
     std::string constraintsStr;
+    std::vector<std::unique_ptr<ExprASTNode>> outputs;
     std::vector<std::unique_ptr<ExprASTNode>> inputs;
 
+    // Determine whether this is a block Asm (Asm\n...End Asm) or single-line (Asm "code" ...)
+    bool isBlockAsm = m_currentToken.hasLeadingNewline || (m_currentToken.type != TokenType::StringLiteral && m_currentToken.type != TokenType::Colon);
+
     // Phase 0: Template strings
-    while (m_currentToken.type != TokenType::Eof) {
-        if (m_currentToken.type == TokenType::KwEnd || checkKeyword("End")) {
-            consume();
-            if (m_currentToken.type == TokenType::KwAsm || checkKeyword("Asm")) {
+    while (m_currentToken.type == TokenType::StringLiteral) {
+        if (!fullCode.empty()) fullCode += "\n\t";
+        fullCode += m_currentToken.text;
+        consume();
+    }
+
+    if (!isBlockAsm && m_currentToken.type != TokenType::Colon && m_currentToken.type != TokenType::KwEnd && !checkKeyword("End")) {
+        auto node = std::make_unique<AsmStmtNode>(fullCode);
+        node->constraints = "~{dirflag},~{fpsr},~{flags}";
+        return node;
+    }
+
+    if (isBlockAsm) {
+        while (m_currentToken.type != TokenType::Eof) {
+            if (m_currentToken.type == TokenType::KwEnd || checkKeyword("End")) {
+                consume();
+                if (m_currentToken.type == TokenType::KwAsm || checkKeyword("Asm")) {
+                    consume();
+                }
+                auto node = std::make_unique<AsmStmtNode>(fullCode);
+                node->constraints = "~{dirflag},~{fpsr},~{flags}";
+                return node;
+            }
+
+            if (m_currentToken.type == TokenType::Colon) {
+                break;
+            }
+
+            if (m_currentToken.type == TokenType::StringLiteral) {
+                if (!fullCode.empty()) fullCode += "\n\t";
+                fullCode += m_currentToken.text;
+                consume();
+            } else {
                 consume();
             }
-            auto node = std::make_unique<AsmStmtNode>(fullCode);
-            return node;
-        }
-
-        if (m_currentToken.type == TokenType::Colon) {
-            // Reached output operands separator ':'
-            break;
-        }
-
-        if (m_currentToken.type == TokenType::StringLiteral) {
-            if (!fullCode.empty()) fullCode += "\n";
-            fullCode += m_currentToken.text;
-            consume();
-        } else {
-            consume();
         }
     }
 
-    // Phase 1: Output operands (after first ':')
+    // Phase 1: Output operands
     if (m_currentToken.type == TokenType::Colon) {
         consume();
         while (m_currentToken.type != TokenType::Colon &&
                m_currentToken.type != TokenType::KwEnd && !checkKeyword("End") &&
                m_currentToken.type != TokenType::Eof) {
-            // For future output operands handling
-            consume();
+            if (!isBlockAsm && m_currentToken.hasLeadingNewline) break;
+            if (m_currentToken.type == TokenType::StringLiteral) {
+                std::string c = m_currentToken.text;
+                consume();
+                if (!constraintsStr.empty()) constraintsStr += ",";
+                constraintsStr += c;
+
+                if (match(TokenType::LParen)) {
+                    outputs.push_back(parseExpression());
+                    expect(TokenType::RParen, "Expected ')' after output operand variable in Asm");
+                }
+            } else if (match(TokenType::Comma)) {
+                continue;
+            } else {
+                consume();
+            }
         }
     }
 
-    // Phase 2: Input operands (after second ':')
-    if (m_currentToken.type == TokenType::Colon) {
+    // Phase 2: Input operands
+    if (m_currentToken.type == TokenType::Colon && (isBlockAsm || !m_currentToken.hasLeadingNewline)) {
         consume();
         while (m_currentToken.type != TokenType::Colon &&
                m_currentToken.type != TokenType::KwEnd && !checkKeyword("End") &&
                m_currentToken.type != TokenType::Eof) {
+            if (!isBlockAsm && m_currentToken.hasLeadingNewline) break;
             if (m_currentToken.type == TokenType::StringLiteral) {
                 std::string c = m_currentToken.text;
                 consume();
@@ -978,11 +1012,12 @@ std::unique_ptr<AsmStmtNode> Parser::parseAsmStatement() {
         }
     }
 
-    // Phase 3: Clobbers (after third ':')
-    if (m_currentToken.type == TokenType::Colon) {
+    // Phase 3: Clobbers
+    if (m_currentToken.type == TokenType::Colon && (isBlockAsm || !m_currentToken.hasLeadingNewline)) {
         consume();
         while (m_currentToken.type != TokenType::KwEnd && !checkKeyword("End") &&
                m_currentToken.type != TokenType::Eof) {
+            if (!isBlockAsm && m_currentToken.hasLeadingNewline) break;
             if (m_currentToken.type == TokenType::StringLiteral) {
                 std::string clobber = "~{" + m_currentToken.text + "}";
                 consume();
@@ -996,19 +1031,20 @@ std::unique_ptr<AsmStmtNode> Parser::parseAsmStatement() {
         }
     }
 
-    // Consume trailing 'End Asm'
-    while (m_currentToken.type != TokenType::Eof) {
-        if (m_currentToken.type == TokenType::KwEnd || checkKeyword("End")) {
-            consume();
-            if (m_currentToken.type == TokenType::KwAsm || checkKeyword("Asm")) {
+    // Trailing 'End Asm' (only for block Asm!)
+    if (isBlockAsm) {
+        while (m_currentToken.type != TokenType::Eof) {
+            if (m_currentToken.type == TokenType::KwEnd || checkKeyword("End")) {
                 consume();
+                if (m_currentToken.type == TokenType::KwAsm || checkKeyword("Asm")) {
+                    consume();
+                }
+                break;
             }
-            break;
+            consume();
         }
-        consume();
     }
 
-    // Always include standard clobbers if not already present
     if (!constraintsStr.empty()) {
         constraintsStr += ",~{dirflag},~{fpsr},~{flags}";
     } else {
@@ -1017,6 +1053,7 @@ std::unique_ptr<AsmStmtNode> Parser::parseAsmStatement() {
 
     auto node = std::make_unique<AsmStmtNode>(fullCode);
     node->constraints = constraintsStr;
+    node->outputOperands = std::move(outputs);
     node->inputOperands = std::move(inputs);
     return node;
 }
@@ -1122,13 +1159,16 @@ std::unique_ptr<ASTNode> Parser::parseAssignOrCallStatement() {
 
     // Case B: Unparenthesized call: SubName arg1, arg2
     auto callNode = std::make_unique<CallExprASTNode>();
+    callNode->line = targetExpr ? targetExpr->line : m_currentToken.line;
+    callNode->column = targetExpr ? targetExpr->column : m_currentToken.column;
     if (auto var = dynamic_cast<VariableExprASTNode*>(targetExpr.get())) {
         callNode->funcName = var->name;
     } else if (auto member = dynamic_cast<MemberAccessExprASTNode*>(targetExpr.get())) {
         callNode->funcName = member->memberName;
         callNode->calleeExpr = std::move(member->base);
     } else {
-        callNode->funcName = "";
+        throw std::runtime_error("Syntax error: Expected subroutine or procedure call statement at line " + 
+                                 std::to_string(callNode->line) + ", column " + std::to_string(callNode->column));
     }
 
     size_t callLine = m_prevToken.line;
@@ -1155,7 +1195,10 @@ std::unique_ptr<ASTNode> Parser::parseAssignOrCallStatement() {
         } while (match(TokenType::Comma));
     }
 
-    return std::make_unique<CallStmtNode>(std::move(callNode));
+    auto callStmt = std::make_unique<CallStmtNode>(std::move(callNode));
+    callStmt->line = targetExpr ? targetExpr->line : m_currentToken.line;
+    callStmt->column = targetExpr ? targetExpr->column : m_currentToken.column;
+    return callStmt;
 }
 
 std::unique_ptr<ASTNode> Parser::parseStatement() {
@@ -2524,8 +2567,13 @@ std::unique_ptr<InterfaceNode> Parser::parseInterface(bool isPublic) {
     iface->isPublic = isPublic;
     iface->line = m_currentToken.line;
     iface->column = m_currentToken.column;
-    iface->name = m_currentToken.text;
+    std::string ifaceName = m_currentToken.text;
     expect(TokenType::Identifier, "Expected interface name");
+    while (match(TokenType::Dot)) {
+        ifaceName += "." + m_currentToken.text;
+        expect(TokenType::Identifier, "Expected identifier after '.' in interface name");
+    }
+    iface->name = ifaceName;
 
     while (m_currentToken.type != TokenType::Eof) {
         while (match(TokenType::Colon)) {}
@@ -2669,8 +2717,27 @@ std::unique_ptr<StaticAssertStmtNode> Parser::parseStaticAssert() {
 
 std::unique_ptr<ModuleNode> Parser::parseModule() {
     auto moduleNode = std::make_unique<ModuleNode>();
+    moduleNode->line = m_currentToken.line;
+    moduleNode->column = m_currentToken.column;
 
     InstancingKind instancing = InstancingKind::Unspecified;
+
+    std::vector<ImportDirective> leadingImports;
+    std::vector<UseDirective> leadingUses;
+
+    // Check for leading Import and Use directives before Module/Class/Namespace
+    while (true) {
+        while (match(TokenType::Colon)) {}
+        if (m_currentToken.type == TokenType::KwImport || checkKeyword("Import")) {
+            consume();
+            leadingImports.push_back(parseImportStatement());
+        } else if (m_currentToken.type == TokenType::KwUse || checkKeyword("Use")) {
+            consume();
+            leadingUses.push_back(parseUseStatement());
+        } else {
+            break;
+        }
+    }
 
     // Check for leading attributes like <Instancing(...)> or <Packed> before Module/Class
     while (match(TokenType::Less)) {
@@ -2692,10 +2759,41 @@ std::unique_ptr<ModuleNode> Parser::parseModule() {
                 }
                 expect(TokenType::RParen, "Expected ')' after Instancing category");
             } else {
-                consume(); // Skip other leading attributes gracefully
+                consume();
+                if (match(TokenType::LParen)) {
+                    int pDepth = 1;
+                    while (pDepth > 0 && m_currentToken.type != TokenType::Eof) {
+                        if (m_currentToken.type == TokenType::LParen) pDepth++;
+                        else if (m_currentToken.type == TokenType::RParen) pDepth--;
+                        consume();
+                    }
+                }
             }
         } while (match(TokenType::Comma));
         expect(TokenType::Greater, "Expected '>' to close attribute");
+    }
+
+    // Re-check for Import/Use after attributes if any
+    while (true) {
+        while (match(TokenType::Colon)) {}
+        if (m_currentToken.type == TokenType::KwImport || checkKeyword("Import")) {
+            consume();
+            leadingImports.push_back(parseImportStatement());
+        } else if (m_currentToken.type == TokenType::KwUse || checkKeyword("Use")) {
+            consume();
+            leadingUses.push_back(parseUseStatement());
+        } else {
+            break;
+        }
+    }
+
+    bool isTopLevelPublic = true;
+    if (m_currentToken.type == TokenType::KwPublic || checkKeyword("Public")) {
+        consume();
+        isTopLevelPublic = true;
+    } else if (m_currentToken.type == TokenType::KwPrivate || checkKeyword("Private")) {
+        consume();
+        isTopLevelPublic = false;
     }
 
     if (m_currentToken.type == TokenType::KwModule || checkKeyword("Module")) {
@@ -2710,9 +2808,13 @@ std::unique_ptr<ModuleNode> Parser::parseModule() {
     } else if (m_currentToken.type == TokenType::KwNamespace || checkKeyword("Namespace")) {
         consume();
         moduleNode->isClass = false;
+        moduleNode->isNamespace = true;
     } else {
-        throw std::runtime_error("Source file must begin with 'Module', 'Class', 'Interface', or 'Namespace' (optionally preceded by attributes)");
+        throw std::runtime_error("Source file must begin with 'Module', 'Class', 'Interface', or 'Namespace' (optionally preceded by attributes or visibility)");
     }
+
+    moduleNode->imports = std::move(leadingImports);
+    moduleNode->uses = std::move(leadingUses);
 
     if (moduleNode->isClass) {
         if (instancing == InstancingKind::Unspecified) {
@@ -2730,6 +2832,83 @@ std::unique_ptr<ModuleNode> Parser::parseModule() {
     moduleNode->name = modName;
     m_definedProcedures.clear();
 
+    if (moduleNode->isInterface) {
+        auto iface = std::make_unique<InterfaceNode>();
+        iface->name = modName;
+        iface->isPublic = isTopLevelPublic;
+        iface->line = moduleNode->line;
+        iface->column = moduleNode->column;
+
+        while (m_currentToken.type != TokenType::Eof) {
+            while (match(TokenType::Colon)) {}
+
+            if (m_currentToken.type == TokenType::KwEnd || checkKeyword("End")) {
+                consume();
+                if (m_currentToken.type == TokenType::KwInterface || checkKeyword("Interface")) {
+                    consume();
+                    break;
+                }
+            }
+
+            InterfaceMethod method;
+            if (m_currentToken.type == TokenType::KwSub || checkKeyword("Sub")) {
+                consume();
+                method.isFunction = false;
+            } else if (m_currentToken.type == TokenType::KwFunction || checkKeyword("Function")) {
+                consume();
+                method.isFunction = true;
+            } else {
+                consume();
+                continue;
+            }
+
+            method.name = m_currentToken.text;
+            expect(TokenType::Identifier, "Expected procedure name in interface");
+
+            if (match(TokenType::LParen)) {
+                if (!check(TokenType::RParen)) {
+                    do {
+                        ParameterNode param;
+                        if (m_currentToken.type == TokenType::KwByVal || checkKeyword("ByVal")) {
+                            consume();
+                            param.isByRef = false;
+                        } else if (m_currentToken.type == TokenType::KwByRef || checkKeyword("ByRef")) {
+                            consume();
+                            param.isByRef = true;
+                        }
+                        param.name = m_currentToken.text;
+                        expect(TokenType::Identifier, "Expected parameter name in interface method");
+                        if (m_currentToken.type == TokenType::KwAs || checkKeyword("As")) {
+                            consume();
+                        }
+                        param.type = parseTypeSpec();
+                        method.parameters.push_back(std::move(param));
+                    } while (match(TokenType::Comma));
+                }
+                expect(TokenType::RParen, "Expected ')' after interface method parameters");
+            }
+
+            if (method.isFunction) {
+                if (m_currentToken.type == TokenType::KwAs || checkKeyword("As")) {
+                    consume();
+                }
+                method.returnType = parseTypeSpec();
+            } else {
+                method.returnType = TypeSpec{"void"};
+            }
+
+            iface->methods.push_back(std::move(method));
+        }
+
+        moduleNode->members.push_back(std::move(iface));
+        return moduleNode;
+    }
+
+    parseContainerMembers(moduleNode.get());
+    return moduleNode;
+}
+
+void Parser::parseContainerMembers(ModuleNode* container) {
     while (m_currentToken.type != TokenType::Eof) {
         while (match(TokenType::Colon)) {}
 
@@ -2739,7 +2918,7 @@ std::unique_ptr<ModuleNode> Parser::parseModule() {
             if (toLower(peekTok.text) == "assert") {
                 consume(); // '#'
                 consume(); // 'assert'
-                moduleNode->members.push_back(parseStaticAssert());
+                container->members.push_back(parseStaticAssert());
                 continue;
             }
             handleDirective();
@@ -2748,11 +2927,22 @@ std::unique_ptr<ModuleNode> Parser::parseModule() {
 
         // Check for 'End Module', 'End Class', 'End Interface', or 'End Namespace'
         if (m_currentToken.type == TokenType::KwEnd || checkKeyword("End")) {
-            consume();
-            if ((moduleNode->isClass && (m_currentToken.type == TokenType::KwClass || checkKeyword("Class"))) ||
-                (moduleNode->isInterface && (m_currentToken.type == TokenType::KwInterface || checkKeyword("Interface"))) ||
-                (!moduleNode->isClass && (m_currentToken.type == TokenType::KwModule || checkKeyword("Module") || 
-                                          m_currentToken.type == TokenType::KwNamespace || checkKeyword("Namespace")))) {
+            Token peekTok = m_lexer.peekToken();
+            std::string kw = toLower(peekTok.text);
+            if (container->isClass && (kw == "class" || peekTok.type == TokenType::KwClass)) {
+                consume();
+                consume();
+                break;
+            } else if (container->isInterface && (kw == "interface" || peekTok.type == TokenType::KwInterface)) {
+                consume();
+                consume();
+                break;
+            } else if (container->isNamespace && (kw == "namespace" || peekTok.type == TokenType::KwNamespace)) {
+                consume();
+                consume();
+                break;
+            } else if (!container->isClass && !container->isInterface && !container->isNamespace && (kw == "module" || peekTok.type == TokenType::KwModule)) {
+                consume();
                 consume();
                 break;
             }
@@ -2767,24 +2957,25 @@ std::unique_ptr<ModuleNode> Parser::parseModule() {
                 ifaceName += "." + m_currentToken.text;
                 expect(TokenType::Identifier, "Expected identifier after '.' in interface name");
             }
-            moduleNode->implementsInterfaces.push_back(ifaceName);
+            container->implementsInterfaces.push_back(ifaceName);
             continue;
         }
 
         // Interface Definition inside Module/Namespace
         if (m_currentToken.type == TokenType::KwInterface || checkKeyword("Interface")) {
             consume();
-            moduleNode->members.push_back(parseInterface(true));
+            container->members.push_back(parseInterface(true));
             continue;
         }
 
-        // Check for attribute annotations: <Packed>, <Align(N)>, <Inline>, <NoReturn>, <Export>
+        // Check for attribute annotations: <Packed>, <Align(N)>, <Inline>, <NoReturn>, <Export>, <Instancing(...)>
         bool isPacked = false;
         int alignVal = 0;
         bool isInline = false;
         bool isNoReturn = false;
         bool isExport = false;
         bool isInterrupt = false;
+        InstancingKind innerInstancing = InstancingKind::Unspecified;
 
         while (match(TokenType::Less)) {
             do {
@@ -2803,6 +2994,22 @@ std::unique_ptr<ModuleNode> Parser::parseModule() {
                 } else if (checkKeyword("Interrupt")) {
                     consume();
                     isInterrupt = true;
+                } else if (checkKeyword("Instancing")) {
+                    consume();
+                    expect(TokenType::LParen, "Expected '(' after 'Instancing'");
+                    if (checkKeyword("Global")) {
+                        consume();
+                        innerInstancing = InstancingKind::Global;
+                    } else if (checkKeyword("SingleUse")) {
+                        consume();
+                        innerInstancing = InstancingKind::SingleUse;
+                    } else if (checkKeyword("MultiUse")) {
+                        consume();
+                        innerInstancing = InstancingKind::MultiUse;
+                    } else {
+                        throw std::runtime_error("Invalid Instancing category: expected 'Global', 'SingleUse', or 'MultiUse'");
+                    }
+                    expect(TokenType::RParen, "Expected ')' after Instancing category");
                 } else if (checkKeyword("Align")) {
                     consume();
                     if (match(TokenType::LParen)) {
@@ -2815,7 +3022,15 @@ std::unique_ptr<ModuleNode> Parser::parseModule() {
                         expect(TokenType::RParen, "Expected ')' after alignment value");
                     }
                 } else {
-                    consume(); // Skip unknown attribute gracefully
+                    consume();
+                    if (match(TokenType::LParen)) {
+                        int pDepth = 1;
+                        while (pDepth > 0 && m_currentToken.type != TokenType::Eof) {
+                            if (m_currentToken.type == TokenType::LParen) pDepth++;
+                            else if (m_currentToken.type == TokenType::RParen) pDepth--;
+                            consume();
+                        }
+                    }
                 }
             } while (match(TokenType::Comma));
             expect(TokenType::Greater, "Expected '>' to close attribute");
@@ -2824,13 +3039,13 @@ std::unique_ptr<ModuleNode> Parser::parseModule() {
         // Module / Class Level Declarations
         if (m_currentToken.type == TokenType::KwImport || checkKeyword("Import")) {
             consume();
-            moduleNode->imports.push_back(parseImportStatement());
+            container->imports.push_back(parseImportStatement());
             continue;
         }
 
         if (m_currentToken.type == TokenType::KwUse || checkKeyword("Use")) {
             consume();
-            moduleNode->uses.push_back(parseUseStatement());
+            container->uses.push_back(parseUseStatement());
             continue;
         }
 
@@ -2843,37 +3058,69 @@ std::unique_ptr<ModuleNode> Parser::parseModule() {
         if (m_currentToken.type == TokenType::KwStructure || checkKeyword("Structure") ||
             m_currentToken.type == TokenType::KwType || checkKeyword("Type")) {
             consume();
-            moduleNode->members.push_back(parseStructure(isPacked, alignVal));
+            container->members.push_back(parseStructure(isPacked, alignVal));
             continue;
         }
 
         if (m_currentToken.type == TokenType::KwUnion || checkKeyword("Union")) {
             consume();
-            moduleNode->members.push_back(parseUnion(isPacked, alignVal));
+            container->members.push_back(parseUnion(isPacked, alignVal));
             continue;
         }
 
         if (m_currentToken.type == TokenType::KwEnum || checkKeyword("Enum")) {
             consume();
-            moduleNode->members.push_back(parseEnum(true));
+            container->members.push_back(parseEnum(true));
             continue;
         }
 
         if (m_currentToken.type == TokenType::KwConst || checkKeyword("Const")) {
             consume();
-            moduleNode->members.push_back(parseConstStatement(false));
+            container->members.push_back(parseConstStatement(false));
             continue;
         }
 
         if (m_currentToken.type == TokenType::KwDim || checkKeyword("Dim")) {
             consume();
-            moduleNode->members.push_back(parseDimStatement());
+            container->members.push_back(parseDimStatement());
             continue;
         }
 
         if (m_currentToken.type == TokenType::KwDelegate || checkKeyword("Delegate")) {
             consume();
-            moduleNode->members.push_back(parseDelegate(true));
+            container->members.push_back(parseDelegate(true));
+            continue;
+        }
+
+        if (m_currentToken.type == TokenType::KwInterface || checkKeyword("Interface")) {
+            consume();
+            container->members.push_back(parseInterface(true));
+            continue;
+        }
+
+        // Module / Class inside Namespace
+        if (m_currentToken.type == TokenType::KwModule || checkKeyword("Module") ||
+            m_currentToken.type == TokenType::KwClass || checkKeyword("Class")) {
+            bool isInnerClass = (m_currentToken.type == TokenType::KwClass || checkKeyword("Class"));
+            consume();
+            std::string subName = m_currentToken.text;
+            expect(TokenType::Identifier, "Expected inner module or class name");
+            while (match(TokenType::Dot)) {
+                subName += "." + m_currentToken.text;
+                expect(TokenType::Identifier, "Expected identifier after '.' in name");
+            }
+
+            auto innerMod = std::make_shared<ModuleNode>();
+            innerMod->name = container->name.empty() ? subName : (container->name + "." + subName);
+            innerMod->sourceFilePath = container->sourceFilePath;
+            innerMod->isClass = isInnerClass;
+            innerMod->instancing = innerInstancing;
+            if (innerMod->isClass && innerMod->instancing == InstancingKind::Unspecified) {
+                innerMod->instancing = InstancingKind::MultiUse;
+            }
+
+            parseContainerMembers(innerMod.get());
+            container->innerModules.push_back(innerMod);
             continue;
         }
 
@@ -2884,40 +3131,65 @@ std::unique_ptr<ModuleNode> Parser::parseModule() {
             bool isPub = (m_currentToken.type == TokenType::KwPublic || checkKeyword("Public"));
             consume();
 
+            if (m_currentToken.type == TokenType::KwModule || checkKeyword("Module") ||
+                m_currentToken.type == TokenType::KwClass || checkKeyword("Class")) {
+                bool isInnerClass = (m_currentToken.type == TokenType::KwClass || checkKeyword("Class"));
+                consume();
+                std::string subName = m_currentToken.text;
+                expect(TokenType::Identifier, "Expected inner module or class name");
+                while (match(TokenType::Dot)) {
+                    subName += "." + m_currentToken.text;
+                    expect(TokenType::Identifier, "Expected identifier after '.' in name");
+                }
+
+                auto innerMod = std::make_shared<ModuleNode>();
+                innerMod->name = container->name.empty() ? subName : (container->name + "." + subName);
+                innerMod->sourceFilePath = container->sourceFilePath;
+                innerMod->isClass = isInnerClass;
+                innerMod->instancing = innerInstancing;
+                if (innerMod->isClass && innerMod->instancing == InstancingKind::Unspecified) {
+                    innerMod->instancing = InstancingKind::MultiUse;
+                }
+
+                parseContainerMembers(innerMod.get());
+                container->innerModules.push_back(innerMod);
+                continue;
+            }
+
             if (m_currentToken.type == TokenType::KwInterface || checkKeyword("Interface")) {
                 consume();
-                moduleNode->members.push_back(parseInterface(isPub));
+                container->members.push_back(parseInterface(isPub));
                 continue;
             }
             if (m_currentToken.type == TokenType::KwStructure || checkKeyword("Structure") ||
                 m_currentToken.type == TokenType::KwType || checkKeyword("Type")) {
                 consume();
-                moduleNode->members.push_back(parseStructure(isPacked, alignVal));
+                container->members.push_back(parseStructure(isPacked, alignVal));
                 continue;
             }
             if (m_currentToken.type == TokenType::KwUnion || checkKeyword("Union")) {
                 consume();
-                moduleNode->members.push_back(parseUnion(isPacked, alignVal));
+                container->members.push_back(parseUnion(isPacked, alignVal));
                 continue;
             }
             if (m_currentToken.type == TokenType::KwEnum || checkKeyword("Enum")) {
                 consume();
-                moduleNode->members.push_back(parseEnum(isPub));
+                container->members.push_back(parseEnum(isPub));
                 continue;
             }
             if (m_currentToken.type == TokenType::KwConst || checkKeyword("Const")) {
                 consume();
-                moduleNode->members.push_back(parseConstStatement(isPub));
+                container->members.push_back(parseConstStatement(isPub));
                 continue;
             }
             if (m_currentToken.type == TokenType::KwDim || checkKeyword("Dim")) {
                 consume();
-                moduleNode->members.push_back(parseDimStatement());
+                container->members.push_back(parseDimStatement());
                 continue;
             }
             if (m_currentToken.type == TokenType::KwDelegate || checkKeyword("Delegate")) {
                 consume();
-                moduleNode->members.push_back(parseDelegate(isPub));
+                container->members.push_back(parseDelegate(isPub));
                 continue;
             }
 
@@ -2980,7 +3252,7 @@ std::unique_ptr<ModuleNode> Parser::parseModule() {
                     dimNode->initValue = parseExpression();
                 }
 
-                moduleNode->members.push_back(std::move(dimNode));
+                container->members.push_back(std::move(dimNode));
                 continue;
             }
 
@@ -2989,13 +3261,13 @@ std::unique_ptr<ModuleNode> Parser::parseModule() {
             std::string procKey = proc->name;
             if (proc->propertyKind == ProcedureNode::PropertyKind::Get) procKey += ":Get";
             else if (proc->propertyKind == ProcedureNode::PropertyKind::Let || proc->propertyKind == ProcedureNode::PropertyKind::Set) procKey += ":Set";
-            std::string procKeyLower = procKey;
+            std::string procKeyLower = container->name + "::" + procKey;
             for (auto& c : procKeyLower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
             if (m_definedProcedures.count(procKeyLower)) {
-                throw std::runtime_error("Duplicate procedure definition '" + proc->name + "' in " + (moduleNode->isClass ? "class '" : "module '") + moduleNode->name + "'");
+                throw std::runtime_error("Duplicate procedure definition '" + proc->name + "' in " + (container->isClass ? "class '" : "module '") + container->name + "'");
             }
             m_definedProcedures.insert(procKeyLower);
-            moduleNode->members.push_back(std::move(proc));
+            container->members.push_back(std::move(proc));
             continue;
         }
 
@@ -3008,18 +3280,18 @@ std::unique_ptr<ModuleNode> Parser::parseModule() {
             std::string procKey = proc->name;
             if (proc->propertyKind == ProcedureNode::PropertyKind::Get) procKey += ":Get";
             else if (proc->propertyKind == ProcedureNode::PropertyKind::Let || proc->propertyKind == ProcedureNode::PropertyKind::Set) procKey += ":Set";
-            std::string procKeyLower = procKey;
+            std::string procKeyLower = container->name + "::" + procKey;
             for (auto& c : procKeyLower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
             if (m_definedProcedures.count(procKeyLower)) {
-                throw std::runtime_error("Duplicate procedure definition '" + proc->name + "' in " + (moduleNode->isClass ? "class '" : "module '") + moduleNode->name + "'");
+                throw std::runtime_error("Duplicate procedure definition '" + proc->name + "' in " + (container->isClass ? "class '" : "module '") + container->name + "'");
             }
             m_definedProcedures.insert(procKeyLower);
-            moduleNode->members.push_back(std::move(proc));
+            container->members.push_back(std::move(proc));
             continue;
         }
 
         // In Class bodies: member fields can be declared as `Private buffer As ...` or `buffer As ...`
-        if (moduleNode->isClass && m_currentToken.type == TokenType::Identifier) {
+        if (container->isClass && m_currentToken.type == TokenType::Identifier) {
             std::string fieldName = m_currentToken.text;
             consume();
             if (m_currentToken.type == TokenType::KwAs || checkKeyword("As")) {
@@ -3027,15 +3299,13 @@ std::unique_ptr<ModuleNode> Parser::parseModule() {
                 auto dimNode = std::make_unique<DimStmtNode>();
                 dimNode->varName = fieldName;
                 dimNode->type = parseTypeSpec();
-                moduleNode->members.push_back(std::move(dimNode));
+                container->members.push_back(std::move(dimNode));
                 continue;
             }
         }
 
         consume();
     }
-
-    return moduleNode;
 }
 
 } // namespace llbc

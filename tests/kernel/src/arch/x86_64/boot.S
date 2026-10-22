@@ -120,15 +120,15 @@ setup_page_tables:
     mov %eax, (page_table_l2 + 24)
     ret
 
-/* Enable PAE and Long Mode in CR4/CR0/EFER */
+/* Enable PAE, SSE, and Long Mode in CR4/CR0/EFER */
 enable_paging:
     /* Pass L4 Page Table Address to CR3 */
     mov $page_table_l4, %eax
     mov %eax, %cr3
 
-    /* Enable PAE (Physical Address Extension) in CR4 */
+    /* Enable PAE (Physical Address Extension), OSFXSR, and OSXMMEXCPT in CR4 */
     mov %cr4, %eax
-    or $(1 << 5), %eax
+    or $((1 << 5) | (1 << 9) | (1 << 10)), %eax
     mov %eax, %cr4
 
     /* Set Long Mode Enable (LME) bit in EFER MSR (0xC0000080) */
@@ -137,9 +137,10 @@ enable_paging:
     or $(1 << 8), %eax
     wrmsr
 
-    /* Enable Paging in CR0 */
+    /* Enable Paging in CR0, clear EM (bit 2), set MP (bit 1) */
     mov %cr0, %eax
-    or $(1 << 31), %eax
+    and $~(1 << 2), %eax
+    or $((1 << 1) | (1 << 31)), %eax
     mov %eax, %cr0
     ret
 
@@ -202,3 +203,14 @@ __stack_chk_fail:
     cli
 1:  hlt
     jmp 1b
+
+.global abort
+abort:
+    cli
+1:  hlt
+    jmp 1b
+
+.global dprintf
+dprintf:
+    ret
+

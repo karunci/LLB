@@ -41,6 +41,8 @@ Module = "ImportHelper.bas"
 Class = "ClassHelper.cls"
 Class = "SingleUseHelper.cls"
 Class = "DeviceWriter.cls"
+Class = "NestedNamespaceX.cls"
+Class = "NestedNamespaceY.cls"
 
 ; --- Main test runner ---
 Module = "TestSuite.bas"

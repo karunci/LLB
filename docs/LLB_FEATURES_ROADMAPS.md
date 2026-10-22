@@ -178,7 +178,7 @@ LLB fuses the safety and performance of modern systems languages with the approa
 | Compile-Time Layout Intrinsics | ✅ | `SizeOf(Type)` and `OffsetOf(Struct, Field)` compile-time layout evaluations |
 | Operator overloading | ⏳ Future Roadmap | Custom user-defined operators (`+`, `-`, `*`). |
 | Iterators / Generators (`Yield`) | ⏳ Future Roadmap | Generator coroutines for lazy sequences. |
-| Namespaces / Module nesting | ✅ | `Namespace Name ... End Namespace` hierarchical scope organization with dotted symbol normalization |
+| Namespaces / Module nesting | ✅ | Full recursive nested namespaces hosting multiple Class, Module, and Interface blocks with isolated import disambiguation (Import X.Y, Import X.Z, Import Y.Z) |
 | Compile-time evaluation (`Const` expressions) | ✅ | Compile-time constant evaluation in preprocessor |
 | Conditional compilation (`#If`, `#Else`, `#End If`) | ✅ | Full preprocessor directives (`#Const`, `#If`, `#ElseIf`, `#Else`, `#End If`) with `-D` flags |
 | Attributes / Annotations beyond `<Packed>` | ✅ | `<Inline>` (AlwaysInline), `<NoReturn>`, `<Export>`, `<Packed>`, `<Align(N)>` |

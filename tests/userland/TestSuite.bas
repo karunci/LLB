@@ -19,6 +19,9 @@ Module TestSuite
     Use ClassHelper In "ClassHelper.cls" As Helper
     Use SingleUseHelper In "SingleUseHelper.cls" As SingleInst
     Use DeviceWriter In "DeviceWriter.cls" As Writer
+    Import NestedX.Y In "NestedNamespaceX.cls"
+    Import NestedX.Z In "NestedNamespaceX.cls"
+    Import NestedY.Z In "NestedNamespaceY.cls"
 
     ' Module-level constants & global initializers
     Public Const MODULE_TEST_MAGIC As Int32 = 4242
@@ -1887,6 +1890,30 @@ SkipMiddle:
         TestBitfieldPacking = False
     End Function
 
+    ' 66. Nested Namespace Multi-Class Disambiguation & Resolution (NestedX.Y, NestedX.Z, NestedY.Z)
+    Public Function TestNestedNamespaceDisambiguation() As Boolean
+        Dim valXY As Int32 = NestedX.Y.GetValue()
+        Dim valXZ As Int32 = NestedX.Z.GetValue()
+        Dim valYZ As Int32 = NestedY.Z.GetValue()
+
+        If valXY <> 101 Then
+            TestNestedNamespaceDisambiguation = False
+            Exit Function
+        End If
+
+        If valXZ <> 202 Then
+            TestNestedNamespaceDisambiguation = False
+            Exit Function
+        End If
+
+        If valYZ <> 303 Then
+            TestNestedNamespaceDisambiguation = False
+            Exit Function
+        End If
+
+        TestNestedNamespaceDisambiguation = True
+    End Function
+
     ' Main Entry Point
     Public Unsafe Function Main(ByVal argc As Int32, ByVal argv As Pointer To Pointer To Byte) As Int32
         puts CPtr(Pointer To Byte, "================================================")
@@ -2415,13 +2442,21 @@ SkipMiddle:
             failCount = failCount + 1
         End If
 
+        ' 66. Nested Namespace Multi-Class Disambiguation & Resolution (NestedX.Y, NestedX.Z, NestedY.Z)
+        If TestNestedNamespaceDisambiguation() Then
+            puts CPtr(Pointer To Byte, "Test 66 > [PASS] Nested Namespace Multi-Class Disambiguation (NestedX.Y, NestedX.Z, NestedY.Z)")
+        Else
+            puts CPtr(Pointer To Byte, "Test 66 > [FAIL] Nested Namespace Multi-Class Disambiguation")
+            failCount = failCount + 1
+        End If
+
         puts CPtr(Pointer To Byte, "================================================")
         If failCount = 0 Then
-            puts CPtr(Pointer To Byte, "   ALL 65 TEST SUITES PASSED SUCCESSFULLY!      ")
+            puts CPtr(Pointer To Byte, "   ALL 66 TEST SUITES PASSED SUCCESSFULLY!      ")
             puts CPtr(Pointer To Byte, "================================================")
             Main = 0
         Else
-            Print "   TEST SUITE FINISHED WITH ", failCount, " FAILURE(S) OUT OF 65"
+            Print "   TEST SUITE FINISHED WITH ", failCount, " FAILURE(S) OUT OF 66"
             puts CPtr(Pointer To Byte, "================================================")
             Main = 1
         End If

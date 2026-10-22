@@ -94,16 +94,52 @@ End Class
 ```
 
 ### Namespaces (`Namespace ... End Namespace`)
-Namespaces group modules, procedures, and classes into hierarchical scope trees:
+Namespaces group modules, procedures, classes, and interfaces into hierarchical scope trees. A namespace container can host multiple `Class`, `Module`, and `Interface` definitions within the same compilation unit:
+
 ```vb
-Namespace Hardware.Bus
-    Public Function ReadRegister(ByVal regId As UInt16) As Byte
-        ' ...
-    End Function
+' X.cls
+Namespace X
+    <Instancing(SingleUse)>
+    Public Class Y
+        Public Function GetValue() As Int32
+            GetValue = 101
+        End Function
+    End Class
+
+    <Instancing(SingleUse)>
+    Public Class Z
+        Public Function GetValue() As Int32
+            GetValue = 202
+        End Function
+    End Class
 End Namespace
 
-' Call-site usage:
-Dim val As Byte = Hardware.Bus.ReadRegister(&H60)
+' Y.cls
+Namespace Y
+    <Instancing(SingleUse)>
+    Public Class Z
+        Public Function GetValue() As Int32
+            GetValue = 303
+        End Function
+    End Class
+End Namespace
+```
+
+#### Nested Import Disambiguation
+Targeted imports automatically isolate to their respective inner definitions without symbol bleeding:
+```vb
+Import X.Y  ' Imports only Class Y from Namespace X (X.Y)
+Import X.Z  ' Imports only Class Z from Namespace X (X.Z)
+Import Y.Z  ' Imports only Class Z from Namespace Y (Y.Z)
+
+Dim a As Int32 = X.Y.GetValue() ' Evaluates to 101
+Dim b As Int32 = X.Z.GetValue() ' Evaluates to 202
+Dim c As Int32 = Y.Z.GetValue() ' Evaluates to 303
+```
+
+Top-level namespace declarations can also be imported in bulk:
+```vb
+Import X    ' Imports all inner classes and modules within Namespace X
 ```
 
 ### Imports (`Import`)

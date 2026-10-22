@@ -127,7 +127,12 @@ public:
     std::unique_ptr<ExprASTNode> base;
     std::string memberName;
     MemberAccessExprASTNode(std::unique_ptr<ExprASTNode> b, std::string m)
-        : base(std::move(b)), memberName(std::move(m)) {}
+        : base(std::move(b)), memberName(std::move(m)) {
+        if (base) {
+            line = base->line;
+            column = base->column;
+        }
+    }
 };
 
 class IndexExprASTNode : public ExprASTNode {
@@ -337,6 +342,7 @@ class AsmStmtNode : public ASTNode {
 public:
     std::string assemblyCode;
     std::string constraints{"~{dirflag},~{fpsr},~{flags}"};
+    std::vector<std::unique_ptr<ExprASTNode>> outputOperands;
     std::vector<std::unique_ptr<ExprASTNode>> inputOperands;
 
     explicit AsmStmtNode(std::string code) : assemblyCode(std::move(code)) {}
@@ -543,11 +549,13 @@ public:
     std::string sourceFilePath;
     bool isClass{false};
     bool isInterface{false};
+    bool isNamespace{false};
     InstancingKind instancing{InstancingKind::Unspecified};
     std::vector<std::string> implementsInterfaces;
     std::vector<ImportDirective> imports;
     std::vector<UseDirective> uses;
     std::vector<std::unique_ptr<ASTNode>> members;
+    std::vector<std::shared_ptr<ModuleNode>> innerModules;
 };
 
 } // namespace llbc

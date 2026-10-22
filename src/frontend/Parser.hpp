@@ -28,6 +28,8 @@ public:
     void reportError(const std::string& message, const Token* tok = nullptr);
 
 private:
+    void parseContainerMembers(ModuleNode* container);
+
     Lexer m_lexer;
     Token m_currentToken;
     Token m_prevToken;

@@ -721,6 +721,8 @@ struct CliOptions {
     bool isFreestanding = false;
     bool isRawBinary = false;
     bool enableDebugInfo = false;
+    bool compileOnly = false;      // -c: compile and assemble only, do not link
+    bool emitLlvm = false;         // -emit-llvm / -S: generate human-readable LLVM IR (.ll)
     int optLevel = 0;
     int scriptTimeout = 30;
     bool skipPostBuild = false;
@@ -920,7 +922,10 @@ int main(int argc, char** argv) {
                       << "  to its descriptor manifest. CLI options override defaults in all manifests.\n\n"
                       << "Basic Options:\n"
                       << "  -o <file>                Specify final output file path (executable, lib, or raw bin)\n"
+                      << "  -c                       Compile and assemble only; do not link\n"
+                      << "  -S, -emit-llvm           Emit human-readable LLVM IR (.ll) disassembly\n"
                       << "  -O0, -O1, -O2, -O3       Optimization level (-O0 default, -O2 recommended for release)\n"
+                      << "  -Os, -Oz                 Optimize for code size\n"
                       << "  -g                       Generate DWARF debug information\n"
                       << "  -I <dir>                 Add directory to search path for Use / Import / Class files\n"
                       << "  -D <name>[=<val>]        Define preprocessor conditional macro (e.g. -D DEBUG=1)\n"
@@ -1038,17 +1043,31 @@ int main(int argc, char** argv) {
         } else if (arg == "-freestanding" || arg == "--freestanding" || arg == "-nostdlib" || arg == "--nostdlib") {
             cliOpts.isFreestanding = true;
             cliOpts.cliHasFreestanding = true;
+        } else if (arg == "-c") {
+            cliOpts.compileOnly = true;
+        } else if (arg == "-emit-llvm" || arg == "--emit-llvm") {
+            cliOpts.emitLlvm = true;
+        } else if (arg == "-S") {
+            // In compiler convention, -S means emit assembly or readable IR; we support emitLlvm / compileOnly
+            cliOpts.emitLlvm = true;
+            cliOpts.compileOnly = true;
+        } else if (arg == "-Wall" || arg == "-Wextra" || arg == "-Werror") {
+            // Accepted standard compiler warning flags
         } else if (arg == "-O0") {
             cliOpts.optLevel = 0;
             cliOpts.cliHasOptLevel = true;
         } else if (arg == "-O1") {
             cliOpts.optLevel = 1;
             cliOpts.cliHasOptLevel = true;
-        } else if (arg == "-O2") {
+        } else if (arg == "-O2" || arg == "-O") {
             cliOpts.optLevel = 2;
             cliOpts.cliHasOptLevel = true;
         } else if (arg == "-O3") {
             cliOpts.optLevel = 3;
+            cliOpts.cliHasOptLevel = true;
+        } else if (arg == "-Os" || arg == "-Oz") {
+            // Size optimizations map to level 2
+            cliOpts.optLevel = 2;
             cliOpts.cliHasOptLevel = true;
         } else if (arg.rfind("-l", 0) == 0 || arg.rfind("-L", 0) == 0) {
             // Forward library flags to object / link inputs
@@ -1185,6 +1204,23 @@ int main(int argc, char** argv) {
         } else {
             return 1;
         }
+    }
+
+    // If -c (compile only) was requested, bypass linking stage
+    if (cliOpts.compileOnly) {
+        if (cliOpts.cliHasOutputFile && !allSources.empty()) {
+            // If -o was explicitly provided with -c and there is a compiled object, rename/copy to outputFile
+            std::string generatedObj = objectFiles.back();
+            if (generatedObj != cliOpts.outputFile && fs::exists(generatedObj)) {
+                std::error_code ec;
+                fs::rename(generatedObj, cliOpts.outputFile, ec);
+                if (ec) {
+                    fs::copy_file(generatedObj, cliOpts.outputFile, fs::copy_options::overwrite_existing, ec);
+                    fs::remove(generatedObj, ec);
+                }
+            }
+        }
+        return 0;
     }
 
     // Auto-detect static archive from output file extension (.a)

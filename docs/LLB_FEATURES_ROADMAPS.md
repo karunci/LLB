@@ -183,10 +183,10 @@ LLB fuses the safety and performance of modern systems languages with the approa
 | Conditional compilation (`#If`, `#Else`, `#End If`) | ✅ | Full preprocessor directives (`#Const`, `#If`, `#ElseIf`, `#Else`, `#End If`) with `-D` flags |
 | Attributes / Annotations beyond `<Packed>` | ✅ | `<Inline>` (AlwaysInline), `<NoReturn>`, `<Export>`, `<Packed>`, `<Align(N)>` |
 | Result / Error return types | ✅ | Native `Result` sum type `{ is_ok, err_code, value }` with `Ok(val)`, `Err(code)`, and `IsOk(res)` intrinsics |
-| Bitfield structure fields (`Field As Type * Bits`) | ⏳ Future Roadmap | Hardware register bitfield packing syntax matching classic VB fixed-length string/field style |
+| Bitfield structure fields (`Field As Type * Bits`) | ✅ | Hardware register bitfield packing backed by LLVM integer containers (`i8`..`i64`) and atomic RMW insertion |
 | Compile-time `SizeOf` & `OffsetOf` intrinsics | ✅ | Zero-overhead compile-time layout queries (`SizeOf(T)`, `OffsetOf(T, Field)`) |
 | Interrupt procedure attribute (`<Interrupt>`) | ✅ | Native ISR procedures compiling to LLVM `x86_intr` with automatic register preservation and `iretq` |
-| Compile-time static assertions (`#Assert` / `StaticAssert`) | ⏳ Future Roadmap | Validation of structure alignment and constant invariants at compile-time |
+| Compile-time static assertions (`#Assert` / `StaticAssert`) | ✅ | Validation of structure alignment and constant invariants at compile-time with zero runtime overhead |
 | Flat binary output (`-O binary` / `Type = "RawBinary"`) | ✅ | Direct generation of raw `.bin` kernel images and bootloader sectors |
 
 ---
@@ -348,10 +348,10 @@ While LLB enforces robust syntactic safety quarantines (`Unsafe` blocks for raw 
 | Safety Pillar | Target Standard (Rust / Zig) | Current LLB Status | Gap / Concrete Action Item |
 | :--- | :--- | :---: | :--- |
 | **Syntactic Unsafe Fencing** | `unsafe` keyword required for raw memory ops | ✅ Complete | `CPtr`, pointer arithmetic, and `Asm` are statically quarantined to `Unsafe` procedures. |
-| **Compile-Time Guards** | Mandatory return values, arity checks, undeclared symbol/type rejection | ✅ Complete | 25 compiler rejection tests pass covering undeclared types, methods, private fields, and loops. |
+| **Compile-Time Guards** | Mandatory return values, arity checks, undeclared symbol/type rejection | ✅ Complete | 26 compiler rejection tests pass covering undeclared types, methods, private fields, loops, and static assertions. |
 | **Spatial Safety (Slices & Bounds)** | Fat pointers `[]T` (`{ptr, len}`) with checked indexing | ⏳ Roadmap (Phase 7.1) | Fixed array constant bounds are checked at compile time; runtime array and pointer indexing (`ptr(i)`) require safe slices `Slice Of T` with panic traps. |
 | **Pointer Nullability Safety** | Non-null by default; explicit `Optional Pointer To T` or `?*T` | ⏳ Roadmap (Phase 7.2) | `Result(T, E)` exists for functions, but raw `Pointer To T` can be null without mandatory unwrapping checks. |
-| **Static Assertions** | `#Assert` / `static_assert` for ABI & struct layout invariants | ⏳ Roadmap (Phase 7.3) | Parser AST node created; requires codegen constant-fold hook to validate struct sizes against target layout. |
+| **Static Assertions** | `#Assert` / `static_assert` for ABI & struct layout invariants | ✅ Complete | `#Assert <expr> [, "msg"]` evaluated during compilation against constant folding & DataLayout with zero runtime overhead. |
 | **Definite Assignment** | Reject reads of uninitialized local variables | ⏳ Roadmap (Phase 7.4) | Enforced on `Use` class instances (`.Initialize`); primitives currently fallback to zero-initialization. |
 | **Temporal Safety (Lifetimes)** | Prevention of Use-After-Free / dangling references | ⏳ Roadmap (Phase 8) | Scoped cleanup (`Using ... End Using`) exists; need to restrict manual `Delete` in safe scope or introduce Arena allocators. |
 
@@ -367,8 +367,8 @@ While LLB enforces robust syntactic safety quarantines (`Unsafe` blocks for raw 
    - Lowers to LLVM `{ ptr, i64 }`. When compiling in safe mode, out-of-bounds indexing triggers `__llbc_bounds_panic` or kernel trap.
 2. **Explicit Nullability (`Pointer? To T` or `Optional Pointer To T`):**
    - Safe pointers cannot be null. Pointers that can be null must be unwrapped using `If Not ptr Is Nothing Then ...`.
-3. **Compile-Time Static Assertions (`#Assert`):**
-   - Combine with `SizeOf` and `OffsetOf` to lock down ABI structure layouts at compile time.
+3. ~~**Compile-Time Static Assertions (`#Assert`):**~~ — **Done** ✅
+   - Combined with `SizeOf` and `OffsetOf` to lock down ABI structure layouts at compile time. (Verified in Rejection Test 26 and Kernel IDT).
 
 #### Phase 8: Temporal Safety & Allocator Architecture
 1. **Arena / Region Allocators (`Arena` Subsystem):**

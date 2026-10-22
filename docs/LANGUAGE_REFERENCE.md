@@ -28,6 +28,7 @@
 21. [Bitfield Declarations in Structures & Unions](#21-bitfield-declarations-in-structures--unions)
 22. [Compile-Time Layout Intrinsics (`SizeOf` & `OffsetOf`)](#22-compile-time-layout-intrinsics-sizeof--offsetof)
 23. [Bare-Metal Interrupt Handlers (`<Interrupt>`)](#23-bare-metal-interrupt-handlers-interrupt)
+24. [Compile-Time Static Assertions (`#Assert`)](#24-compile-time-static-assertions-assert)
 
 ---
 

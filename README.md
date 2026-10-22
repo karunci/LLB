@@ -263,6 +263,7 @@ cmake --build . -j$(nproc)   # or: make -j$(nproc)
 Comprehensive documentation, full language grammar, type specifications, FFI rules, and bare-metal kernel references are available in the [`docs/`](docs/) directory:
 
 - 📘 **[Full Language & Architecture Documentation](docs/README.md)** — In-depth guide covering all keywords, syntax, generics, memory models, attributes, runtime libraries, and project manifests.
+- 📕 **[Formal Language Reference Manual](docs/LANGUAGE_REFERENCE.md)** — Exhaustive 24-section language specification including grammar, layout intrinsics, interrupt handlers, and static assertions.
 - 🗺️ **[Feature Parity & Implementation Roadmap](docs/LLB_FEATURES_ROADMAPS.md)** — Complete audit of VB6 compatibility, modern extensions, and current compiler status.
 - 📜 **[Licensing & AI Ingestion Restrictions](LICENSE.md)** — Dual-license terms (MPL-2.0 and AI training prohibitions).
 

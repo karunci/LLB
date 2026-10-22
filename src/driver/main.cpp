@@ -281,6 +281,43 @@ static bool resolveDependencies(
                 worklist.push_back(resolved);
             }
         }
+
+        for (const auto& useDir : mod->uses) {
+            std::string targetFilePath = "";
+            if (useDir.containerPath.find('.') != std::string::npos && 
+                (useDir.containerPath.find(".cls") != std::string::npos || useDir.containerPath.find(".bas") != std::string::npos)) {
+                targetFilePath = useDir.containerPath;
+                size_t slash = curFile.find_last_of("/\\");
+                if (slash != std::string::npos && targetFilePath.find('/') == std::string::npos && targetFilePath.find('\\') == std::string::npos) {
+                    std::string cand = curFile.substr(0, slash + 1) + targetFilePath;
+                    if (fs::exists(cand)) {
+                        targetFilePath = cand;
+                    } else if (fs::exists(targetFilePath)) {
+                        // targetFilePath exists as-is
+                    } else {
+                        targetFilePath = cand;
+                    }
+                }
+            } else {
+                std::string targetModName = !useDir.containerPath.empty()
+                    ? (useDir.containerPath + "." + useDir.targetPath)
+                    : useDir.targetPath;
+                auto it = g_moduleFileIndex.find(toLowerStr(targetModName));
+                if (it != g_moduleFileIndex.end()) {
+                    targetFilePath = it->second;
+                } else if (!useDir.containerPath.empty()) {
+                    auto it2 = g_moduleFileIndex.find(toLowerStr(useDir.containerPath));
+                    if (it2 != g_moduleFileIndex.end()) targetFilePath = it2->second;
+                } else {
+                    auto it3 = g_moduleFileIndex.find(toLowerStr(useDir.targetPath));
+                    if (it3 != g_moduleFileIndex.end()) targetFilePath = it3->second;
+                }
+            }
+            if (!targetFilePath.empty() && !visited.count(targetFilePath)) {
+                getOrParseModule(targetFilePath);
+                worklist.push_back(targetFilePath);
+            }
+        }
     }
 
     orderedSources = discovered;
@@ -375,6 +412,13 @@ static std::string compileSourceFile(
         }
 
         for (const auto& curMod : targetList) {
+            // Strict role enforcement: Import is strictly for procedural Modules, Namespaces, and Interfaces.
+            // Classes must be brought in using 'Use <ClassName>'.
+            if (curMod->isClass && (specificChild == curMod || (!imp.moduleName.empty() && toLowerStr(curMod->name) == toLowerStr(imp.moduleName)))) {
+                llbc::Diagnostic::report(sourcePath, imp.line, imp.column, true,
+                    "Cannot 'Import' Class '" + curMod->name + "'. Use 'Use " + curMod->name + "' instead.");
+                return "";
+            }
             if (curMod->isClass) {
                 irEmitter.registerClassInstancing(curMod->name, curMod->instancing);
                 if (!imp.moduleName.empty() && imp.moduleName == curMod->name) {
@@ -488,7 +532,14 @@ static std::string compileSourceFile(
             // Resolve relative to sourcePath directory if needed
             size_t slash = sourcePath.find_last_of("/\\");
             if (slash != std::string::npos && targetFilePath.find('/') == std::string::npos && targetFilePath.find('\\') == std::string::npos) {
-                targetFilePath = sourcePath.substr(0, slash + 1) + targetFilePath;
+                std::string cand = sourcePath.substr(0, slash + 1) + targetFilePath;
+                if (fs::exists(cand)) {
+                    targetFilePath = cand;
+                } else if (fs::exists(targetFilePath)) {
+                    // targetFilePath exists as-is in cwd
+                } else {
+                    targetFilePath = cand;
+                }
             }
         } else {
             auto it = g_moduleFileIndex.find(toLowerStr(targetModName));
@@ -529,6 +580,13 @@ static std::string compileSourceFile(
         }
 
         for (const auto& curMod : useTargets) {
+            // Strict role enforcement: Use is strictly for instantiable Classes.
+            // Procedural modules must be brought in using 'Import <ModuleName>'.
+            if (!curMod->isClass && !curMod->isNamespace) {
+                llbc::Diagnostic::report(sourcePath, useDir.line, useDir.column, true,
+                    "Cannot 'Use' procedural Module '" + curMod->name + "'. Use 'Import " + curMod->name + "' instead.");
+                return "";
+            }
             if (curMod->isClass) {
                 irEmitter.registerClassInstancing(curMod->name, curMod->instancing);
                 if (!useDir.aliasName.empty()) {

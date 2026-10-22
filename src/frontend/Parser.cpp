@@ -400,6 +400,8 @@ void Parser::parseTypeAlias() {
 
 ImportDirective Parser::parseImportStatement() {
     ImportDirective directive;
+    directive.line = m_currentToken.line;
+    directive.column = m_currentToken.column;
 
     // Case 1: Import "path/file.bas"
     if (m_currentToken.type == TokenType::StringLiteral) {

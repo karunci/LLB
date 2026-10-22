@@ -19,9 +19,9 @@ Module TestSuite
     Use ClassHelper In "ClassHelper.cls" As Helper
     Use SingleUseHelper In "SingleUseHelper.cls" As SingleInst
     Use DeviceWriter In "DeviceWriter.cls" As Writer
-    Import NestedX.Y In "NestedNamespaceX.cls"
-    Import NestedX.Z In "NestedNamespaceX.cls"
-    Import NestedY.Z In "NestedNamespaceY.cls"
+    Use NestedX.Y In "NestedNamespaceX.cls"
+    Use NestedX.Z In "NestedNamespaceX.cls"
+    Use NestedY.Z In "NestedNamespaceY.cls"
 
     ' Module-level constants & global initializers
     Public Const MODULE_TEST_MAGIC As Int32 = 4242

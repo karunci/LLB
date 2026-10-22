@@ -518,6 +518,8 @@ struct ImportDirective {
     std::string symbolName;
     std::string aliasName;
     std::string filePath;
+    size_t line{1};
+    size_t column{1};
 };
 
 struct InterfaceMethod {

@@ -465,6 +465,34 @@ else
     ERR_COUNT=$((ERR_COUNT + 1))
 fi
 
+# 28. 'Import' on Class rejected (must use 'Use')
+cat << 'CODE' > "$BUILD_DIR/bad_import_class.bas"
+Module TestImportClass
+    Import ClassHelper In "ClassHelper.cls"
+End Module
+CODE
+$LLBC ClassHelper.cls "$BUILD_DIR/bad_import_class.bas" 2>&1 | grep -q "Cannot 'Import' Class 'ClassHelper'"
+if [ $? -eq 0 ]; then
+    echo "[PASS] Rejection 28: 'Import' on Class correctly rejected"
+else
+    echo "[FAIL] Rejection 28: 'Import' on Class not rejected"
+    ERR_COUNT=$((ERR_COUNT + 1))
+fi
+
+# 29. 'Use' on procedural Module rejected (must use 'Import')
+cat << 'CODE' > "$BUILD_DIR/bad_use_module.bas"
+Module TestUseModule
+    Use ImportHelper In "ImportHelper.bas"
+End Module
+CODE
+$LLBC ImportHelper.bas "$BUILD_DIR/bad_use_module.bas" 2>&1 | grep -q "Cannot 'Use' procedural Module 'ImportHelper'"
+if [ $? -eq 0 ]; then
+    echo "[PASS] Rejection 29: 'Use' on procedural Module correctly rejected"
+else
+    echo "[FAIL] Rejection 29: 'Use' on procedural Module not rejected"
+    ERR_COUNT=$((ERR_COUNT + 1))
+fi
+
 # Clean up temp files (sources in cwd, objects in build/)
 rm -f bad_uninit.bas bad_multi_singleuse.bas bad_undef_method.bas bad_private_member.bas \
       bad_uninit.o bad_multi_singleuse.o bad_undef_method.o bad_private_member.o \

@@ -388,11 +388,24 @@ While LLB enforces robust syntactic safety quarantines (`Unsafe` blocks for raw 
      - **`Std.Strings`**: High-performance UTF-8 string views, builders, formatters (`FormatHex`, `FormatInt`), and tokenizers.
      - **`Std.Collections`**: Type-safe generic collections (`List(Of T)`, `Dictionary(Of K, V)`, `RingBuffer(Of T)`).
      - **`Std.IO`**: Text streams, binary readers/writers, and serial console multiplexers.
-3. **Self-Hosting Stage-1 Full Monomorphization & Lowering:**
+3. **Dual Standard Library Architecture (`libLLB.dlb` & `libLLB_Metal.dlb`):**
+   - **`libLLB_Metal.dlb` / `libllb_metal.a` (Baremetal / Freestanding Standard Library):**
+     - Targeted for OS kernels, bootloaders, firmware, and embedded bare-metal runtimes (`-nostdlib` / `--freestanding`).
+     - Zero OS dependencies.
+     - Implements freestanding compiler runtime builtins required by LLVM optimization passes: `memset`, `memcpy`, `memmove`, `memcmp`, and stack guards (`__stack_chk_guard`, `__stack_chk_fail`).
+     - Modules: `Metal.Memory` (raw memory operations, bump/arena allocators), `Metal.PortIO`, `Metal.Cpu`, `Metal.Sync` (spinlocks, atomic operations).
+   - **`libLLB.dlb` / `libLLB.so` / `libLLB.dll` (Hosted Standard Library):**
+     - Targeted for userland applications running on top of an OS (Linux, Windows, or PRK-OS userland).
+     - Dynamically linked and consumable via WinAPI-style declarations:
+       ```vb
+       [Public | Private] Declare Function WriteConsole Lib "libLLB.dlb" Alias "LLB_WriteConsole" (s As String) As Int32
+       ```
+     - Covers full standard library surfaces: heap allocation (`AllocateInstance`, `DisposeInstance`), dynamic strings, collections (`List(Of T)`, `Dictionary(Of K, V)`), file I/O, process management, and math routines.
+4. **Self-Hosting Stage-1 Full Monomorphization & Lowering:**
    - Complete AST lowering from `src/stage1/Parser.cls` to `src/stage1/LlvmC.bas` to allow compiling `llbc` without C++ stage-0.
-4. **Cross-Compilation Hardware Presets:**
+5. **Cross-Compilation Hardware Presets:**
    - Bundled target architectures (`x86_64-kernel`, `aarch64-rpi4`, `riscv64-virt`) in `.llbproj`.
-5. **Standard String & Type Inspection Intrinsics:**
+6. **Standard String & Type Inspection Intrinsics:**
    - Built-in freestanding runtime helpers (`IsNumericString(s)`, `IsAlpha(s)`, `IsWhitespace(s)`).
 
 

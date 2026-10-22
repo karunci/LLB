@@ -214,3 +214,77 @@ abort:
 dprintf:
     ret
 
+/* ============================================================================
+ * FREESTANDING RUNTIME BUILTINS (Required by LLVM Optimization Passes)
+ * ============================================================================ */
+.global memset
+.type memset, @function
+memset:
+    /* System V AMD64 ABI:
+     * %rdi: dest pointer
+     * %rsi: fill byte (int)
+     * %rdx: count (size_t)
+     * Returns: %rax = dest pointer
+     */
+    movq %rdi, %rax       /* Save dest for return value */
+    movq %rdx, %rcx       /* Count into rcx for rep stosb */
+    movb %sil, %al        /* Byte value */
+    rep stosb
+    movq %rdi, %rax       /* Restore dest return pointer */
+    retq
+
+.global memcpy
+.type memcpy, @function
+memcpy:
+    /* %rdi: dest pointer
+     * %rsi: src pointer
+     * %rdx: count (size_t)
+     * Returns: %rax = dest pointer
+     */
+    movq %rdi, %rax       /* Save dest for return value */
+    movq %rdx, %rcx       /* Count into rcx for rep movsb */
+    rep movsb
+    retq
+
+.global memmove
+.type memmove, @function
+memmove:
+    /* %rdi: dest pointer, %rsi: src pointer, %rdx: count */
+    movq %rdi, %rax
+    testq %rdx, %rdx
+    jz 2f
+    cmpq %rsi, %rdi
+    jbe 1f                /* dest <= src: copy forward */
+    /* Dest > src: copy backward to prevent overlapping corruption */
+    leaq -1(%rdi,%rdx), %rdi
+    leaq -1(%rsi,%rdx), %rsi
+    movq %rdx, %rcx
+    std                   /* Set direction flag for decrement */
+    rep movsb
+    cld                   /* Restore direction flag */
+    retq
+1:
+    movq %rdx, %rcx
+    rep movsb
+2:
+    retq
+
+.global memcmp
+.type memcmp, @function
+memcmp:
+    /* %rdi: s1, %rsi: s2, %rdx: count */
+    xorl %eax, %eax
+    testq %rdx, %rdx
+    jz 2f
+1:
+    movzbl (%rdi), %eax
+    movzbl (%rsi), %ecx
+    subl %ecx, %eax
+    jnz 2f
+    incq %rdi
+    incq %rsi
+    decq %rdx
+    jnz 1b
+2:
+    retq
+

@@ -493,6 +493,15 @@ else
     ERR_COUNT=$((ERR_COUNT + 1))
 fi
 
+# 30. Unrecognized CLI option rejection
+$LLBC --unrecognized-bogus-option 2>&1 | grep -q "Unrecognized command-line option"
+if [ $? -eq 0 ]; then
+    echo "[PASS] Rejection 30: Unrecognized command-line option correctly rejected"
+else
+    echo "[FAIL] Rejection 30: Unrecognized command-line option not rejected"
+    ERR_COUNT=$((ERR_COUNT + 1))
+fi
+
 # Clean up temp files (sources in cwd, objects in build/)
 rm -f bad_uninit.bas bad_multi_singleuse.bas bad_undef_method.bas bad_private_member.bas \
       bad_uninit.o bad_multi_singleuse.o bad_undef_method.o bad_private_member.o \

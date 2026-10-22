@@ -53,5 +53,6 @@ EmitDebugSymbols    = True
 AllowUnsafePointers = True
 
 [Script]
-; Post-build test script: runs automatically after compilation and linking succeed
+; Post-build test scripts: run automatically after compilation and linking succeed
+Cmd = "test_cli_options.sh"
 Cmd = "test_rejections.sh"

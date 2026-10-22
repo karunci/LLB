@@ -29,6 +29,7 @@
 22. [Compile-Time Layout Intrinsics (`SizeOf` & `OffsetOf`)](#22-compile-time-layout-intrinsics-sizeof--offsetof)
 23. [Bare-Metal Interrupt Handlers (`<Interrupt>`)](#23-bare-metal-interrupt-handlers-interrupt)
 24. [Compile-Time Static Assertions (`#Assert`)](#24-compile-time-static-assertions-assert)
+25. [Compiler Command-Line Interface (`llbc` Options)](#25-compiler-command-line-interface-llbc-options)
 
 ---
 
@@ -976,6 +977,65 @@ Compile-time static assertions allow developers to enforce architectural invaria
 1. **Zero Runtime Overhead:** Evaluated purely at compile time by the AST emitter against constant folded expressions and the LLVM `DataLayout`. Generates zero instructions or runtime metadata.
 2. **Deterministic Diagnostic Error:** If the condition evaluates to `0` (false), compilation halts immediately with a source-location error diagnostic and the provided error message.
 3. **Scope Availability:** Valid at both the module/namespace level and within procedure statement blocks.
+
+---
+
+## 25. Compiler Command-Line Interface (`llbc` Options)
+
+The Low-Level Basic compiler driver (`llbc`) accepts either high-level project manifests (`.llbproj`) or direct source files (`.bas`, `.cls`, `.S`, `.o`, `.a`, `.so`).
+
+### Synopsis
+```bash
+llbc <project.llbproj>... [options]
+llbc <source.bas|class.cls|boot.S>... [options]
+```
+
+### Options Reference
+
+| Flag / Option | Argument | Description & Semantics |
+| :--- | :--- | :--- |
+| **`-o`** | `<file>` | Specifies final output artifact path (executable, shared `.so`/`.dlb`, static `.a`, or raw `.bin`). |
+| **`-c`** | *(none)* | **Compile and assemble only**: Generates native machine object code (`.o`) and bypasses linking. |
+| **`-S`, `-emit-llvm`** | *(none)* | Emits human-readable LLVM Intermediate Representation (`.ll`) disassembly. |
+| **`-O0`, `-O1`, `-O2`, `-O3`** | *(none)* | Optimization level. `-O0` default for fast debugging; `-O2`/`-O3` for production release. |
+| **`-O`** | *(none)* | Standard alias for `-O2`. |
+| **`-Os`, `-Oz`** | *(none)* | Optimize specifically for binary footprint and code size (ideal for bootloaders/ROMs). |
+| **`-g`** | *(none)* | Emits standard DWARF debug tables and line info for GDB / LLDB source-level debugging. |
+| **`-I`** | `<dir>` | Appends directory to module and class resolution search paths (`Use` / `Import`). |
+| **`-D`** | `<name>[=<val>]` | Defines compile-time preprocessor symbol (e.g. `-D DEBUG=1` or `-D ARCH_X86_64`). |
+| **`--target=`, `-target`** | `<triple>` | Cross-compilation target architecture (e.g. `x86_64-unknown-none-elf`, `aarch64-linux-gnu`). |
+| **`--sysroot=`** | `<dir>` | Specifies custom system root directory for system headers, CRT libraries, and libc. |
+| **`-T`** | `<script>` | Specifies custom GNU linker script for bare-metal memory sections and physical layouts. |
+| **`-e`, `--entry`** | `<symbol>` | Custom entry point symbol name (e.g. `-e _start` or `-e KernelEntry`). |
+| **`--freestanding`, `-nostdlib`** | *(none)* | Bare-metal freestanding mode: disables standard host CRT startup and dynamic runtime dependencies. |
+| **`--raw-binary`, `-flat-binary`**| *(none)* | Extracts a flat raw binary image (`.bin`) via embedded binary serialization. |
+| **`--shared`, `-shared`** | *(none)* | Compiles with position-independent code (`-fPIC`) to produce a dynamic shared library (`.so` / `.dlb`). |
+| **`--static`, `-static`** | *(none)* | Archives compiled object files into a static library (`.a`). |
+| **`-Wall`, `-Wextra`, `-Werror`** | *(none)* | Standard compiler diagnostics and warning flags. |
+| **`--no-script`** | *(none)* | Skips post-build command execution defined in `.llbproj` `[Script]` sections. |
+| **`--script-timeout=`** | `<sec>` | Sets maximum timeout per post-build script (default: 30s). |
+| **`-v`, `--version`** | *(none)* | Prints compiler version, build date, and backend target architectures. |
+| **`-h`, `--help`** | *(none)* | Displays comprehensive CLI usage reference. |
+
+### CLI Precedence Rule
+Command-line arguments provided directly to `llbc` always override corresponding configuration keys declared in `.llbproj` project descriptors.
+
+---
+
+## 26. Freestanding Compiler Runtime ABI Requirements
+
+When compiling bare-metal targets under `--freestanding` or `-nostdlib` with optimization levels (`-O1`, `-O2`, `-O3`, `-Os`, `-Oz`), LLVM optimization passes (such as `LoopIdiomRecognize`) automatically transform memory-filling or memory-copying loops into calls to fundamental runtime intrinsics.
+
+To satisfy the linker in the absence of a host C library (`libc`), freestanding LLB kernels and bootloaders must provide external C-ABI symbol definitions for:
+
+| Intrinsic Symbol | System V AMD64 ABI Signature | Responsibility |
+| :--- | :--- | :--- |
+| **`memset`** | `(ptr: Pointer To Byte, val: Int32, count: UInt64) As Pointer To Byte` | Fills memory range with byte value. Emitted by loop zeroing/filling passes. |
+| **`memcpy`** | `(dest: Pointer To Byte, src: Pointer To Byte, count: UInt64) As Pointer To Byte` | Copies non-overlapping memory blocks. |
+| **`memmove`** | `(dest: Pointer To Byte, src: Pointer To Byte, count: UInt64) As Pointer To Byte` | Copies potentially overlapping memory blocks safely. |
+| **`memcmp`** | `(s1: Pointer To Byte, s2: Pointer To Byte, count: UInt64) As Int32` | Lexicographically compares two memory blocks. |
+
+These primitives can be defined directly in LLB, assembly stubs (`boot.S`), or linked via `libLLB_Metal.dlb`.
 
 
 

@@ -1,9 +1,7 @@
 /*
- * Project: Low-Level Basic Compiler (llbc)
- * Copyright (c) 2026 karunci. All rights reserved.
- *
- * Dual-licensed under Mozilla Public License 2.0 (MPL-2.0) and AI Ingestion Restriction.
- * See LICENSE.md for full terms and artificial intelligence training prohibitions.
+ * Project Name: PRK (Personal Research Kernel) / Low-Level Basic (LLB)
+ * Filename: tests/kernel/src/arch/x86_64/boot.S
+ * Summary: 32-bit Multiboot bootstrap, 64-bit long-mode paging setup, and kernel entry.
  */
 
 .code32
@@ -57,6 +55,8 @@ page_table_l4:
 page_table_l3:
     .skip 4096
 page_table_l2:
+    .skip 4096
+page_table_l2_apic:
     .skip 4096
 
 .align 16
@@ -118,6 +118,21 @@ setup_page_tables:
     mov $0x600000, %eax
     or $0x83, %eax
     mov %eax, (page_table_l2 + 24)
+
+    /* Map L3[3] -> L2_APIC (Physical 3GB - 4GB region) */
+    mov $page_table_l2_apic, %eax
+    or $0x3, %eax
+    mov %eax, (page_table_l3 + 24)
+
+    /* Map IOAPIC physical 0xFEC00000 (Index (0xFEC00000 - 0xC0000000) / 2MB = 502 -> offset 502*8 = 4016) */
+    mov $0xFEC00000, %eax
+    or $0x93, %eax /* Present + Writable + HugePage (0x80) + Cache-Disable (0x10) for MMIO */
+    mov %eax, (page_table_l2_apic + 4016)
+
+    /* Map Local APIC physical 0xFEE00000 (Index (0xFEE00000 - 0xC0000000) / 2MB = 503 -> offset 503*8 = 4024) */
+    mov $0xFEE00000, %eax
+    or $0x93, %eax /* Present + Writable + HugePage + Cache-Disable */
+    mov %eax, (page_table_l2_apic + 4024)
     ret
 
 /* Enable PAE, SSE, and Long Mode in CR4/CR0/EFER */

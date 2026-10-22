@@ -1,4 +1,4 @@
-' Project Name: Low-Level Basic Kernel / llbc
+' Project Name: PRK (Personal Research Kernel) / Low-Level Basic (LLB)
 ' Filename: tests/kernel/src/drivers/ICharDevice.cls
 ' Summary: Abstract character output device interface.
 

@@ -1,4 +1,4 @@
-' Project Name: Low-Level Basic Kernel / llbc
+' Project Name: PRK (Personal Research Kernel) / Low-Level Basic (LLB)
 ' Filename: tests/kernel/src/arch/x86_64/Gdt.bas
 ' Summary: 64-bit Global Descriptor Table (GDT) and TSS installation and reload.
 

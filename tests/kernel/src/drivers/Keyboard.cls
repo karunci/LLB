@@ -1,4 +1,4 @@
-' Project Name: Low-Level Basic Kernel / llbc
+' Project Name: PRK (Personal Research Kernel) / Low-Level Basic (LLB)
 ' Filename: tests/kernel/src/drivers/Keyboard.cls
 ' Summary: PS/2 Keyboard controller and scancode decoder class.
 

@@ -1,4 +1,4 @@
-' Project Name: Low-Level Basic Kernel / llbc
+' Project Name: PRK (Personal Research Kernel) / Low-Level Basic (LLB)
 ' Filename: tests/kernel/src/drivers/SerialUart.cls
 ' Summary: 16550 UART COM1 Serial Port driver implementing ICharDevice.
 

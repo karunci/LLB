@@ -1,6 +1,5 @@
-' Project Name: Low-Level Basic Kernel / llbc
-' Filename: src/drivers/Terminal.cls
-' Workspace Path: tests/kernel/src/drivers/Terminal.cls
+' Project Name: PRK (Personal Research Kernel) / Low-Level Basic (LLB)
+' Filename: tests/kernel/src/drivers/Terminal.cls
 ' Summary: High-performance bare-metal VGA text mode (80x25) console driver class implementing ICharDevice.
 
 Import Drivers.ICharDevice

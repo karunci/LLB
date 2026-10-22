@@ -1,4 +1,4 @@
-' Project Name: Low-Level Basic Kernel / llbc
+' Project Name: PRK (Personal Research Kernel) / Low-Level Basic (LLB)
 ' Filename: tests/kernel/src/arch/x86_64/PortIO.bas
 ' Summary: Low-level x86_64 port I/O primitives and CPU execution control.
 

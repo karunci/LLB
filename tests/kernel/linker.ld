@@ -1,6 +1,6 @@
 /*
- * Project Name: PRK-OS / Low-Level Basic Kernel
- * Filename: linker.ld
+ * Project Name: PRK (Personal Research Kernel) / Low-Level Basic (LLB)
+ * Filename: tests/kernel/linker.ld
  * Summary: Bare-metal x86_64 linker script positioning Multiboot header and kernel code.
  */
 

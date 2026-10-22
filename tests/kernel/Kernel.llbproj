@@ -1,11 +1,11 @@
-' Project Name: Low-Level Basic Kernel / llbc
+' Project Name: PRK (Personal Research Kernel) / Low-Level Basic (LLB)
 ' Filename: tests/kernel/Kernel.llbproj
-' Summary: Bare-metal x86_64 kernel build descriptor.
-'          Compiles the LLB kernel test target to a freestanding ELF
+' Summary: Bare-metal x86_64 PRK kernel build descriptor.
+'          Compiles the PRK/LLB kernel to a freestanding ELF
 '          suitable for QEMU or real hardware via GRUB/Multiboot2.
 
 [Project]
-Name    = "kernel"
+Name    = "PRK-Kernel"
 Type    = "Kernel"
 Version = "0.1.0"
 
@@ -30,6 +30,8 @@ Assembly = "src/arch/x86_64/IsrStubs.S"
 Module   = "src/arch/x86_64/PortIO.bas"
 Module   = "src/arch/x86_64/GdtTypes.bas"
 Module   = "src/arch/x86_64/Gdt.bas"
+Module   = "src/arch/x86_64/Apic.bas"
+Module   = "src/arch/x86_64/IoApic.bas"
 Module   = "src/arch/x86_64/Idt.bas"
 Module   = "src/sync/Spinlock.bas"
 Class    = "src/arch/x86_64/CpuContext.cls"

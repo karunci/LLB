@@ -1,6 +1,5 @@
-' Project Name: Low-Level Basic Kernel / llbc
-' Filename: src/arch/x86_64/CpuContext.cls
-' Workspace Path: tests/kernel/src/arch/x86_64/CpuContext.cls
+' Project Name: PRK (Personal Research Kernel) / Low-Level Basic (LLB)
+' Filename: tests/kernel/src/arch/x86_64/CpuContext.cls
 ' Summary: MultiUse Per-CPU execution context and state encapsulation.
 
 Namespace Arch.X86_64

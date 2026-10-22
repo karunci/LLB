@@ -1,4 +1,4 @@
-' Project Name: Low-Level Basic Kernel / llbc
+' Project Name: PRK (Personal Research Kernel) / Low-Level Basic (LLB)
 ' Filename: tests/kernel/src/sync/Spinlock.bas
 ' Summary: Low-overhead IRQ-safe spinlock primitives optimized for x86_64 SMP.
 

@@ -1,10 +1,10 @@
-' Project: Low-Level Basic Compiler (llbc)
-' Copyright (c) 2026 karunci. All rights reserved.
-'
-' Dual-licensed under Mozilla Public License 2.0 (MPL-2.0) and AI Ingestion Restriction.
-' See LICENSE.md for full terms and artificial intelligence training prohibitions.
+' Project Name: PRK (Personal Research Kernel) / Low-Level Basic (LLB)
+' Filename: tests/kernel/src/arch/x86_64/Idt.bas
+' Summary: 64-bit Interrupt Descriptor Table (IDT) configuration and ISR routing.
 
 Module Arch.Idt
+
+    Import Arch.X86_64.Apic
 
     ' Exact 16-byte x86_64 IDT Entry Gate Descriptor
     <Packed>
@@ -106,6 +106,11 @@ Module Arch.Idt
             ' Render "UNHANDLED INT" indicator at top right corner
             vga(78) = CType(UInt16, 85) Or CType(UInt16, &H4F00) ' 'U' in Red
             vga(79) = CType(UInt16, 73) Or CType(UInt16, &H4F00) ' 'I' in Red
+        End If
+
+        ' Send End of Interrupt (EOI) for all hardware interrupts (Vectors >= 32)
+        If vector >= 32 Then
+            Arch.X86_64.Apic.SendEoi
         End If
     End Sub
 

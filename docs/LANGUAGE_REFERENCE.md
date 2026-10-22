@@ -142,28 +142,60 @@ Top-level namespace declarations can also be imported in bulk:
 Import X    ' Imports all inner classes and modules within Namespace X
 ```
 
-### Imports (`Import`)
-Imports resolve dependencies between compilation units and bring module routines and constants into scope:
+### Module & Class Resolution: `Import` vs. `Use` vs. `Implements`
+
+LLB enforces an intentional, readable distinction across compilation unit dependencies ("Soft Syntax, Hard Metal"):
+
+| Directive | Scope Target | Primary Responsibility | Example Syntax |
+| :--- | :--- | :--- | :--- |
+| **`Import`** | Procedural **`Module`** | Brings in static functions, hardware port routines, and global state tables. | `Import Arch.X86_64.PortIO` |
+| **`Use`** | Instantiable **`Class`** | Brings in, aliases, or instantiates OOP classes and driver abstractions. | `Use Drivers.Terminal` |
+| **`Implements`** | Abstract **`Interface`** | Declares contract conformance within a class definition. | `Implements ICharDevice` |
+
+#### Procedural Module Imports (`Import`)
+`Import` resolves dependencies between compilation units and brings module routines and constants into scope:
 ```vb
 Import Hardware.Bus In "drivers/Bus.bas"
 Import Arch.Idt
-Import System.Math
+Import Arch.X86_64.PortIO
 ```
 
-### Explicit Scope Binding (`Use`)
-While `Import` is designed for static modules, `Use` provides fine-grained, explicit scope binding and aliasing for classes, procedures, and member functions across namespaces:
+#### Class Scope Binding & Aliasing (`Use`)
+`Use` provides explicit scope binding, aliasing, and symbol registration for classes across namespaces:
 
 | Syntax Pattern | Semantics / What it does | Example Call |
 | :--- | :--- | :--- |
-| `Use Drivers.Terminal` | Brings class `Terminal` into current scope without typing `Drivers.` prefix | `Terminal.WriteChar "A"` |
-| `Use Drivers.Terminal As term` | Imports class with a convenient short alias | `term.WriteChar "A"` |
-| `Use Terminal In Drivers` | Equivalent to `from Drivers import Terminal` | `Terminal.WriteChar "A"` |
+| `Use Drivers.Terminal` | Brings class `Terminal` into scope without requiring namespace prefix | `Terminal.WriteChar "A"` |
+| `Use Drivers.Terminal As term` | Imports class with a short alias | `term.WriteChar "A"` |
+| `Use Terminal In Drivers` | Equivalent to `from Drivers use Terminal` | `Terminal.WriteChar "A"` |
 | `Use Terminal In Drivers As term` | Class import from parent namespace with alias | `term.WriteChar "A"` |
-| `Use WriteChar In Drivers.Terminal` | Directly imports a specific procedure/method | `WriteChar "A"` |
+| `Use WriteChar In Drivers.Terminal` | Directly imports a specific class method | `WriteChar "A"` |
 | `Use WriteChar In Drivers.Terminal As TWrite` | Directly imports a method with a unique alias | `TWrite "A"` |
 
+#### MultiUse & SingleUse Instancing Modes
+Classes declared with `<Instancing(...)>` support two modes of execution depending on environment:
+
+1. **Freestanding / Bare-Metal Mode (Zero-Heap Stack & BSS Allocation)**:
+   In kernels, bootloaders, and embedded systems where no dynamic heap allocator exists, `MultiUse` classes are instantiated as contiguous value structs via `Dim`:
+   ```vb
+   ' Single instance on the stack/BSS:
+   Dim bspContext As CpuContext
+   bspContext.Init 0, &H100000
+
+   ' Fixed array of multiple instances (e.g. SMP core table):
+   Dim cpus(15) As CpuContext
+   cpus(0).Init 0, &H100000
+   cpus(1).Init 1, &H200000
+   ```
+2. **Hosted / Userland Mode (Heap Allocation via `New`)**:
+   In environments with standard library memory support, dynamic instancing is supported via `New`:
+   ```vb
+   Dim dev As Pointer To Terminal = New Terminal()
+   dev.Initialize()
+   ```
+
 #### One-Liner Instantiation via `Use`
-For instance-able classes (`<Instancing(MultiUse)>` or `<Instancing(SingleUse)>`), `Use` supports concise, one-line instantiation on the stack or heap:
+For instance-able classes (`<Instancing(MultiUse)>` or `<Instancing(SingleUse)>`), `Use` supports concise one-line instantiation:
 ```vb
 ' Instantiation with alias in a single statement
 Use New Terminal In Drivers As term1

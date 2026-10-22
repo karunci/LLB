@@ -378,15 +378,21 @@ While LLB enforces robust syntactic safety quarantines (`Unsafe` blocks for raw 
 
 ---
 
-### Phase 6: Temporary Discussion & Review Roadmap (For Next Review)
+### Phase 6: Core Standard Library & Toolchain Evolution
 
-1. **Standard Library Packaging Model:**
-   - Precompiled static standard library (`libllb_std.a`) vs source module tree (`Import Std.Collections`).
-2. **Self-Hosting Stage-1 Full Monomorphization & Lowering:**
+1. **Strict Directive Role Enforcement (`Import` vs `Use`):**
+   - Emit compile-time rejections when `Import` is applied to an instantiable `Class` (`"Cannot 'Import' Class '<Name>'; use 'Use <Name>' instead."`) or when `Use` is applied to a procedural `Module` (`"Cannot 'Use' Module '<Name>'; use 'Import <Name>' instead."`).
+2. **Pure LLB Standard Library (`libllb_std`):**
+   - Provide an idiomatic, pure-LLB standard library mirroring core LibC functionality and modern collections:
+     - **`Std.Memory`**: Freestanding memory allocators (bump, arena, buddy/slab), `CopyMemory`, `ZeroMemory`, `FillMemory`.
+     - **`Std.Strings`**: High-performance UTF-8 string views, builders, formatters (`FormatHex`, `FormatInt`), and tokenizers.
+     - **`Std.Collections`**: Type-safe generic collections (`List(Of T)`, `Dictionary(Of K, V)`, `RingBuffer(Of T)`).
+     - **`Std.IO`**: Text streams, binary readers/writers, and serial console multiplexers.
+3. **Self-Hosting Stage-1 Full Monomorphization & Lowering:**
    - Complete AST lowering from `src/stage1/Parser.cls` to `src/stage1/LlvmC.bas` to allow compiling `llbc` without C++ stage-0.
-3. **Cross-Compilation Hardware Presets:**
+4. **Cross-Compilation Hardware Presets:**
    - Bundled target architectures (`x86_64-kernel`, `aarch64-rpi4`, `riscv64-virt`) in `.llbproj`.
-4. **Standard String & Type Inspection Intrinsics:**
+5. **Standard String & Type Inspection Intrinsics:**
    - Built-in freestanding runtime helpers (`IsNumericString(s)`, `IsAlpha(s)`, `IsWhitespace(s)`).
 
 

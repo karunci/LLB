@@ -18,6 +18,8 @@ Module Arch.Idt
         Public Reserved As UInt32        ' Reserved (0)
     End Structure
 
+    #Assert SizeOf(IdtEntry) = 16, "IdtEntry must be exactly 16 bytes on x86_64"
+
     ' IDT Pointer structure passed to 'lidt' instruction
     <Packed>
     Public Structure IdtPtr

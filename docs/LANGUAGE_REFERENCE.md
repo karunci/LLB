@@ -886,5 +886,27 @@ End Sub
 2. **Register Preservation:** Automatically pushes and restores all general-purpose registers (including scratch registers) across the call.
 3. **Hardware Return:** Automatically terminates with the native interrupt return instruction (`iretq` on x86_64) instead of standard procedure return (`ret`).
 
+---
+
+## 24. Compile-Time Static Assertions (`#Assert`)
+
+Compile-time static assertions allow developers to enforce architectural invariants, data structure layouts, and preprocessor configurations directly during compilation:
+
+```vb
+' Enforce hardware data structure bounds
+#Assert SizeOf(IdtEntry) = 16, "IdtEntry must be exactly 16 bytes on x86_64"
+#Assert SizeOf(GdtDescriptor) = 8, "GDT segment descriptor size mismatch"
+#Assert OffsetOf(IdtEntry, BaseHigh) = 8, "BaseHigh must be at offset 8"
+
+' Enforce preprocessor and build environment constraints
+#Assert TARGET_ENV = 1, "TARGET_ENV constant validation"
+#Assert ARCH_BITS = 64, "Only 64-bit builds supported"
+```
+
+### Compiler Invariants:
+1. **Zero Runtime Overhead:** Evaluated purely at compile time by the AST emitter against constant folded expressions and the LLVM `DataLayout`. Generates zero instructions or runtime metadata.
+2. **Deterministic Diagnostic Error:** If the condition evaluates to `0` (false), compilation halts immediately with a source-location error diagnostic and the provided error message.
+3. **Scope Availability:** Valid at both the module/namespace level and within procedure statement blocks.
+
 
 

@@ -243,8 +243,8 @@ Comprehensive comparison of compile-time verification in LLB against modern syst
 | **Missing Interface Method Implementation** | ✅ Implemented | Validates that classes declaring `Implements Iface` implement all required methods | `rustc` `not all trait items implemented` (E0046) |
 | **Loop Exit Outside of Loop** (`Exit For`/`Do`/`While`) | ✅ Implemented | Rejects `Exit For`, `Exit Do`, or `Exit While` outside their respective loop scopes | `rustc` `cannot break outside of loop` (E0268) |
 | **Missing Return Value on Function Exit** | ✅ Implemented | Enforces assignment to function name before exit in non-void Functions | `rustc` `mismatched types / expected return value` |
-| **Unreachable / Dead Code Detection** | ⏳ In Progress | Statements after `Return`, `Exit`, or `Raise` emit unchecked IR | `rustc` `unreachable_code`, `clang -Wunreachable-code` |
-| **Enum / Result Exhaustiveness in `Match`** | ⏳ In Progress | Unhandled match arms fall through to runtime null | `rustc` `non-exhaustive patterns` (E0004) |
+| **Unreachable / Dead Code Detection** | ⏳ In Progress | Emits `llvm::CreateUnreachable()` after `<NoReturn>` and panic terminators; dead statement diagnostic in progress | `rustc` `unreachable_code`, `clang -Wunreachable-code` |
+| **Enum / Result Exhaustiveness in `Match`** | ⏳ Future Roadmap | Unhandled match arms fall through to runtime null; compile-time exhaustiveness checking on roadmap | `rustc` `non-exhaustive patterns` (E0004) |
 
 ---
 
@@ -308,7 +308,7 @@ Comprehensive comparison of compile-time verification in LLB against modern syst
          Public FrameAddress As UInt64 * 52
      End Structure
      ```
-   - Matches classic VB fixed-length syntax (`Dim s As String * 30`), making bitfields clean and natural to read. Supported in both `Structure` and `Union` declarations.
+   - Matches classic VB fixed-length syntax (`Dim s As String * 30`). Backed by real LLVM integer container packing (`i8`, `i16`, `i32`, `i64`), extraction on member load, and atomic read-modify-write bitfield insertion on member store. Supported in both `Structure` and `Union` declarations. (Verified in Test 65).
 
 2. ~~**Compile-Time Size & Offset Intrinsics (`SizeOf` / `OffsetOf`):**~~ — **Done** ✅
    - Syntax:
@@ -328,7 +328,7 @@ Comprehensive comparison of compile-time verification in LLB against modern syst
      End Sub
      ```
 
-4. **Compile-Time Static Assertions (`#Assert` Directive):**
+4. ~~**Compile-Time Static Assertions (`#Assert` Directive):**~~ — **Done** ✅
    - Syntax:
      ```vb
      #Assert SizeOf(IdtEntry) = 16, "IdtEntry must be exactly 16 bytes on x86_64"

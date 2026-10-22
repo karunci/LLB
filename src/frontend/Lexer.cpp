@@ -125,6 +125,7 @@ TokenType Lexer::identifyKeyword(const std::string& text) const {
         {"const", TokenType::KwConst},
         {"optional", TokenType::KwOptional},
         {"delegate", TokenType::KwDelegate},
+        {"typealias", TokenType::KwTypeAlias},
         {"call", TokenType::KwCall},
         {"true", TokenType::KwTrue},
         {"false", TokenType::KwFalse},

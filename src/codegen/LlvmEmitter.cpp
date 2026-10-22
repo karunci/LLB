@@ -139,6 +139,8 @@ llvm::Type* LlvmEmitter::getLlvmType(const TypeSpec& typeSpec) {
                 baseType = llvm::Type::getInt32Ty(*m_context);
             } else if (m_delegates.count(resolvedName) || m_delegates.count(toLower(resolvedName))) {
                 baseType = llvm::PointerType::get(*m_context, 0);
+            } else if (m_interfaces.count(resolvedName) || m_interfaces.count(toLower(resolvedName))) {
+                baseType = llvm::PointerType::get(*m_context, 0);
             } else {
                 Diagnostic::report(m_sourceFilePath, m_currentLine, m_currentCol, true,
                                    "Undeclared type '" + typeSpec.name + "'.", m_sourceText);
@@ -3175,18 +3177,7 @@ void LlvmEmitter::emitStructure(const StructureNode& structNode) {
 
     std::vector<llvm::Type*> fieldTypes;
     std::unordered_map<std::string, unsigned> fieldIndices;
-
-    unsigned idx = 0;
-    for (const auto& field : structNode.fields) {
-        fieldTypes.push_back(getLlvmType(field.type));
-        fieldIndices[field.name] = idx;
-        fieldIndices[toLower(field.name)] = idx;
-        m_structFieldTypes[structNode.name][field.name] = field.type;
-        m_structFieldTypes[structNode.name][toLower(field.name)] = field.type;
-        m_structFieldTypes[toLower(structNode.name)][field.name] = field.type;
-        m_structFieldTypes[toLower(structNode.name)][toLower(field.name)] = field.type;
-        idx++;
-    }
+    std::unordered_map<std::string, BitfieldInfo> bitfieldMap;
 
     if (structNode.isUnion) {
         m_unionTypes.insert(structNode.name);
@@ -3194,9 +3185,27 @@ void LlvmEmitter::emitStructure(const StructureNode& structNode) {
 
         const llvm::DataLayout& dl = m_module->getDataLayout();
         uint64_t maxFieldSize = 0;
-        for (llvm::Type* fTy : fieldTypes) {
+        unsigned idx = 0;
+        for (const auto& field : structNode.fields) {
+            llvm::Type* fTy = getLlvmType(field.type);
             uint64_t sz = dl.getTypeAllocSize(fTy);
             if (sz > maxFieldSize) maxFieldSize = sz;
+
+            fieldIndices[field.name] = 0;
+            fieldIndices[toLower(field.name)] = 0;
+            m_structFieldTypes[structNode.name][field.name] = field.type;
+            m_structFieldTypes[structNode.name][toLower(field.name)] = field.type;
+            m_structFieldTypes[toLower(structNode.name)][field.name] = field.type;
+            m_structFieldTypes[toLower(structNode.name)][toLower(field.name)] = field.type;
+
+            if (field.bitfieldWidth > 0) {
+                uint32_t containerBits = static_cast<uint32_t>(sz * 8);
+                if (containerBits == 0) containerBits = 8;
+                BitfieldInfo binfo{0, 0, field.bitfieldWidth, containerBits};
+                bitfieldMap[field.name] = binfo;
+                bitfieldMap[toLower(field.name)] = binfo;
+            }
+            idx++;
         }
         if (maxFieldSize == 0) maxFieldSize = 1;
 
@@ -3206,7 +3215,79 @@ void LlvmEmitter::emitStructure(const StructureNode& structNode) {
         m_structTypes[toLower(structNode.name)] = st;
         m_structFieldIndices[structNode.name] = fieldIndices;
         m_structFieldIndices[toLower(structNode.name)] = std::move(fieldIndices);
+        if (!bitfieldMap.empty()) {
+            m_structBitfields[structNode.name] = bitfieldMap;
+            m_structBitfields[toLower(structNode.name)] = std::move(bitfieldMap);
+        }
         return;
+    }
+
+    // Packing consecutive bitfield members for standard Structure
+    const llvm::DataLayout& dl = m_module->getDataLayout();
+    size_t fCount = structNode.fields.size();
+    size_t i = 0;
+    unsigned containerIndex = 0;
+
+    while (i < fCount) {
+        const auto& firstField = structNode.fields[i];
+        if (firstField.bitfieldWidth == 0) {
+            // Standard non-bitfield member
+            llvm::Type* fTy = getLlvmType(firstField.type);
+            fieldTypes.push_back(fTy);
+            fieldIndices[firstField.name] = containerIndex;
+            fieldIndices[toLower(firstField.name)] = containerIndex;
+            m_structFieldTypes[structNode.name][firstField.name] = firstField.type;
+            m_structFieldTypes[structNode.name][toLower(firstField.name)] = firstField.type;
+            m_structFieldTypes[toLower(structNode.name)][firstField.name] = firstField.type;
+            m_structFieldTypes[toLower(structNode.name)][toLower(firstField.name)] = firstField.type;
+            containerIndex++;
+            i++;
+        } else {
+            // Consecutive bitfields: determine container capacity from declared types
+            size_t j = i;
+            uint32_t totalBitsNeeded = 0;
+            uint32_t maxDeclBits = 8;
+            while (j < fCount && structNode.fields[j].bitfieldWidth > 0) {
+                totalBitsNeeded += structNode.fields[j].bitfieldWidth;
+                llvm::Type* declTy = getLlvmType(structNode.fields[j].type);
+                uint32_t bits = static_cast<uint32_t>(dl.getTypeAllocSize(declTy) * 8);
+                if (bits > maxDeclBits) maxDeclBits = bits;
+                j++;
+            }
+
+            // Target backing container bits: 8, 16, 32, or 64
+            uint32_t containerBits = maxDeclBits;
+            if (totalBitsNeeded > containerBits) {
+                if (totalBitsNeeded <= 16) containerBits = 16;
+                else if (totalBitsNeeded <= 32) containerBits = 32;
+                else containerBits = 64;
+            }
+
+            // Pack fields that fit within containerBits
+            uint32_t currentBitOffset = 0;
+            while (i < fCount && structNode.fields[i].bitfieldWidth > 0) {
+                const auto& curField = structNode.fields[i];
+                if (currentBitOffset + curField.bitfieldWidth > containerBits && currentBitOffset > 0) {
+                    // Start next container
+                    break;
+                }
+                BitfieldInfo binfo{containerIndex, currentBitOffset, curField.bitfieldWidth, containerBits};
+                bitfieldMap[curField.name] = binfo;
+                bitfieldMap[toLower(curField.name)] = binfo;
+                fieldIndices[curField.name] = containerIndex;
+                fieldIndices[toLower(curField.name)] = containerIndex;
+                m_structFieldTypes[structNode.name][curField.name] = curField.type;
+                m_structFieldTypes[structNode.name][toLower(curField.name)] = curField.type;
+                m_structFieldTypes[toLower(structNode.name)][curField.name] = curField.type;
+                m_structFieldTypes[toLower(structNode.name)][toLower(curField.name)] = curField.type;
+
+                currentBitOffset += curField.bitfieldWidth;
+                i++;
+            }
+
+            fieldTypes.push_back(llvm::Type::getIntNTy(*m_context, containerBits));
+            containerIndex++;
+        }
     }
 
     llvm::StructType* st = llvm::StructType::create(*m_context, fieldTypes, structNode.name, structNode.isPacked);
@@ -3214,6 +3295,10 @@ void LlvmEmitter::emitStructure(const StructureNode& structNode) {
     m_structTypes[toLower(structNode.name)] = st;
     m_structFieldIndices[structNode.name] = fieldIndices;
     m_structFieldIndices[toLower(structNode.name)] = std::move(fieldIndices);
+    if (!bitfieldMap.empty()) {
+        m_structBitfields[structNode.name] = bitfieldMap;
+        m_structBitfields[toLower(structNode.name)] = std::move(bitfieldMap);
+    }
 }
 
 void LlvmEmitter::registerClassInstancing(const std::string& className, InstancingKind instancing) {
@@ -3635,9 +3720,53 @@ void LlvmEmitter::emitAssignStatement(const AssignStmtNode& assignNode) {
                                 }
                             }
                             val = coerceType(val, fieldType);
+
+                            auto bIt = m_structBitfields.find(pair.first);
+                            if (bIt != m_structBitfields.end()) {
+                                auto bfIt = bIt->second.find(memberLower);
+                                if (bfIt != bIt->second.end()) {
+                                    const auto& binfo = bfIt->second;
+                                    llvm::Value* curVal = m_builder->CreateLoad(fieldType, basePtr, "bf.cur");
+                                    uint64_t mask = (binfo.bitWidth >= 64) ? ~0ULL : ((1ULL << binfo.bitWidth) - 1ULL);
+                                    llvm::Value* truncVal = m_builder->CreateAnd(val, llvm::ConstantInt::get(fieldType, mask), "bf.trunc");
+                                    llvm::Value* cleared = m_builder->CreateAnd(curVal, llvm::ConstantInt::get(fieldType, ~mask), "bf.clear");
+                                    llvm::Value* updated = m_builder->CreateOr(cleared, truncVal, "bf.store");
+                                    m_builder->CreateStore(updated, basePtr);
+                                    return;
+                                }
+                            }
+
                             m_builder->CreateStore(val, basePtr);
                             return;
                         }
+
+                        auto bIt = m_structBitfields.find(pair.first);
+                        if (bIt != m_structBitfields.end()) {
+                            auto bfIt = bIt->second.find(memberLower);
+                            if (bfIt != bIt->second.end()) {
+                                const auto& binfo = bfIt->second;
+                                llvm::Type* contTy = stIt->second->getElementType(fieldIdx);
+                                llvm::Value* gep = m_builder->CreateStructGEP(stIt->second, basePtr, fieldIdx, "membergep");
+                                llvm::Value* curVal = m_builder->CreateLoad(contTy, gep, "bf.cur");
+
+                                // Coerce incoming value to container type
+                                llvm::Value* coercedVal = coerceType(val, contTy);
+                                uint64_t mask = (binfo.bitWidth >= 64) ? ~0ULL : ((1ULL << binfo.bitWidth) - 1ULL);
+                                llvm::Value* truncVal = m_builder->CreateAnd(coercedVal, llvm::ConstantInt::get(contTy, mask), "bf.trunc");
+                                if (binfo.bitOffset > 0) {
+                                    llvm::Value* shiftVal = llvm::ConstantInt::get(contTy, binfo.bitOffset);
+                                    truncVal = m_builder->CreateShl(truncVal, shiftVal, "bf.shl");
+                                }
+
+                                uint64_t shiftedMask = mask << binfo.bitOffset;
+                                llvm::Value* clearMask = llvm::ConstantInt::get(contTy, ~shiftedMask);
+                                llvm::Value* cleared = m_builder->CreateAnd(curVal, clearMask, "bf.clear");
+                                llvm::Value* updated = m_builder->CreateOr(cleared, truncVal, "bf.store");
+                                m_builder->CreateStore(updated, gep);
+                                return;
+                            }
+                        }
+
                         llvm::Type* fieldType = stIt->second->getElementType(fieldIdx);
                         val = coerceType(val, fieldType);
                         llvm::Value* gep = m_builder->CreateStructGEP(stIt->second, basePtr, fieldIdx, "membergep");
@@ -4411,6 +4540,37 @@ void LlvmEmitter::emitStatement(ASTNode* stmt) {
         emitTryStatement(*tryStmt);
     } else if (auto usingStmt = dynamic_cast<UsingStmtNode*>(stmt)) {
         emitUsingStatement(*usingStmt);
+    } else if (auto assertStmt = dynamic_cast<StaticAssertStmtNode*>(stmt)) {
+        emitStaticAssert(*assertStmt);
+    }
+}
+
+void LlvmEmitter::emitStaticAssert(const StaticAssertStmtNode& assertNode) {
+    if (!assertNode.condition) return;
+    llvm::Value* condVal = emitExpression(assertNode.condition.get());
+    if (!condVal) {
+        Diagnostic::report(m_sourceFilePath, assertNode.line > 0 ? assertNode.line : 1,
+                           assertNode.column > 0 ? assertNode.column : 1, true,
+                           "Failed to evaluate expression in #Assert.", m_sourceText);
+        m_hadError = true;
+        return;
+    }
+
+    if (auto cInt = llvm::dyn_cast<llvm::ConstantInt>(condVal)) {
+        if (cInt->isZero()) {
+            std::string msg = assertNode.message.empty() 
+                ? "Static assertion failed." 
+                : ("Static assertion failed: " + assertNode.message);
+            Diagnostic::report(m_sourceFilePath, assertNode.line > 0 ? assertNode.line : 1,
+                               assertNode.column > 0 ? assertNode.column : 1, true,
+                               msg, m_sourceText);
+            m_hadError = true;
+        }
+    } else {
+        Diagnostic::report(m_sourceFilePath, assertNode.line > 0 ? assertNode.line : 1,
+                           assertNode.column > 0 ? assertNode.column : 1, true,
+                           "Condition in #Assert must be a compile-time constant expression.", m_sourceText);
+        m_hadError = true;
     }
 }
 
@@ -5154,10 +5314,49 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
                                     fieldTy = getLlvmType(tIt->second);
                                 }
                             }
-                            return m_builder->CreateLoad(fieldTy, basePtr, member->memberName);
+                            llvm::Value* rawVal = m_builder->CreateLoad(fieldTy, basePtr, member->memberName);
+                            auto bIt = m_structBitfields.find(pair.first);
+                            if (bIt != m_structBitfields.end()) {
+                                auto bfIt = bIt->second.find(memberLower);
+                                if (bfIt != bIt->second.end()) {
+                                    const auto& binfo = bfIt->second;
+                                    uint64_t mask = (binfo.bitWidth >= 64) ? ~0ULL : ((1ULL << binfo.bitWidth) - 1ULL);
+                                    llvm::Value* maskVal = llvm::ConstantInt::get(rawVal->getType(), mask);
+                                    return m_builder->CreateAnd(rawVal, maskVal, "bf.read");
+                                }
+                            }
+                            return rawVal;
                         }
                         llvm::Value* gep = m_builder->CreateStructGEP(stIt->second, basePtr, fieldIdx, "membergep");
-                        return m_builder->CreateLoad(stIt->second->getElementType(fieldIdx), gep, member->memberName);
+                        llvm::Value* rawVal = m_builder->CreateLoad(stIt->second->getElementType(fieldIdx), gep, member->memberName);
+
+                        auto bIt = m_structBitfields.find(pair.first);
+                        if (bIt != m_structBitfields.end()) {
+                            auto bfIt = bIt->second.find(memberLower);
+                            if (bfIt != bIt->second.end()) {
+                                const auto& binfo = bfIt->second;
+                                llvm::Type* contTy = rawVal->getType();
+                                if (binfo.bitOffset > 0) {
+                                    llvm::Value* shiftVal = llvm::ConstantInt::get(contTy, binfo.bitOffset);
+                                    rawVal = m_builder->CreateLShr(rawVal, shiftVal, "bf.shr");
+                                }
+                                uint64_t mask = (binfo.bitWidth >= 64) ? ~0ULL : ((1ULL << binfo.bitWidth) - 1ULL);
+                                llvm::Value* maskVal = llvm::ConstantInt::get(contTy, mask);
+                                llvm::Value* extracted = m_builder->CreateAnd(rawVal, maskVal, "bf.and");
+
+                                // Coerce to declared field type (e.g. Byte, UInt16, UInt32)
+                                auto ftIt = m_structFieldTypes.find(pair.first);
+                                if (ftIt != m_structFieldTypes.end()) {
+                                    auto tIt = ftIt->second.find(memberLower);
+                                    if (tIt != ftIt->second.end()) {
+                                        llvm::Type* declTy = getLlvmType(tIt->second);
+                                        return coerceType(extracted, declTy);
+                                    }
+                                }
+                                return extracted;
+                            }
+                        }
+                        return rawVal;
                     }
                 }
             }
@@ -7280,6 +7479,13 @@ bool LlvmEmitter::emitModule(const ModuleNode& moduleNode) {
             );
             m_constants.insert(c->name);
             m_constants.insert(toLower(c->name));
+        }
+    }
+
+    // 2.6 Emit Module-level Static Assertions (#Assert)
+    for (const auto& member : moduleNode.members) {
+        if (auto assertStmt = dynamic_cast<const StaticAssertStmtNode*>(member.get())) {
+            emitStaticAssert(*assertStmt);
         }
     }
 

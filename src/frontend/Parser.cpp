@@ -1163,6 +1163,12 @@ std::unique_ptr<ASTNode> Parser::parseStatement() {
 
     // Preprocessor Directives
     while (m_currentToken.type == TokenType::Hash) {
+        Token peekTok = m_lexer.peekToken();
+        if (toLower(peekTok.text) == "assert") {
+            consume(); // '#'
+            consume(); // 'assert'
+            return parseStaticAssert();
+        }
         handleDirective();
         while (match(TokenType::Colon)) {}
     }
@@ -1567,8 +1573,15 @@ std::vector<std::unique_ptr<ASTNode>> Parser::parseStatementBlock(const std::vec
     while (m_currentToken.type != TokenType::Eof) {
         while (match(TokenType::Colon)) {}
 
-        // Preprocessor Directives inside statement blocks (#Const, #If, #ElseIf, #Else, #End If)
+        // Preprocessor Directives inside statement blocks (#Const, #If, #ElseIf, #Else, #End If, #Assert)
         if (m_currentToken.type == TokenType::Hash) {
+            Token peekTok = m_lexer.peekToken();
+            if (toLower(peekTok.text) == "assert") {
+                consume(); // '#'
+                consume(); // 'assert'
+                statements.push_back(parseStaticAssert());
+                continue;
+            }
             handleDirective();
             continue;
         }
@@ -2002,6 +2015,24 @@ std::unique_ptr<ExprASTNode> Parser::parsePrimaryExpr() {
         size_t tokLine = m_currentToken.line;
         size_t tokCol = m_currentToken.column;
         consume();
+
+        // Check if identifier resolves to a preprocessor conditional constant (#Const)
+        auto cIt = m_condConstants.find(name);
+        if (cIt == m_condConstants.end()) {
+            for (const auto& kv : m_condConstants) {
+                if (toLower(kv.first) == toLower(name)) {
+                    cIt = m_condConstants.find(kv.first);
+                    break;
+                }
+            }
+        }
+        if (cIt != m_condConstants.end()) {
+            auto numNode = std::make_unique<NumberExprASTNode>(cIt->second);
+            numNode->line = tokLine;
+            numNode->column = tokCol;
+            return numNode;
+        }
+
         auto varNode = std::make_unique<VariableExprASTNode>(name);
         varNode->line = tokLine;
         varNode->column = tokCol;
@@ -2617,6 +2648,25 @@ std::unique_ptr<DelegateNode> Parser::parseDelegate(bool isPublic) {
     return del;
 }
 
+std::unique_ptr<StaticAssertStmtNode> Parser::parseStaticAssert() {
+    auto assertNode = std::make_unique<StaticAssertStmtNode>();
+    assertNode->line = m_currentToken.line;
+    assertNode->column = m_currentToken.column;
+
+    assertNode->condition = parseExpression();
+
+    if (match(TokenType::Comma)) {
+        if (m_currentToken.type == TokenType::StringLiteral) {
+            assertNode->message = m_currentToken.text;
+            consume();
+        } else {
+            expect(TokenType::StringLiteral, "Expected string message after comma in #Assert directive");
+        }
+    }
+
+    return assertNode;
+}
+
 std::unique_ptr<ModuleNode> Parser::parseModule() {
     auto moduleNode = std::make_unique<ModuleNode>();
 
@@ -2683,8 +2733,15 @@ std::unique_ptr<ModuleNode> Parser::parseModule() {
     while (m_currentToken.type != TokenType::Eof) {
         while (match(TokenType::Colon)) {}
 
-        // Preprocessor Directives at module level (#Const, #If, #ElseIf, #Else, #End If)
+        // Preprocessor Directives at module level (#Const, #If, #ElseIf, #Else, #End If, #Assert)
         if (m_currentToken.type == TokenType::Hash) {
+            Token peekTok = m_lexer.peekToken();
+            if (toLower(peekTok.text) == "assert") {
+                consume(); // '#'
+                consume(); // 'assert'
+                moduleNode->members.push_back(parseStaticAssert());
+                continue;
+            }
             handleDirective();
             continue;
         }
@@ -2777,7 +2834,7 @@ std::unique_ptr<ModuleNode> Parser::parseModule() {
             continue;
         }
 
-        if (checkKeyword("TypeAlias")) {
+        if (m_currentToken.type == TokenType::KwTypeAlias || checkKeyword("TypeAlias")) {
             consume();
             parseTypeAlias();
             continue;

@@ -67,6 +67,7 @@ public:
     void emitGoToStatement(const GoToStmtNode& gotoNode);
     void emitTryStatement(const TryStmtNode& tryNode);
     void emitUsingStatement(const UsingStmtNode& usingNode);
+    void emitStaticAssert(const StaticAssertStmtNode& assertNode);
 
     llvm::Value* emitExpression(ExprASTNode* expr);
     llvm::Value* coerceType(llvm::Value* val, llvm::Type* targetType);
@@ -126,10 +127,18 @@ private:
     std::unordered_map<std::string, llvm::AllocaInst*> m_namedValues;
     std::unordered_map<std::string, TypeSpec> m_variableTypes;
     std::unordered_map<std::string, TypeSpec> m_globalVariableTypes;
+    struct BitfieldInfo {
+        unsigned containerIndex{0}; // LLVM struct field index of the backing storage
+        unsigned bitOffset{0};      // bit offset inside backing storage
+        uint32_t bitWidth{0};       // width in bits
+        uint32_t storageBits{0};    // total bit width of backing storage (8, 16, 32, 64)
+    };
+
     std::unordered_map<std::string, llvm::StructType*> m_structTypes;
     std::unordered_set<std::string> m_unionTypes;
     std::unordered_map<std::string, std::unordered_map<std::string, unsigned>> m_structFieldIndices;
     std::unordered_map<std::string, std::unordered_map<std::string, TypeSpec>> m_structFieldTypes;
+    std::unordered_map<std::string, std::unordered_map<std::string, BitfieldInfo>> m_structBitfields;
     std::unordered_map<std::string, TypeSpec> m_procReturnTypes;
     std::unordered_map<std::string, int64_t> m_enumConstants;
     std::unordered_map<std::string, std::unordered_map<std::string, int64_t>> m_enums;

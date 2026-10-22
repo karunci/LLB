@@ -435,6 +435,20 @@ else
     ERR_COUNT=$((ERR_COUNT + 1))
 fi
 
+# 26. Failed compile-time static assertion (#Assert)
+cat << 'CODE' > "$BUILD_DIR/bad_static_assert.bas"
+Module TestAssertFail
+    #Assert 1 = 2, "One should equal two"
+End Module
+CODE
+$LLBC "$BUILD_DIR/bad_static_assert.bas" 2>&1 | grep -q "Static assertion failed: One should equal two"
+if [ $? -eq 0 ]; then
+    echo "[PASS] Rejection 26: Failed compile-time static assertion (#Assert) correctly rejected"
+else
+    echo "[FAIL] Rejection 26: #Assert failure not rejected"
+    ERR_COUNT=$((ERR_COUNT + 1))
+fi
+
 # Clean up temp files (sources in cwd, objects in build/)
 rm -f bad_uninit.bas bad_multi_singleuse.bas bad_undef_method.bas bad_private_member.bas \
       bad_uninit.o bad_multi_singleuse.o bad_undef_method.o bad_private_member.o \

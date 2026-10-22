@@ -1094,7 +1094,7 @@ Low-Level Basic (`LLB` / `llbc`) is engineered using an AI-assisted pair-program
 
 - **Human Architecture & Technical Direction:** Language syntax, type-system semantics, microkernel abstractions, memory layout invariants, and technical oversight are directed by the author (`karunci`).
 - **AI Pair Programming:** AST generation, LLVM IR emission routines, extensive test suites, and documentation scaffolding were iteratively developed with AI coding agents.
-- **Strict Verification Standards:** All code, compiler outputs, and kernel ELF binaries are tested against bare-metal execution targets in QEMU, 25 compiler rejection tests, and 64 comprehensive automated test suites.
+- **Strict Verification Standards:** All code, compiler outputs, and kernel ELF binaries are tested against bare-metal execution targets in QEMU, 26 compiler rejection tests, and 65 comprehensive automated test suites.
 
 For full disclosure regarding our development model and licensing restrictions, see [AI_DISCLOSURE.md](../AI_DISCLOSURE.md).
 

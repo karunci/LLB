@@ -10,6 +10,10 @@ Module TestSuite
     #Const ARCH_BITS = 64
     #Const UNUSED_FLAG = 0
 
+    #Assert TARGET_ENV = 1, "TARGET_ENV constant validation"
+    #Assert ARCH_BITS = 64, "ARCH_BITS 64-bit architecture assertion"
+    #Assert 100 > 50, "Basic compile-time inequality"
+
     Import ImportHelper In "ImportHelper.bas"
     Import MathHelper In "NamespaceHelper.bas"
     Use ClassHelper In "ClassHelper.cls" As Helper
@@ -100,6 +104,17 @@ Module TestSuite
         Public Port As Int32
         Public IsActive As Int32
     End Structure
+
+    ' Bitfield Packed Structure
+    <Packed>
+    Public Structure BitfieldFlags
+        Public FlagA As Byte * 1
+        Public FlagB As Byte * 1
+        Public Mode  As Byte * 2
+        Public Extra As Byte * 4
+    End Structure
+
+    #Assert SizeOf(BitfieldFlags) = 1, "BitfieldFlags must occupy exactly 1 byte"
 
     Public Union DWordReg
         Public DwordVal As UInt32
@@ -1851,6 +1866,27 @@ SkipMiddle:
         End If
     End Function
 
+    ' 65. Bitfield Declarations, Packing & Bit-level Read/Write
+    Public Function TestBitfieldPacking() As Boolean
+        Dim flags As BitfieldFlags
+        flags.FlagA = 1
+        flags.FlagB = 0
+        flags.Mode = 3
+        flags.Extra = 10
+
+        If flags.FlagA = 1 And flags.FlagB = 0 And flags.Mode = 3 And flags.Extra = 10 Then
+            ' Mutate single bitfield without clobbering adjacent fields
+            flags.FlagB = 1
+            flags.Mode = 1
+            If flags.FlagA = 1 And flags.FlagB = 1 And flags.Mode = 1 And flags.Extra = 10 Then
+                TestBitfieldPacking = True
+                Exit Function
+            End If
+        End If
+
+        TestBitfieldPacking = False
+    End Function
+
     ' Main Entry Point
     Public Unsafe Function Main(ByVal argc As Int32, ByVal argv As Pointer To Pointer To Byte) As Int32
         puts CPtr(Pointer To Byte, "================================================")
@@ -2371,13 +2407,21 @@ SkipMiddle:
             failCount = failCount + 1
         End If
 
+        ' 65. Bitfield Declarations, Packing & Bit-level Read/Write
+        If TestBitfieldPacking() Then
+            puts CPtr(Pointer To Byte, "Test 65 > [PASS] Bitfield Declarations, Packing & Bit-level Read/Write")
+        Else
+            puts CPtr(Pointer To Byte, "Test 65 > [FAIL] Bitfield Declarations, Packing & Bit-level Read/Write")
+            failCount = failCount + 1
+        End If
+
         puts CPtr(Pointer To Byte, "================================================")
         If failCount = 0 Then
-            puts CPtr(Pointer To Byte, "   ALL 64 TEST SUITES PASSED SUCCESSFULLY!      ")
+            puts CPtr(Pointer To Byte, "   ALL 65 TEST SUITES PASSED SUCCESSFULLY!      ")
             puts CPtr(Pointer To Byte, "================================================")
             Main = 0
         Else
-            Print "   TEST SUITE FINISHED WITH ", failCount, " FAILURE(S) OUT OF 64"
+            Print "   TEST SUITE FINISHED WITH ", failCount, " FAILURE(S) OUT OF 65"
             puts CPtr(Pointer To Byte, "================================================")
             Main = 1
         End If

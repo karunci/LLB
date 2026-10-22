@@ -62,6 +62,7 @@ enum class TokenType {
     KwConst,
     KwOptional,
     KwDelegate,
+    KwTypeAlias,
     KwCall,
     KwTrue,
     KwFalse,

@@ -557,9 +557,28 @@ static std::string compileSourceFile(
                 }
             }
 
-            // Register the class and its methods
+            // Register class enums, structures, constants, and methods
             for (const auto& member : curMod->members) {
-                if (auto proc = dynamic_cast<const llbc::ProcedureNode*>(member.get())) {
+                if (auto en = dynamic_cast<const llbc::EnumNode*>(member.get())) {
+                    if (en->isPublic) {
+                        irEmitter.emitEnum(*en);
+                    }
+                } else if (auto st = dynamic_cast<const llbc::StructureNode*>(member.get())) {
+                    irEmitter.emitStructure(*st);
+                    if (!curMod->name.empty()) {
+                        llbc::StructureNode qualSt = *st;
+                        qualSt.name = curMod->name + "." + st->name;
+                        irEmitter.emitStructure(qualSt);
+                    }
+                } else if (auto c = dynamic_cast<const llbc::ConstStmtNode*>(member.get())) {
+                    if (c->isPublic) {
+                        std::string pref = curMod->name;
+                        irEmitter.declareConstant(*c, pref);
+                        if (!useDir.aliasName.empty() && useDir.aliasName != curMod->name) {
+                            irEmitter.declareConstant(*c, useDir.aliasName);
+                        }
+                    }
+                } else if (auto proc = dynamic_cast<const llbc::ProcedureNode*>(member.get())) {
                     if (proc->isPublic) {
                         std::vector<llbc::TypeSpec> pTypes;
                         // First parameter for class method is Me (pointer to class struct)
@@ -576,6 +595,7 @@ static std::string compileSourceFile(
                         std::vector<llbc::ExprASTNode*> defExprs;
                         std::vector<bool> paramByRefs;
                         if (curMod->isClass) {
+                            defExprs.push_back(nullptr); // Me pointer has no default expression
                             paramByRefs.push_back(false); // Me pointer is passed by value
                         }
                         for (const auto& p : proc->parameters) {

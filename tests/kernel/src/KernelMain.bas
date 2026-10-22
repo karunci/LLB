@@ -6,13 +6,16 @@
 
 Module KernelMain
 
-    Import Drivers.Terminal
-    Import Drivers.SerialUart
-    Import Drivers.Keyboard
+    ' --- Procedural Modules ---
     Import Arch.Idt
     Import Arch.X86_64.Gdt
     Import Arch.X86_64.PortIO
-    Import Arch.X86_64.CpuContext
+
+    ' --- Instantiable Classes ---
+    Use Drivers.Terminal
+    Use Drivers.SerialUart
+    Use Drivers.Keyboard
+    Use Arch.X86_64.CpuContext
 
     ' Helper to send a character to COM1 serial port (0x3F8)
     Private Unsafe Sub WriteSerial(ByVal ch As Byte)

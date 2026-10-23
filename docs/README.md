@@ -675,12 +675,15 @@ LLB projects are configured via `.llbproj` manifest files, removing the need for
 ' Manifest Descriptor: Kernel.llbproj
 
 [Project]
-Name    = "kernel"
-Type    = "Kernel" ; Kernel, BareMetalExecutable, FlatBinary, Executable, SharedLibrary, StaticLibrary
-Version = "0.1.0"
+Name        = "kernel"
+Type        = "Kernel" ; Kernel, BareMetalExecutable, FlatBinary, Executable, SharedLibrary, StaticLibrary
+Version     = "0.1.0"
+Author      = "karunci"
+License     = "MPL-2.0"
+Platform    = "freestanding" ; freestanding | hosted
 
 [Target]
-Arch = "x86_64-unknown-none-elf"
+Architecture = "x86_64-unknown-none-elf"
 
 [Entry]
 EntryPoint = "_start"
@@ -689,20 +692,23 @@ EntryPoint = "_start"
 LinkerScript = "linker.ld"
 
 [Output]
-OutDir  = "build"
-OutFile = "kernel.elf"
+OutputDirectory = "build"
+BinaryName      = "kernel.elf"
 
 [Sources]
-Assembly = "src/arch/x86_64/boot.S"
-Assembly = "src/arch/x86_64/IsrStubs.S"
-Module   = "src/arch/x86_64/Idt.bas"
-Class    = "src/drivers/Terminal.cls"
-Module   = "src/KernelMain.bas"
+Files = [
+    "src/arch/x86_64/boot.S",
+    "src/arch/x86_64/IsrStubs.S",
+    "src/arch/x86_64/Idt.bas",
+    "src/drivers/Terminal.cls",
+    "src/KernelMain.bas"
+]
 
 [CompilerOptions]
-Optimize           = "O2"
-EmitDebugSymbols   = True
-AllowUnsafePointers = True
+OptimizationLevel      = "O2" ; O0, O1, O2, O3, Os
+EmitDebugInfo          = true ; true / false (generates DWARF debug symbols)
+Freestanding           = true ; true / false
+DisableStandardLibrary = true ; true / false
 ```
 
 #### Supported Project Types (`Type = "..."`)
@@ -717,15 +723,19 @@ AllowUnsafePointers = True
 
 #### Manifest Section Reference
 
-- `[Project]`: Core project metadata (`Name`, `Type`, `Version`).
-- `[Target]`: Cross-compilation settings (`Arch = "<target-triple>"`). Omit or leave empty for host native target.
+- `[Project]`: Core project metadata (`Name`, `Type`, `Version`, `Author`, `License`, `Platform`).
+- `[Target]`: Cross-compilation settings (`Architecture` or `Arch = "<target-triple>"`). Omit or leave empty for host native target.
 - `[Output]`: Artifact location and naming controls:
-  - `OutDir`: Relative directory where all build artifacts (`.ll`, `.o`, `_asm.o`, final binary) are isolated (e.g., `build`).
-  - `OutFile`: Explicit filename for the final compiled target (e.g., `kernel.elf`, `testsuite`, `boot.bin`).
+  - `OutputDirectory` / `OutDir`: Relative directory where all build artifacts are isolated (e.g., `build`).
+  - `BinaryName` / `OutFile`: Explicit filename for the final compiled target (e.g., `kernel.elf`, `testsuite`, `libllb.a`).
 - `[Entry]`: Target entry point symbol (`EntryPoint = "_start"`).
 - `[Linker]`: Linker script specification (`LinkerScript = "linker.ld"`).
-- `[Sources]`: Multi-value declarations of source units (`Module = "..."`, `Class = "..."`, `Assembly = "..."`).
-- `[CompilerOptions]`: Optimization levels (`Optimize = "O0" | "O1" | "O2" | "O3"`), `EmitDebugSymbols`, and safety toggles.
+- `[Sources]`: Array of source units (`Files = [ ... ]`) or repeating key declarations (`Module = "..."`, `Class = "..."`, `Assembly = "..."`).
+- `[CompilerOptions]`: Compiler optimization and codegen controls:
+  - `OptimizationLevel = "O0" | "O1" | "O2" | "O3" | "Os"`
+  - `EmitDebugInfo = true | false` (enables DWARF debug symbols `-g`)
+  - `Freestanding = true | false`
+  - `DisableStandardLibrary = true | false`
 - `[Script]` / `[PostBuild]`: Sequential post-build commands executed after linking completes successfully:
   - `Cmd = "program_or_script.sh"`: Runs command or script sequentially.
   - `Script = "path/to/script.sh"` or `Bash = "test.sh"`: Executes target script.
@@ -1094,7 +1104,7 @@ Low-Level Basic (`LLB` / `llbc`) is engineered using an AI-assisted pair-program
 
 - **Human Architecture & Technical Direction:** Language syntax, type-system semantics, microkernel abstractions, memory layout invariants, and technical oversight are directed by the author (`karunci`).
 - **AI Pair Programming:** AST generation, LLVM IR emission routines, extensive test suites, and documentation scaffolding were iteratively developed with AI coding agents.
-- **Strict Verification Standards:** All code, compiler outputs, and kernel ELF binaries are tested against bare-metal execution targets in QEMU, 26 compiler rejection tests, and 65 comprehensive automated test suites.
+- **Strict Verification Standards:** All code, compiler outputs, and kernel ELF binaries are tested against bare-metal execution targets in QEMU, 30 compiler rejection tests, 10 CLI options tests, and 66 comprehensive automated test suites.
 
 For full disclosure regarding our development model and licensing restrictions, see [AI_DISCLOSURE.md](../AI_DISCLOSURE.md).
 

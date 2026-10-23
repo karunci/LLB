@@ -1,0 +1,36 @@
+' Project Name: LibLLB_Metal / Low-Level Basic
+' Filename: lib/metal/Metal.llbproj
+' Summary: Low-Level Basic standard library for freestanding / bare-metal targets.
+
+[Project]
+Name    = "LibLLB_Metal"
+Type    = "StaticLibrary"
+Version = "0.1.0"
+Author  = "karunci"
+License = "MPL-2.0"
+
+[Target]
+Architecture = "x86_64-unknown-none-elf"
+Platform     = "freestanding"
+
+[Output]
+OutputDirectory = "build"
+BinaryName      = "libllb_metal.a"
+
+[CompilerOptions]
+OptimizationLevel      = "Os"
+EmitDebugInfo          = true
+Freestanding           = true
+DisableStandardLibrary = true
+
+[Sources]
+Files = [
+    "src/ICharSink.cls",
+    "src/TextWriter.cls",
+    "src/Ascii.bas",
+    "src/Math.bas",
+    "src/Memory.bas",
+    "src/Strings.bas",
+    "src/Format.bas",
+    "src/Conv.bas"
+]

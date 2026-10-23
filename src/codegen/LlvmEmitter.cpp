@@ -6839,15 +6839,22 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
                 }
             }
             if (prefixClass.empty()) {
+                size_t bestLen = 0;
                 for (const auto& pair : m_classInstancing) {
                     std::string norm = pair.first;
                     for (auto& ch : norm) if (ch == '.') ch = '_';
-                    if (targetFuncName.rfind(norm + "_", 0) == 0) {
+                    if (targetFuncName.rfind(norm + "_", 0) == 0 && norm.length() > bestLen) {
                         prefixClass = pair.first;
-                        break;
+                        bestLen = norm.length();
                     }
                 }
             }
+        }
+
+        if (m_funcAliases.count(prefixClass)) {
+            prefixClass = m_funcAliases[prefixClass];
+        } else if (m_funcAliases.count(toLower(prefixClass))) {
+            prefixClass = m_funcAliases[toLower(prefixClass)];
         }
 
         std::string normClass = prefixClass;
@@ -7947,7 +7954,9 @@ bool LlvmEmitter::emitModule(const ModuleNode& moduleNode) {
 
     // 2.8 Register Use Directives (aliases)
     for (const auto& useDir : moduleNode.uses) {
-        std::string fullTarget = !useDir.containerPath.empty()
+        bool isContainerFile = (!useDir.containerPath.empty() && 
+            (useDir.containerPath.find(".cls") != std::string::npos || useDir.containerPath.find(".bas") != std::string::npos));
+        std::string fullTarget = (!useDir.containerPath.empty() && !isContainerFile)
             ? (useDir.containerPath + "." + useDir.targetPath)
             : useDir.targetPath;
         if (!useDir.aliasName.empty()) {
@@ -8042,8 +8051,18 @@ bool LlvmEmitter::emitModule(const ModuleNode& moduleNode) {
                 m_funcAliases[className + "_" + proc->name] = mangledName;
                 m_funcAliases[normClass + "_" + proc->name] = mangledName;
             } else if (!modulePrefix.empty()) {
-                mangledName = modulePrefix + "_" + proc->name;
+                std::string normMod = modulePrefix;
+                for (auto& ch : normMod) if (ch == '.') ch = '_';
+                if (proc->propertyKind == ProcedureNode::PropertyKind::Get) {
+                    mangledName = normMod + "_get_" + proc->name;
+                } else if (proc->propertyKind == ProcedureNode::PropertyKind::Let || proc->propertyKind == ProcedureNode::PropertyKind::Set) {
+                    mangledName = normMod + "_set_" + proc->name;
+                } else {
+                    mangledName = normMod + "_" + proc->name;
+                }
                 m_funcAliases[moduleNode.name + "." + proc->name] = mangledName;
+                m_funcAliases[moduleNode.name + "_" + proc->name] = mangledName;
+                m_funcAliases[normMod + "_" + proc->name] = mangledName;
             } else {
                 if (proc->propertyKind == ProcedureNode::PropertyKind::Get) {
                     mangledName = "get_" + proc->name;

@@ -758,14 +758,15 @@ static int buildSingleProject(const std::string& manifestPath, const CliOptions&
     bool isShared = opts.isShared;
     bool isStatic = opts.isStatic;
     bool isRawBinary = opts.isRawBinary;
-    int optLevel = opts.cliHasOptLevel ? opts.optLevel : 0;
+    int optLevel = opts.cliHasOptLevel ? opts.optLevel : (config.hasOptLevel ? config.optLevel : 0);
+    bool enableDebugInfo = opts.enableDebugInfo || config.emitDebugInfo;
     std::string targetTriple = opts.targetTriple;
 
-    // For hosted Executables: pass arch to LLVM codegen (per compileSourceFile call)
+    // For hosted Executables and Shared Libraries: pass arch to LLVM codegen (per compileSourceFile call)
     // but do NOT set the global targetTriple used by the linker — let LLD use host CRT.
     // For bare-metal / cross targets the full triple must drive both codegen and linking.
-    bool isHostedExe = (config.type == "Executable" && !isFreestanding);
-    if (!opts.cliHasTarget && !config.targetArch.empty() && !isHostedExe) {
+    bool isHostedTarget = ((config.type == "Executable" || config.type == "SharedLibrary" || config.type == "DynamicLibrary") && !isFreestanding);
+    if (!opts.cliHasTarget && !config.targetArch.empty() && !isHostedTarget) {
         targetTriple = config.targetArch;
     }
     if (config.type == "SharedLibrary" || config.type == "DynamicLibrary") {
@@ -803,7 +804,7 @@ static int buildSingleProject(const std::string& manifestPath, const CliOptions&
     // Compile LLB Modules (.bas / .cls)
     std::string codegenTriple = !config.targetArch.empty() ? config.targetArch : targetTriple;
     for (const auto& srcFile : config.sourceFiles) {
-        std::string objFile = compileSourceFile(srcFile, optLevel, opts.enableDebugInfo, codegenTriple, opts.sysroot, config.outDir);
+        std::string objFile = compileSourceFile(srcFile, optLevel, enableDebugInfo, codegenTriple, opts.sysroot, config.outDir);
         if (objFile.empty()) return 1;
         objectFiles.push_back(objFile);
     }

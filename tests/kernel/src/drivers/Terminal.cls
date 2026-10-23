@@ -195,6 +195,30 @@ Namespace Drivers
             Next i
         End Sub
 
+        ' Render an unsigned 64-bit integer as a base-10 decimal string
+        Public Unsafe Sub WriteUInt(ByVal value As UInt64)
+            If value = 0 Then
+                Me.WriteChar 48 ' ASCII '0'
+                Exit Sub
+            End If
+
+            Dim buffer(20) As Byte
+            Dim pos As Int32 = 0
+
+            Do While value > 0
+                Dim remDigit As UInt64 = value Mod 10
+                buffer(pos) = CType(Byte, 48 + remDigit)
+                value = value / 10
+                pos = pos + 1
+            Loop
+
+            ' Print digits in reverse order
+            Dim i As Int32
+            For i = pos - 1 To 0 Step -1
+                Me.WriteChar buffer(i)
+            Next i
+        End Sub
+
     End Class
 
 End Namespace

@@ -1,8 +1,8 @@
 # Low-Level Basic (LLB)
 
 [![License: MPL-2.0](https://img.shields.io/badge/License-MPL_2.0-blue.svg)](LICENSE.md)
-[![Build Status](https://img.shields.io/badge/tests-65%2F65%20passed-brightgreen.svg)](#)
-[![LLVM Version](https://img.shields.io/badge/backend-LLVM%2021-red.svg)](#)
+[![Build Status](https://img.shields.io/badge/tests-66%2F66%20passed-brightgreen.svg)](tests/userland/TestSuite.bas)
+[![LLVM Version](https://img.shields.io/badge/backend-LLVM%2021-red.svg)](docs/LANGUAGE_REFERENCE.md#17-core-architectural-design--comparison-with-modern-languages)
 [![AI-Assisted](https://img.shields.io/badge/development-AI--assisted-purple.svg)](AI_DISCLOSURE.md)
 
 > **Low-Level Basic (LLB)** is an Ahead-Of-Time (AOT) compiled systems programming language combining the safety guarantees and bare-metal performance of Rust and C/C++ with the clean, expressive, approachable syntax of Visual Basic 6.

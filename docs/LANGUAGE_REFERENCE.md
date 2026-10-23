@@ -757,12 +757,15 @@ LLB projects are configured using `.llbproj` descriptors:
 
 ```ini
 [Project]
-Name    = "kernel"
-Type    = "Kernel" ; Kernel, BareMetalExecutable, FlatBinary, Executable, SharedLibrary, StaticLibrary
-Version = "0.1.0"
+Name        = "kernel"
+Type        = "Kernel" ; Kernel, BareMetalExecutable, FlatBinary, Executable, SharedLibrary, StaticLibrary
+Version     = "0.1.0"
+Author      = "karunci"
+License     = "MPL-2.0"
+Platform    = "freestanding" ; freestanding | hosted
 
 [Target]
-Arch = "x86_64-unknown-none-elf"
+Architecture = "x86_64-unknown-none-elf"
 
 [Entry]
 EntryPoint = "_start"
@@ -771,19 +774,22 @@ EntryPoint = "_start"
 LinkerScript = "linker.ld"
 
 [Output]
-OutDir  = "build"
-OutFile = "kernel.elf"
-
-[Sources]
-Assembly = "src/boot.S"
-Module   = "src/Idt.bas"
-Module   = "src/Terminal.bas"
-Module   = "src/KernelMain.bas"
+OutputDirectory = "build"
+BinaryName      = "kernel.elf"
 
 [CompilerOptions]
-Optimize           = "O2"
-EmitDebugSymbols   = True
-AllowUnsafePointers = True
+OptimizationLevel      = "O2" ; O0, O1, O2, O3, Os
+EmitDebugInfo          = true ; true / false (generates DWARF debug symbols)
+Freestanding           = true ; true / false
+DisableStandardLibrary = true ; true / false
+
+[Sources]
+Files = [
+    "src/boot.S",
+    "src/Idt.bas",
+    "src/Terminal.bas",
+    "src/KernelMain.bas"
+]
 
 [Script]
 ; Sequential post-build commands/scripts

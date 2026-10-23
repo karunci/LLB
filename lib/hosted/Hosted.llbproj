@@ -1,0 +1,35 @@
+' Project Name: LibLLB / Low-Level Basic
+' Filename: lib/hosted/Hosted.llbproj
+' Summary: Low-Level Basic standard library for hosted userland runtime.
+
+[Project]
+Name    = "LibLLB"
+Type    = "SharedLibrary"
+Version = "0.1.0"
+Author  = "karunci"
+License = "MPL-2.0"
+
+[Target]
+Platform     = "hosted"
+
+[Output]
+OutputDirectory = "build"
+BinaryName      = "libllb.so"
+
+[CompilerOptions]
+OptimizationLevel      = "O2"
+EmitDebugInfo          = true
+Freestanding           = false
+DisableStandardLibrary = false
+
+[Sources]
+Files = [
+    "src/ICharSink.cls",
+    "src/TextWriter.cls",
+    "src/Ascii.bas",
+    "src/Math.bas",
+    "src/Memory.bas",
+    "src/Strings.bas",
+    "src/Format.bas",
+    "src/Conv.bas"
+]

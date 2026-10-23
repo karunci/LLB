@@ -10,6 +10,8 @@ Namespace Drivers
     Public Class Terminal
         Implements ICharDevice
 
+        Private Declare Function SprintF Lib "libllb_metal" (ByVal outBuf As Pointer To Byte, ByVal maxLen As UInt32, ByVal fmt As Pointer To Byte, ParamArray args() As Pointer To Int64) As UInt32
+
         ' VGA Text Mode Constants (80x25 character grid)
         Public Const VGA_WIDTH As UInt32 = 80
         Public Const VGA_HEIGHT As UInt32 = 25
@@ -217,6 +219,14 @@ Namespace Drivers
             For i = pos - 1 To 0 Step -1
                 Me.WriteChar buffer(i)
             Next i
+        End Sub
+
+        ' Write a formatted string (printf-style %s, %u, %d, %x, %c, %%)
+        Public Unsafe Sub PrintF(ByVal fmt As Pointer To Byte, ParamArray args() As Pointer To Int64)
+            Dim buffer(256) As Byte
+            Dim bufPtr As Pointer To Byte = CPtr(Pointer To Byte, buffer)
+            SprintF bufPtr, 256, fmt, args
+            Me.WriteString bufPtr
         End Sub
 
     End Class

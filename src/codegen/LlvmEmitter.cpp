@@ -77,6 +77,15 @@ void LlvmEmitter::emitDebugLocation(size_t line, size_t col) {
 llvm::Type* LlvmEmitter::getLlvmType(const TypeSpec& typeSpec) {
     std::string typeName = toLower(typeSpec.name);
 
+    if (typeSpec.isArray && typeSpec.arraySize > 0) {
+        TypeSpec elemSpec = typeSpec;
+        elemSpec.isArray = false;
+        elemSpec.arraySize = 0;
+        elemSpec.dimensions.clear();
+        llvm::Type* elemType = getLlvmType(elemSpec);
+        return llvm::ArrayType::get(elemType, typeSpec.arraySize);
+    }
+
     if (typeSpec.pointerDepth > 0) {
         return llvm::PointerType::get(*m_context, 0);
     }
@@ -6863,9 +6872,18 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
             prefixClass = m_funcAliases[toLower(prefixClass)];
         }
 
+        // Check if procedure is an external Declare (which never takes an implicit Me / singleton pointer)
+        bool isDeclareCallee = false;
+        std::string rawTargetName = targetFuncName;
+        if (m_funcAliases.count(rawTargetName)) rawTargetName = m_funcAliases[rawTargetName];
+        else if (m_funcAliases.count(toLower(rawTargetName))) rawTargetName = m_funcAliases[toLower(rawTargetName)];
+        if (call->calleeExpr == nullptr && callee && callee->isDeclaration()) {
+            isDeclareCallee = true;
+        }
+
         std::string normClass = prefixClass;
         for (auto& ch : normClass) if (ch == '.') ch = '_';
-        bool isClassSingletonCall = (!prefixClass.empty() && 
+        bool isClassSingletonCall = (!isDeclareCallee && !prefixClass.empty() && 
             (m_classSingletons.count(prefixClass) || m_classSingletons.count(toLower(prefixClass)) ||
              m_classSingletons.count(normClass) || m_classSingletons.count(toLower(normClass)) ||
              m_classInstancing.count(prefixClass) || m_classInstancing.count(toLower(prefixClass)) ||
@@ -6921,7 +6939,7 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
 
             llvm::Value* thisPtr = getPointerToExpr(call->calleeExpr.get());
             args.push_back(thisPtr);
-        } else if (!call->calleeExpr && !m_currentScopeClass.empty() && m_namedValues.count("Me") &&
+        } else if (!isDeclareCallee && !call->calleeExpr && !m_currentScopeClass.empty() && m_namedValues.count("Me") &&
                    (callee->getFunctionType()->getNumParams() >= call->args.size() + 1 || isParamArrayEarly)) {
             args.push_back(m_namedValues["Me"]);
         } else if (isClassSingletonCall && (callee->getFunctionType()->getNumParams() >= call->args.size() + 1 || isParamArrayEarly)) {
@@ -7043,24 +7061,49 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
 
                 // Pack trailing arguments into a dynamic array buffer
                 size_t varargCount = (call->args.size() >= remainingFixedParams) ? (call->args.size() - remainingFixedParams) : 0;
-                llvm::Function* mallocFn = getOrCreateMalloc();
-                llvm::Value* bufSize = llvm::ConstantInt::get(llvm::Type::getInt64Ty(*m_context), (varargCount + 1) * sizeof(uint64_t));
-                llvm::Value* rawBuf = m_builder->CreateCall(mallocFn, {bufSize}, "paramarray.buf");
-
-                for (size_t i = 0; i < varargCount; ++i) {
-                    llvm::Value* elemVal = emitExpression(call->args[remainingFixedParams + i].get());
-                    elemVal = coerceType(elemVal, llvm::Type::getInt64Ty(*m_context));
-                    llvm::Value* slotPtr = m_builder->CreateGEP(
-                        llvm::Type::getInt64Ty(*m_context),
-                        rawBuf,
-                        llvm::ConstantInt::get(llvm::Type::getInt64Ty(*m_context), i),
-                        "pa.slot"
-                    );
-                    m_builder->CreateStore(elemVal, slotPtr);
+                llvm::Value* typedBuf = nullptr;
+                // If single trailing argument is already a forwarded ParamArray buffer (pointer to int64 / void ptr)
+                if (varargCount == 1) {
+                    ExprASTNode* singleArg = call->args[remainingFixedParams].get();
+                    if (auto varNode = dynamic_cast<VariableExprASTNode*>(singleArg)) {
+                        auto itPA = m_procParamArray.find(varNode->name);
+                        if (itPA == m_procParamArray.end()) itPA = m_procParamArray.find(toLower(varNode->name));
+                        auto tIt = m_variableTypes.find(varNode->name);
+                        if (tIt == m_variableTypes.end()) tIt = m_variableTypes.find(toLower(varNode->name));
+                        if ((itPA != m_procParamArray.end() && itPA->second) ||
+                            (tIt != m_variableTypes.end() && tIt->second.pointerDepth > 0)) {
+                            llvm::Value* fwdVal = emitExpression(singleArg);
+                            if (fwdVal && fwdVal->getType()->isPointerTy()) {
+                                typedBuf = fwdVal;
+                            }
+                        }
+                    }
                 }
-                llvm::Value* typedBuf = rawBuf;
+
+                if (!typedBuf) {
+                    // Freestanding-safe: Allocate ParamArray buffer on stack in entry block
+                    llvm::Function* curFunc = m_builder->GetInsertBlock()->getParent();
+                    llvm::IRBuilder<> entryB(&curFunc->getEntryBlock(), curFunc->getEntryBlock().begin());
+                    llvm::ArrayType* arrTy = llvm::ArrayType::get(llvm::Type::getInt64Ty(*m_context), varargCount > 0 ? varargCount : 1);
+                    llvm::AllocaInst* stackBuf = entryB.CreateAlloca(arrTy, nullptr, "paramarray.buf");
+
+                    for (size_t i = 0; i < varargCount; ++i) {
+                        llvm::Value* elemVal = emitExpression(call->args[remainingFixedParams + i].get());
+                        elemVal = coerceType(elemVal, llvm::Type::getInt64Ty(*m_context));
+                        llvm::Value* slotPtr = m_builder->CreateGEP(
+                            arrTy,
+                            stackBuf,
+                            {llvm::ConstantInt::get(llvm::Type::getInt64Ty(*m_context), 0),
+                             llvm::ConstantInt::get(llvm::Type::getInt64Ty(*m_context), i)},
+                            "pa.slot"
+                        );
+                        m_builder->CreateStore(elemVal, slotPtr);
+                    }
+                    typedBuf = stackBuf;
+                }
+
                 if (args.size() < callee->getFunctionType()->getNumParams()) {
-                    typedBuf = coerceType(rawBuf, callee->getFunctionType()->getParamType(args.size()));
+                    typedBuf = coerceType(typedBuf, callee->getFunctionType()->getParamType(args.size()));
                 }
                 args.push_back(typedBuf);
             } else {

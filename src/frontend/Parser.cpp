@@ -2614,6 +2614,14 @@ std::unique_ptr<InterfaceNode> Parser::parseInterface(bool isPublic) {
             if (!check(TokenType::RParen)) {
                 do {
                     ParameterNode param;
+                    if (m_currentToken.type == TokenType::KwParamArray || checkKeyword("ParamArray")) {
+                        consume();
+                        param.isParamArray = true;
+                        param.isOptional = true;
+                    } else if (m_currentToken.type == TokenType::KwOptional || checkKeyword("Optional")) {
+                        consume();
+                        param.isOptional = true;
+                    }
                     if (m_currentToken.type == TokenType::KwByVal || checkKeyword("ByVal")) {
                         consume();
                         param.isByRef = false;
@@ -2623,6 +2631,9 @@ std::unique_ptr<InterfaceNode> Parser::parseInterface(bool isPublic) {
                     }
                     param.name = m_currentToken.text;
                     expect(TokenType::Identifier, "Expected parameter name in interface method");
+                    if (match(TokenType::LParen)) {
+                        expect(TokenType::RParen, "Expected ')' after ParamArray parameter name");
+                    }
                     if (m_currentToken.type == TokenType::KwAs || checkKeyword("As")) {
                         consume();
                     }
@@ -2878,6 +2889,14 @@ std::unique_ptr<ModuleNode> Parser::parseModule() {
                 if (!check(TokenType::RParen)) {
                     do {
                         ParameterNode param;
+                        if (m_currentToken.type == TokenType::KwParamArray || checkKeyword("ParamArray")) {
+                            consume();
+                            param.isParamArray = true;
+                            param.isOptional = true;
+                        } else if (m_currentToken.type == TokenType::KwOptional || checkKeyword("Optional")) {
+                            consume();
+                            param.isOptional = true;
+                        }
                         if (m_currentToken.type == TokenType::KwByVal || checkKeyword("ByVal")) {
                             consume();
                             param.isByRef = false;
@@ -2887,6 +2906,9 @@ std::unique_ptr<ModuleNode> Parser::parseModule() {
                         }
                         param.name = m_currentToken.text;
                         expect(TokenType::Identifier, "Expected parameter name in interface method");
+                        if (match(TokenType::LParen)) {
+                            expect(TokenType::RParen, "Expected ')' after ParamArray parameter name");
+                        }
                         if (m_currentToken.type == TokenType::KwAs || checkKeyword("As")) {
                             consume();
                         }

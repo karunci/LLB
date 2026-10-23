@@ -67,6 +67,7 @@ stack_top:
 /* ============================================================================
  * 32-BIT PROTECTED MODE ENTRY POINT
  * ============================================================================ */
+.code32
 .section .text
 .global _start
 .type _start, @function
@@ -85,48 +86,61 @@ _start:
     call enable_paging
 
     /* 2. Load 64-bit Global Descriptor Table (GDT) */
-    lgdt (gdt64_pointer)
+    mov $gdt64_pointer, %eax
+    lgdt (%eax)
 
-    /* 3. Far jump to 64-bit code segment */
-    ljmp $0x08, $long_mode_entry
+    /* 3. Far jump to 64-bit code segment using 32-bit far return (lret) */
+    push $0x08
+    push $long_mode_entry
+    lret
 
 /* Setup 4-level Page Tables */
 setup_page_tables:
     /* Map L4[0] -> L3 */
     mov $page_table_l3, %eax
     or $0x3, %eax /* Present + Writable */
-    mov %eax, (page_table_l4)
+    mov $page_table_l4, %ebx
+    mov %eax, (%ebx)
+    movl $0, 4(%ebx)
 
     /* Map L3[0] -> L2 */
     mov $page_table_l2, %eax
     or $0x3, %eax
-    mov %eax, (page_table_l3)
+    mov $page_table_l3, %ebx
+    mov %eax, (%ebx)
+    movl $0, 4(%ebx)
 
     /* Map all 512 entries of L2 -> 2MB Huge Pages (Identity Map physical 0x0 - 0x40000000 = 1GB) */
-    mov $0, %ecx          /* Entry index 0..511 */
+    mov $page_table_l2, %ebx
+    mov $512, %ecx        /* 512 entries */
     mov $0x83, %eax       /* Physical 0x0 | Present (1) | Writable (2) | HugePage (0x80) */
 1:
-    mov %eax, page_table_l2(,%ecx,8)
-    movl $0, page_table_l2+4(,%ecx,8)
+    mov %eax, (%ebx)
+    movl $0, 4(%ebx)
     add $0x200000, %eax   /* Next 2MB physical frame */
-    inc %ecx
-    cmp $512, %ecx
-    jne 1b
+    add $8, %ebx          /* Next PTE entry */
+    sub $1, %ecx
+    jnz 1b
 
     /* Map L3[3] -> L2_APIC (Physical 3GB - 4GB region) */
     mov $page_table_l2_apic, %eax
     or $0x3, %eax
-    mov %eax, (page_table_l3 + 24)
+    mov $page_table_l3, %ebx
+    mov %eax, 24(%ebx)
+    movl $0, 28(%ebx)
 
     /* Map IOAPIC physical 0xFEC00000 (Index (0xFEC00000 - 0xC0000000) / 2MB = 502 -> offset 502*8 = 4016) */
+    mov $page_table_l2_apic, %ebx
     mov $0xFEC00000, %eax
     or $0x93, %eax /* Present + Writable + HugePage (0x80) + Cache-Disable (0x10) for MMIO */
-    mov %eax, (page_table_l2_apic + 4016)
+    mov %eax, 4016(%ebx)
+    movl $0, 4020(%ebx)
 
     /* Map Local APIC physical 0xFEE00000 (Index (0xFEE00000 - 0xC0000000) / 2MB = 503 -> offset 503*8 = 4024) */
     mov $0xFEE00000, %eax
     or $0x93, %eax /* Present + Writable + HugePage + Cache-Disable */
-    mov %eax, (page_table_l2_apic + 4024)
+    mov %eax, 4024(%ebx)
+    movl $0, 4028(%ebx)
     ret
 
 /* Enable PAE, SSE, and Long Mode in CR4/CR0/EFER */

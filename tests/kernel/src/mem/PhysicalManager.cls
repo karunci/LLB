@@ -143,13 +143,7 @@ Namespace Mem
                 Dim mb1 As Pointer To Multiboot1Info
                 mb1 = CPtr(Pointer To Multiboot1Info, mbiAddr)
 
-                Drivers.SerialUart.WriteString CPtr(Pointer To Byte, "DEBUG - [MB1] Flags: ")
-                Drivers.SerialUart.WriteHex CType(UInt64, mb1.Flags)
-                Drivers.SerialUart.WriteString CPtr(Pointer To Byte, ", MmapAddr: ")
-                Drivers.SerialUart.WriteHex CType(UInt64, mb1.MmapAddr)
-                Drivers.SerialUart.WriteString CPtr(Pointer To Byte, ", MmapLen: ")
-                Drivers.SerialUart.WriteHex CType(UInt64, mb1.MmapLength)
-                Drivers.SerialUart.WriteChar 10
+                Drivers.SerialUart.PrintF "DEBUG - [MB1] Flags: 0x%x, MmapAddr: 0x%x, MmapLen: 0x%x\n", mb1.Flags, mb1.MmapAddr, mb1.MmapLength
 
                 ' Check if MMAP bit (bit 6 = 0x40) is set in Flags
                 If (mb1.Flags And &H40) <> 0 Then
@@ -161,13 +155,7 @@ Namespace Mem
                         Dim entry As Pointer To Multiboot1MmapEntry
                         entry = CPtr(Pointer To Multiboot1MmapEntry, currPtr)
 
-                        Drivers.SerialUart.WriteString CPtr(Pointer To Byte, "DEBUG - [MB1 Mmap] Base: ")
-                        Drivers.SerialUart.WriteHex entry.BaseAddr
-                        Drivers.SerialUart.WriteString CPtr(Pointer To Byte, ", Len: ")
-                        Drivers.SerialUart.WriteHex entry.Length
-                        Drivers.SerialUart.WriteString CPtr(Pointer To Byte, ", Type: ")
-                        Drivers.SerialUart.WriteHex CType(UInt64, entry.EntryType)
-                        Drivers.SerialUart.WriteChar 10
+                        Drivers.SerialUart.PrintF "DEBUG - [MB1 Mmap] Base: 0x%x, Len: 0x%x, Type: 0x%x\n", entry.BaseAddr, entry.Length, entry.EntryType
 
                         ' EntryType 1 = Usable RAM strictly
                         If entry.EntryType = 1 Then

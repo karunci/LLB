@@ -102,22 +102,16 @@ setup_page_tables:
     or $0x3, %eax
     mov %eax, (page_table_l3)
 
-    /* Map L2[0..3] -> 2MB Huge Pages (Identity Map physical 0x0 - 0x800000) */
-    mov $0x000000, %eax
-    or $0x83, %eax /* Present + Writable + Huge Page Bit (PS) */
-    mov %eax, (page_table_l2)
-
-    mov $0x200000, %eax
-    or $0x83, %eax
-    mov %eax, (page_table_l2 + 8)
-
-    mov $0x400000, %eax
-    or $0x83, %eax
-    mov %eax, (page_table_l2 + 16)
-
-    mov $0x600000, %eax
-    or $0x83, %eax
-    mov %eax, (page_table_l2 + 24)
+    /* Map all 512 entries of L2 -> 2MB Huge Pages (Identity Map physical 0x0 - 0x40000000 = 1GB) */
+    mov $0, %ecx          /* Entry index 0..511 */
+    mov $0x83, %eax       /* Physical 0x0 | Present (1) | Writable (2) | HugePage (0x80) */
+1:
+    mov %eax, page_table_l2(,%ecx,8)
+    movl $0, page_table_l2+4(,%ecx,8)
+    add $0x200000, %eax   /* Next 2MB physical frame */
+    inc %ecx
+    cmp $512, %ecx
+    jne 1b
 
     /* Map L3[3] -> L2_APIC (Physical 3GB - 4GB region) */
     mov $page_table_l2_apic, %eax

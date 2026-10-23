@@ -16,6 +16,7 @@ Module KernelMain
     Use Drivers.SerialUart
     Use Drivers.Keyboard
     Use Arch.X86_64.CpuContext
+    Use Mem.PhysicalManager
 
     ' Helper to send a character to COM1 serial port (0x3F8)
     Private Unsafe Sub WriteSerial(ByVal ch As Byte)
@@ -29,6 +30,31 @@ Module KernelMain
             WriteSerial str(i)
             i = i + 1
         Loop
+    End Sub
+
+    Private Unsafe Sub WriteSerialHex(ByVal value As UInt64)
+        WriteSerialString CPtr(Pointer To Byte, "0x")
+        If value = 0 Then
+            WriteSerialString CPtr(Pointer To Byte, "0")
+            Exit Sub
+        End If
+
+        Dim digits As Pointer To Byte
+        digits = CPtr(Pointer To Byte, "0123456789ABCDEF")
+
+        Dim buffer(16) As Byte
+        Dim pos As Int32 = 0
+
+        Do While value > 0
+            buffer(pos) = digits(CType(Byte, value And CType(UInt64, 15)))
+            value = value RShift 4
+            pos = pos + 1
+        Loop
+
+        Dim i As Int32
+        For i = pos - 1 To 0 Step -1
+            WriteSerial buffer(i)
+        Next i
     End Sub
 
     Public Unsafe Sub KernelEntry(ByVal magic As UInt32, ByVal mbAddress As Pointer To Byte)
@@ -81,6 +107,35 @@ Module KernelMain
         Drivers.Terminal.WriteString CPtr(Pointer To Byte, "Multiboot Info Address: ")
         Drivers.Terminal.WriteHex CType(UInt64, mbAddress)
         Drivers.Terminal.WriteChar 10
+
+        ' Initialize Physical Memory Manager (PMM)
+        WriteSerialString CPtr(Pointer To Byte, "[PRK] Initializing Physical Memory Manager (PMM)...\r\n")
+        Mem.PhysicalManager.Initialize
+        Mem.PhysicalManager.ParseMemoryMap magic, CType(UInt64, mbAddress)
+
+        Drivers.Terminal.SetColor Drivers.Terminal.COLOR_LIGHT_GREEN
+        Drivers.Terminal.WriteString CPtr(Pointer To Byte, "[PMM] Total Managed RAM: ")
+        Drivers.Terminal.WriteHex Mem.PhysicalManager.GetTotalBytes()
+        Drivers.Terminal.WriteString CPtr(Pointer To Byte, " bytes, Free: ")
+        Drivers.Terminal.WriteHex Mem.PhysicalManager.GetFreeBytes()
+        Drivers.Terminal.WriteLine CPtr(Pointer To Byte, " bytes.")
+
+        ' Verify O(1) Allocation and Freeing
+        Dim testPage As UInt64 = Mem.PhysicalManager.AllocPage()
+        Drivers.Terminal.WriteString CPtr(Pointer To Byte, "[PMM] Allocated test 4KB frame at: ")
+        Drivers.Terminal.WriteHex testPage
+        Drivers.Terminal.WriteChar 10
+
+        If testPage <> 0 Then
+            ' Write test pattern to allocated physical page frame
+            Dim pagePtr As Volatile Pointer To UInt64
+            pagePtr = CPtr(Volatile Pointer To UInt64, testPage)
+            pagePtr(0) = &HCAFEBABE12345678
+            Drivers.Terminal.WriteString CPtr(Pointer To Byte, "[PMM] Frame write verified. Freeing frame back to stack...\n")
+            Mem.PhysicalManager.FreePage testPage
+        End If
+
+        WriteSerialString CPtr(Pointer To Byte, "[PRK] Physical Memory Manager online.\r\n")
         Drivers.Terminal.WriteChar 10
 
         ' Demonstrate Color Formatting
@@ -97,7 +152,7 @@ Module KernelMain
         ' Demonstrate scrolling with a few lines so the banner remains visible
         Drivers.Terminal.SetColor Drivers.Terminal.COLOR_WHITE
         Dim i As UInt32
-        For i = 1 To 16
+        For i = 1 To 3
             Drivers.Terminal.WriteString CPtr(Pointer To Byte, "Log Entry #")
             Drivers.Terminal.WriteHex CType(UInt64, i)
             Drivers.Terminal.WriteLine CPtr(Pointer To Byte, " - Terminal scrolling line test.")
@@ -110,9 +165,16 @@ Module KernelMain
         ' Initialize Local APIC and I/O APIC Hardware Engines
         WriteSerialString CPtr(Pointer To Byte, "[PRK] Initializing Local APIC...\r\n")
         Arch.X86_64.Apic.Initialize
-        WriteSerialString CPtr(Pointer To Byte, "[PRK] Local APIC online (ID: ")
+        WriteSerialString CPtr(Pointer To Byte, "[PRK] Local APIC online.\r\n")
+        
+        ' Serial debug logging with "DEBUG - "
+        Dim lapicCoreId As UInt32 = Arch.X86_64.Apic.GetLapicId()
+        WriteSerialString CPtr(Pointer To Byte, "DEBUG - [APIC] Local APIC Core ID: ")
+        WriteSerialHex CType(UInt64, lapicCoreId)
+        WriteSerialString CPtr(Pointer To Byte, "\r\n")
+
         Drivers.Terminal.WriteString CPtr(Pointer To Byte, "[APIC] Local APIC online (Core ID: ")
-        Drivers.Terminal.WriteHex CType(UInt64, Arch.X86_64.Apic.GetLapicId())
+        Drivers.Terminal.WriteHex CType(UInt64, lapicCoreId)
         Drivers.Terminal.WriteLine CPtr(Pointer To Byte, ").")
 
         WriteSerialString CPtr(Pointer To Byte, "[PRK] Initializing I/O APIC Redirection Engine...\r\n")

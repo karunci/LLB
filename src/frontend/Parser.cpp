@@ -1865,6 +1865,17 @@ std::unique_ptr<ExprASTNode> Parser::parsePrimaryExpr() {
     // Number Literal
     if (m_currentToken.type == TokenType::NumberLiteral) {
         std::string text = m_currentToken.text;
+        if (text.size() >= 2 && text[0] == '&' && (text[1] == 'H' || text[1] == 'h')) {
+            int64_t val = 0;
+            try {
+                val = static_cast<int64_t>(std::stoull(text.substr(2), nullptr, 16));
+            } catch (...) {
+                val = 0;
+            }
+            consume();
+            return std::make_unique<NumberExprASTNode>(val);
+        }
+
         if (text.find('.') != std::string::npos || text.find('e') != std::string::npos || text.find('E') != std::string::npos) {
             double val = 0.0;
             try {
@@ -1881,11 +1892,7 @@ std::unique_ptr<ExprASTNode> Parser::parsePrimaryExpr() {
         }
         int64_t val = 0;
         try {
-            if (text.size() >= 2 && text[0] == '&' && (text[1] == 'H' || text[1] == 'h')) {
-                val = static_cast<int64_t>(std::stoull(text.substr(2), nullptr, 16));
-            } else {
-                val = std::stoll(text, nullptr, 10);
-            }
+            val = std::stoll(text, nullptr, 10);
         } catch (...) {
             val = 0;
         }

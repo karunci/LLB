@@ -30,6 +30,10 @@
 23. [Bare-Metal Interrupt Handlers (`<Interrupt>`)](#23-bare-metal-interrupt-handlers-interrupt)
 24. [Compile-Time Static Assertions (`#Assert`)](#24-compile-time-static-assertions-assert)
 25. [Compiler Command-Line Interface (`llbc` Options)](#25-compiler-command-line-interface-llbc-options)
+26. [Freestanding Compiler Runtime ABI Requirements](#26-freestanding-compiler-runtime-abi-requirements)
+27. [Standard Libraries (`LibLLB` & `LibLLB_Metal`)](#27-standard-libraries-libllb--libllb_metal)
+28. [Intermediate Build Artifact Management](#28-intermediate-build-artifact-management)
+29. [Complete Syntactic Forms & Capabilities Matrix](#29-complete-syntactic-forms--capabilities-matrix)
 
 ---
 
@@ -211,21 +215,48 @@ term1.WriteChar "A"
 
 ## 3. Type System & Data Representation
 
-### Primitive Scalar Types
-| Type | Bit Width | Description |
-|---|---|---|
-| `Byte` / `UByte` | 8-bit | Unsigned 8-bit integer (`0` to `255`) |
-| `Int16` / `Short` | 16-bit | Signed 16-bit integer (`-32,768` to `32,767`) |
-| `UInt16` / `UShort` | 16-bit | Unsigned 16-bit integer (`0` to `65,535`) |
-| `Int32` / `Integer` / `Long` | 32-bit | Signed 32-bit integer |
-| `UInt32` / `ULong` | 32-bit | Unsigned 32-bit integer |
-| `Int64` | 64-bit | Signed 64-bit integer |
-| `UInt64` | 64-bit | Unsigned 64-bit integer |
-| `Currency` / `Decimal` | 64-bit | Fixed-point decimal unit (scaled by 10,000) |
-| `Single` | 32-bit | IEEE-754 single-precision float |
-| `Double` | 64-bit | IEEE-754 double-precision float |
-| `Boolean` | 1-bit | Logical truth value (`True` / `False`) |
-| `String` | Pointer | Pointer to null-terminated UTF-8 byte stream |
+Low-Level Basic provides a unified type system blending high-level BASIC ergonomics with C-level systems control. All types have well-defined sizes and ABI alignments across bare-metal and hosted execution.
+
+### Canonical Standard Types & Exact 1-to-1 Aliases
+To prevent the historical ambiguity between 16-bit real-mode (VB6) and 32/64-bit platforms (VB.NET), Low-Level Basic establishes a **Canonical Type System** where:
+1. **Fixed-width types** (`Byte`, `Int16`, `UInt16`, `Int32`, `UInt32`, `Int64`, `UInt64`, `Single`, `Double`, `Boolean`, `String`) are the **primary canonical types** for all system code and drivers.
+2. Each type is granted strictly **one primary ergonomic alias** adhering to classic real-mode expectations:
+   - **`Integer`** $\to$ `Int16` (16-bit signed integer)
+   - **`Long`** $\to$ `Int32` (32-bit signed integer)
+   - **`Long64`** $\to$ `Int64` (64-bit signed integer)
+   - **`Decimal`** $\to$ `Int64` (64-bit integer, replacing legacy currency)
+   - **`Float`** $\to$ `Single` (32-bit IEEE-754 floating point)
+
+### Complete Primitive Types Matrix
+
+| Canonical Type | Primary Alias | C / C++ Equivalent | LLVM IR | Size | Alignment | Value Range |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **`Byte`** | `UByte` | `uint8_t` / `unsigned char` | `i8` | 1 byte | 1 byte | `0` to `255` |
+| **`Int16`** | **`Integer`** | `int16_t` / `short` | `i16` | 2 bytes | 2 bytes | `-32,768` to `32,767` |
+| **`UInt16`** | **`UInteger`** | `uint16_t` / `unsigned short`| `i16` | 2 bytes | 2 bytes | `0` to `65,535` |
+| **`Int32`** | **`Long`** | `int32_t` / `int` / `long` | `i32` | 4 bytes | 4 bytes | `-2,147,483,648` to `2,147,483,647` |
+| **`UInt32`** | **`ULong`** | `uint32_t` / `unsigned int` | `i32` | 4 bytes | 4 bytes | `0` to `4,294,967,295` |
+| **`Int64`** | **`Long64`** / `Decimal` | `int64_t` / `long long` | `i64` | 8 bytes | 8 bytes | `-(2^63)` to `(2^63 - 1)` |
+| **`UInt64`** | **`ULong64`** | `uint64_t` / `unsigned long long` | `i64` | 8 bytes | 8 bytes | `0` to `18,446,744,073,709,551,615` |
+| **`Single`** | **`Float`** | `float` (IEEE-754) | `float` | 4 bytes | 4 bytes | `1.18 × 10^-38` to `3.40 × 10^38` |
+| **`Double`** | — | `double` (IEEE-754) | `double` | 8 bytes | 8 bytes | `2.23 × 10^-308` to `1.79 × 10^308` |
+| **`Boolean`** | — | `bool` / `_Bool` | `i1` | 1 byte | 1 byte | `True` (`-1` / `1`) or `False` (`0`) |
+| **`String`** | — | `const char*` | `ptr` | 8 bytes | 8 bytes | Null-terminated UTF-8 byte pointer |
+| **`Void`** | — | `void` | `void` | 0 | 0 | Non-returning procedure return type |
+
+### Hardware Pointer Types
+- **`Pointer To T`**: Strongly typed raw memory pointer (`T*` in C).
+  ```vb
+  Dim fb As Pointer To UInt32 = CPtr(Pointer To UInt32, &HE0000000)
+  fb(0) = &H00FF0000 ' Write red pixel directly
+  ```
+- **`Volatile Pointer To T`**: Prevents LLVM optimization passes from stripping reads/writes for MMIO hardware registers (e.g. APIC, UART, VGA):
+  ```vb
+  Dim lapicReg As Volatile Pointer To UInt32 = CPtr(Volatile Pointer To UInt32, &HFEE00020)
+  Dim coreId As UInt32 = lapicReg(0)
+  ```
+- **`Pointer`**: Untyped raw memory pointer (`void*` in C). Used for opaque buffers and dynamic memory allocators.
+- **`CPtr(Type, Expr)`**: Direct address casting operator. Converts integers to pointers or casts between distinct pointer types.
 
 ### User-Defined Structures (`Structure` / `Type`)
 Structures define custom layout data types. Members are accessed via dot notation:
@@ -1078,6 +1109,164 @@ During compilation, `llbc` automatically generates intermediate object files (`.
 - **Explicit Override:**
   - Manifest: `KeepTemps = true` / `KeepArtifacts = true` under `[CompilerOptions]`
   - CLI: `--keep-temps` / `-save-temps` / `--save-temps`
+
+---
+
+## 29. Complete Syntactic Forms & Capabilities Matrix
+
+The following reference summarizes all major syntactic forms and capabilities available in Low-Level Basic:
+
+### 29.1 Variable & Constant Declarations
+```vb
+Dim count As Int32 = 0                                  ' Local scalar variable with initializer
+Dim x As Double, y As Double, z As Double               ' Multi-variable declaration on single line
+Dim flag As Boolean = True                              ' 1-bit boolean flag
+Const MAX_CORES As UInt32 = 64                          ' Compile-time typed numeric constant
+TypeAlias PageTableEntry = UInt64                       ' User type alias definition
+Dim table(255) As Pointer To Byte                       ' Static fixed-size array of pointers
+Dim matrix(3, 3) As Single                             ' Static 2D array matrix (row-major)
+```
+
+### 29.2 Control Flow Statements
+```vb
+' 1. Multi-branch Conditionals
+If mode = 0 Then
+    StartPrimary
+ElseIf mode = 1 Then
+    StartSecondary
+Else
+    StartFallback
+End If
+
+' 2. For Loops with Positive or Negative Step
+For i = 0 To 100 Step 4
+    WriteHardwareRegister i
+Next i
+
+For i = 10 To 0 Step -1
+    CountdownTick i
+Next i
+
+' 3. While Loops
+While Not QueueEmpty()
+    ProcessQueueItem
+Wend
+
+' 4. Do Loops (Pre-condition and Post-condition)
+Do While HasPendingInterrupt()
+    DispatchInterrupt
+Loop
+
+Do
+    PollUartReady
+Loop Until UartTransmitEmpty()
+
+' 5. Select Case Multi-Way Branching
+Select Case interruptVector
+    Case 32
+        HandleTimerTick
+    Case 33
+        HandleKeyboardScancode
+    Case 40 To 47
+        HandlePciIrq interruptVector
+    Case Else
+        HandleSpuriousIrq
+End Select
+
+' 6. Algebraic Pattern Matching (Result / Sum Types)
+Match resultVal
+    Case Ok(data)
+        ProcessPacket data
+    Case Err(errCode)
+        LogPacketError errCode
+End Match
+
+' 7. Unconditional Labels and Jumps
+GoTo RecoveryPoint
+RecoveryPoint:
+    ResetPeripheralState
+```
+
+### 29.3 Procedures, Parameters & Modifiers
+```vb
+' Standard Subroutine (Void return)
+Public Sub ResetCounters()
+    totalPackets = 0
+End Sub
+
+' Function returning explicit type with Optional Default Value
+Public Function ComputeHash(ByVal data As Pointer To Byte, Optional ByVal seed As UInt32 = 0) As UInt32
+    ComputeHash = MurmurHash3(data, seed)
+End Function
+
+' Hardware Unsafe Subroutine (allows raw pointers and Asm)
+Public Unsafe Sub WritePort(ByVal port As UInt16, ByVal data As Byte)
+    Asm "outb $0, $1" : : "{al}"(data), "{dx}"(port)
+End Sub
+
+' ByRef Parameter Passing (Pass-by-Reference / Pointer)
+Public Sub SwapValues(ByRef a As Int32, ByRef b As Int32)
+    Dim tmp As Int32 = a
+    a = b
+    b = tmp
+End Sub
+
+' Variadic Formatter with ParamArray
+Public Unsafe Sub PrintF(ByVal fmt As Pointer To Byte, ParamArray args() As Pointer To Int64)
+    Dim outBuf(256) As Byte
+    Dim outPtr As Pointer To Byte = CPtr(Pointer To Byte, outBuf)
+    Format.SprintF outPtr, 256, fmt, args
+    Me.WriteString outPtr
+End Sub
+
+' Object Property Accessors
+Public Property Get FrequencyHz() As UInt64
+    FrequencyHz = m_freqHz
+End Property
+
+Public Property Let FrequencyHz(ByVal newFreq As UInt64)
+    m_freqHz = newFreq
+    ApplyClockDivider m_freqHz
+End Property
+```
+
+### 29.4 Hardware, Kernel & Systems Primitives
+```vb
+' Packed Hardware Descriptor (no compiler padding)
+<Packed>
+Public Structure IdtGateDescriptor
+    Public OffsetLow  As UInt16
+    Public Selector   As UInt16
+    Public IstType    As Byte
+    Public Flags      As Byte
+    Public OffsetMid  As UInt16
+    Public OffsetHigh As UInt32
+    Public Reserved   As UInt32
+End Structure
+
+' Hardware Interrupt Service Routine (AMD64 ABI with automatic iretq)
+<Interrupt>
+Public Unsafe Sub TimerInterruptHandler(ByVal frame As Pointer To InterruptFrame)
+    Arch.X86_64.Apic.SendEoi
+End Sub
+
+' Memory-Mapped I/O (MMIO) with Volatile Pointers
+Dim vgaBuffer As Volatile Pointer To UInt16 = CPtr(Volatile Pointer To UInt16, &HB8000)
+vgaBuffer(0) = &H0F41 ' White-on-black character 'A'
+
+' Compile-time Structure Layout Verification
+#Assert SizeOf(IdtGateDescriptor) = 16, "IDT Gate Descriptor must be exactly 16 bytes!"
+#Assert OffsetOf(IdtGateDescriptor, OffsetMid) = 6, "OffsetMid alignment invariant broken!"
+```
+
+### 29.5 Deterministic Scoped Cleanup (`Using`)
+```vb
+Using guard As New SpinlockGuard(m_lock)
+    Dim frame As UInt64 = PMM.AllocPage()
+    ProcessPage frame
+End Using ' Automatically invokes guard.Dispose() upon leaving block
+```
+
 
 
 

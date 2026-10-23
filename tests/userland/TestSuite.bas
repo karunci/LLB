@@ -1537,17 +1537,17 @@ SkipMiddle:
             Print "TestTypeSystemAndAttributes failed at InlineMultiply: inlineRes=", inlineRes
         End If
 
-        ' Test Currency type (fixed-point 64-bit integer)
-        Dim price As Currency
-        price = 125000 ' $12.5000 in 4 decimal place fixed-point units
-        Dim qty As Currency
+        ' Test Decimal type (64-bit integer / fixed-point)
+        Dim price As Decimal
+        price = 125000 ' 12.5000 in 4 decimal place fixed-point units
+        Dim qty As Decimal
         qty = 3
-        Dim total As Currency
+        Dim total As Decimal
         total = price * qty
         If total = 375000 Then
             passCount = passCount + 1
         Else
-            Print "TestTypeSystemAndAttributes failed at Currency: total=", total
+            Print "TestTypeSystemAndAttributes failed at Decimal: total=", total
         End If
 
         ' Test Short (16-bit) and UShort (unsigned 16-bit)

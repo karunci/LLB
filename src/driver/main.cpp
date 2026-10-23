@@ -477,11 +477,13 @@ static std::string compileSourceFile(
                                 pTypes.push_back(llbc::TypeSpec{curMod->name, 1}); // Me pointer
                                 paramByRefs.push_back(false);
                             }
+                            bool hasParamArray = false;
                             for (const auto& p : proc->parameters) {
                                 llbc::TypeSpec pt = p.type;
                                 if (p.isByRef) pt.pointerDepth++;
                                 pTypes.push_back(pt);
                                 paramByRefs.push_back(p.isByRef);
+                                if (p.isParamArray) hasParamArray = true;
                             }
                             llbc::TypeSpec retType = proc->isFunction ? proc->returnType : llbc::TypeSpec{"void"};
 
@@ -503,13 +505,13 @@ static std::string compileSourceFile(
 
                             std::string symbolMangled = !targetPrefix.empty() ? (targetPrefix + "_" + proc->name) : proc->name;
                             std::string alias = (!imp.aliasName.empty() && !imp.symbolName.empty()) ? imp.aliasName : symbolMangled;
-                            irEmitter.registerExternalProcedure(proc->name, retType, pTypes, alias, defExprs, paramByRefs);
+                            irEmitter.registerExternalProcedure(proc->name, retType, pTypes, alias, defExprs, paramByRefs, hasParamArray);
 
                             std::string qualTarget = curMod->name + "." + proc->name;
-                            irEmitter.registerExternalProcedure(qualTarget, retType, pTypes, symbolMangled, defExprs, paramByRefs);
+                            irEmitter.registerExternalProcedure(qualTarget, retType, pTypes, symbolMangled, defExprs, paramByRefs, hasParamArray);
                             if (!imp.moduleName.empty() && imp.moduleName == curMod->name) {
                                 std::string qual = imp.moduleName + "." + proc->name;
-                                irEmitter.registerExternalProcedure(qual, retType, pTypes, symbolMangled, defExprs, paramByRefs);
+                                irEmitter.registerExternalProcedure(qual, retType, pTypes, symbolMangled, defExprs, paramByRefs, hasParamArray);
                             }
                         }
                     }
@@ -643,10 +645,12 @@ static std::string compileSourceFile(
                         if (curMod->isClass) {
                             pTypes.push_back(llbc::TypeSpec{curMod->name, 1});
                         }
+                        bool hasParamArray = false;
                         for (const auto& p : proc->parameters) {
                             llbc::TypeSpec pt = p.type;
                             if (p.isByRef) pt.pointerDepth++;
                             pTypes.push_back(pt);
+                            if (p.isParamArray) hasParamArray = true;
                         }
                         llbc::TypeSpec retType = proc->isFunction ? proc->returnType : llbc::TypeSpec{"void"};
 
@@ -664,11 +668,11 @@ static std::string compileSourceFile(
                         std::string symbolMangled = curMod->name + "_" + proc->name;
                         for (auto& ch : symbolMangled) if (ch == '.') ch = '_';
 
-                        irEmitter.registerExternalProcedure(curMod->name + "." + proc->name, retType, pTypes, symbolMangled, defExprs, paramByRefs);
-                        irEmitter.registerExternalProcedure(curMod->name + "_" + proc->name, retType, pTypes, symbolMangled, defExprs, paramByRefs);
+                        irEmitter.registerExternalProcedure(curMod->name + "." + proc->name, retType, pTypes, symbolMangled, defExprs, paramByRefs, hasParamArray);
+                        irEmitter.registerExternalProcedure(curMod->name + "_" + proc->name, retType, pTypes, symbolMangled, defExprs, paramByRefs, hasParamArray);
                         if (!useDir.aliasName.empty()) {
-                            irEmitter.registerExternalProcedure(useDir.aliasName + "." + proc->name, retType, pTypes, symbolMangled, defExprs, paramByRefs);
-                            irEmitter.registerExternalProcedure(useDir.aliasName + "_" + proc->name, retType, pTypes, symbolMangled, defExprs, paramByRefs);
+                            irEmitter.registerExternalProcedure(useDir.aliasName + "." + proc->name, retType, pTypes, symbolMangled, defExprs, paramByRefs, hasParamArray);
+                            irEmitter.registerExternalProcedure(useDir.aliasName + "_" + proc->name, retType, pTypes, symbolMangled, defExprs, paramByRefs, hasParamArray);
                         }
                     }
                 }

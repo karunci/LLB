@@ -28,7 +28,7 @@ public:
     explicit LlvmEmitter(const std::string& moduleName, bool enableDebugInfo = false, const std::string& targetTriple = "");
 
     bool emitModule(const ModuleNode& moduleNode);
-    void registerExternalProcedure(const std::string& name, const TypeSpec& retType, const std::vector<TypeSpec>& paramTypes, const std::string& aliasName = "", const std::vector<ExprASTNode*>& defExprs = {}, const std::vector<bool>& paramByRefs = {});
+    void registerExternalProcedure(const std::string& name, const TypeSpec& retType, const std::vector<TypeSpec>& paramTypes, const std::string& aliasName = "", const std::vector<ExprASTNode*>& defExprs = {}, const std::vector<bool>& paramByRefs = {}, bool hasParamArray = false);
     void registerClassInstancing(const std::string& className, InstancingKind instancing);
     void registerPrivateField(const std::string& className, const std::string& fieldName);
     void declareConstant(const ConstStmtNode& constNode, const std::string& prefix = "");

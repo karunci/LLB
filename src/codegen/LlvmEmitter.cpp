@@ -84,15 +84,21 @@ llvm::Type* LlvmEmitter::getLlvmType(const TypeSpec& typeSpec) {
     llvm::Type* baseType = nullptr;
     if (typeName == "byte" || typeName == "ubyte") {
         baseType = llvm::Type::getInt8Ty(*m_context);
-    } else if (typeName == "uint16" || typeName == "int16" || typeName == "short" || typeName == "ushort") {
+    } else if (typeName == "int16" || typeName == "integer" || typeName == "short") {
         baseType = llvm::Type::getInt16Ty(*m_context);
-    } else if (typeName == "uint32" || typeName == "int32" || typeName == "long" || typeName == "ulong" || typeName == "integer" || typeName == "uinteger") {
+    } else if (typeName == "uint16" || typeName == "uinteger" || typeName == "ushort") {
+        baseType = llvm::Type::getInt16Ty(*m_context);
+    } else if (typeName == "int32" || typeName == "long") {
         baseType = llvm::Type::getInt32Ty(*m_context);
-    } else if (typeName == "uint64" || typeName == "int64" || typeName == "currency" || typeName == "decimal") {
+    } else if (typeName == "uint32" || typeName == "ulong") {
+        baseType = llvm::Type::getInt32Ty(*m_context);
+    } else if (typeName == "int64" || typeName == "long64" || typeName == "decimal") {
+        baseType = llvm::Type::getInt64Ty(*m_context);
+    } else if (typeName == "uint64" || typeName == "ulong64") {
         baseType = llvm::Type::getInt64Ty(*m_context);
     } else if (typeName == "boolean") {
         baseType = llvm::Type::getInt1Ty(*m_context);
-    } else if (typeName == "single") {
+    } else if (typeName == "single" || typeName == "float") {
         baseType = llvm::Type::getFloatTy(*m_context);
     } else if (typeName == "double") {
         baseType = llvm::Type::getDoubleTy(*m_context);
@@ -6548,8 +6554,8 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
             return llvm::ConstantInt::get(llvm::Type::getInt32Ty(*m_context), 0);
         }
 
-        // Built-in LLB PrintF / PrintFormat (printf wrapper)
-        if (lowerFn == "printf" || lowerFn == "printformat") {
+        // Built-in LLB PrintF / PrintFormat (printf wrapper for unqualified global calls)
+        if (!call->calleeExpr && (lowerFn == "printf" || lowerFn == "printformat")) {
             llvm::FunctionType* printfTy = llvm::FunctionType::get(
                 llvm::Type::getInt32Ty(*m_context),
                 {llvm::PointerType::get(*m_context, 0)},
@@ -6865,7 +6871,22 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
              m_classInstancing.count(prefixClass) || m_classInstancing.count(toLower(prefixClass)) ||
              m_classInstancing.count(normClass) || m_classInstancing.count(toLower(normClass))));
 
-        if (!isQualifiedModuleCall && call->calleeExpr && callee->getFunctionType()->getNumParams() >= call->args.size() + 1) {
+        // Check if procedure has ParamArray
+        bool isParamArrayEarly = false;
+        std::string calleeNameEarly = callee ? callee->getName().str() : "";
+        auto checkPAEarly = [&](const std::string& key) {
+            if (key.empty()) return false;
+            auto it = m_procParamArray.find(key);
+            if (it != m_procParamArray.end() && it->second) return true;
+            auto itLower = m_procParamArray.find(toLower(key));
+            return (itLower != m_procParamArray.end() && itLower->second);
+        };
+        if (checkPAEarly(targetFuncName) || checkPAEarly(call->funcName) || checkPAEarly(calleeNameEarly)) {
+            isParamArrayEarly = true;
+        }
+
+        if (!isQualifiedModuleCall && call->calleeExpr &&
+            (callee->getFunctionType()->getNumParams() >= call->args.size() + 1 || isParamArrayEarly)) {
             std::string instanceName = "";
             if (auto varNode = dynamic_cast<VariableExprASTNode*>(call->calleeExpr.get())) {
                 instanceName = varNode->name;
@@ -6901,9 +6922,9 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
             llvm::Value* thisPtr = getPointerToExpr(call->calleeExpr.get());
             args.push_back(thisPtr);
         } else if (!call->calleeExpr && !m_currentScopeClass.empty() && m_namedValues.count("Me") &&
-                   callee->getFunctionType()->getNumParams() >= call->args.size() + 1) {
+                   (callee->getFunctionType()->getNumParams() >= call->args.size() + 1 || isParamArrayEarly)) {
             args.push_back(m_namedValues["Me"]);
-        } else if (isClassSingletonCall && callee->getFunctionType()->getNumParams() >= call->args.size() + 1) {
+        } else if (isClassSingletonCall && (callee->getFunctionType()->getNumParams() >= call->args.size() + 1 || isParamArrayEarly)) {
             auto sIt = m_classSingletons.find(prefixClass);
             if (sIt == m_classSingletons.end()) sIt = m_classSingletons.find(toLower(prefixClass));
             if (sIt == m_classSingletons.end()) sIt = m_classSingletons.find(normClass);
@@ -6994,31 +7015,40 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
         } else {
             // Check if callee has ParamArray in last parameter
             bool isParamArrayProc = false;
-            auto paIt = m_procParamArray.find(targetFuncName);
-            if (paIt != m_procParamArray.end() && paIt->second) isParamArrayProc = true;
-            if (!isParamArrayProc && targetFuncName != call->funcName) {
-                auto paIt2 = m_procParamArray.find(call->funcName);
-                if (paIt2 != m_procParamArray.end() && paIt2->second) isParamArrayProc = true;
+            std::string calleeNameStr = callee ? callee->getName().str() : "";
+            auto checkPA = [&](const std::string& key) {
+                if (key.empty()) return false;
+                auto it = m_procParamArray.find(key);
+                if (it != m_procParamArray.end() && it->second) return true;
+                auto itLower = m_procParamArray.find(toLower(key));
+                return (itLower != m_procParamArray.end() && itLower->second);
+            };
+            if (checkPA(targetFuncName) || checkPA(call->funcName) || checkPA(calleeNameStr)) {
+                isParamArrayProc = true;
             }
 
             size_t numParams = callee->getFunctionType()->getNumParams();
-            if (isParamArrayProc && numParams > 0 && call->args.size() >= numParams - 1) {
-                // Positional arguments before ParamArray
-                size_t regularCount = numParams - 1;
-                for (size_t i = 0; i < regularCount && i < call->args.size(); ++i) {
+            if (isParamArrayProc && numParams > 0 && (args.size() + call->args.size()) >= numParams - 1) {
+                // Number of positional call arguments before the ParamArray
+                // Note: args already contains the implicit Me/this pointer if calling a method
+                size_t numPreArgs = args.size();
+                size_t remainingFixedParams = (numParams - 1 > numPreArgs) ? (numParams - 1 - numPreArgs) : 0;
+                for (size_t i = 0; i < remainingFixedParams && i < call->args.size(); ++i) {
                     llvm::Value* argVal = emitExpression(call->args[i].get());
-                    argVal = coerceType(argVal, callee->getFunctionType()->getParamType(args.size()));
+                    if (args.size() < callee->getFunctionType()->getNumParams()) {
+                        argVal = coerceType(argVal, callee->getFunctionType()->getParamType(args.size()));
+                    }
                     args.push_back(argVal);
                 }
 
                 // Pack trailing arguments into a dynamic array buffer
-                size_t varargCount = (call->args.size() >= regularCount) ? (call->args.size() - regularCount) : 0;
+                size_t varargCount = (call->args.size() >= remainingFixedParams) ? (call->args.size() - remainingFixedParams) : 0;
                 llvm::Function* mallocFn = getOrCreateMalloc();
                 llvm::Value* bufSize = llvm::ConstantInt::get(llvm::Type::getInt64Ty(*m_context), (varargCount + 1) * sizeof(uint64_t));
                 llvm::Value* rawBuf = m_builder->CreateCall(mallocFn, {bufSize}, "paramarray.buf");
 
                 for (size_t i = 0; i < varargCount; ++i) {
-                    llvm::Value* elemVal = emitExpression(call->args[regularCount + i].get());
+                    llvm::Value* elemVal = emitExpression(call->args[remainingFixedParams + i].get());
                     elemVal = coerceType(elemVal, llvm::Type::getInt64Ty(*m_context));
                     llvm::Value* slotPtr = m_builder->CreateGEP(
                         llvm::Type::getInt64Ty(*m_context),
@@ -7028,7 +7058,10 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
                     );
                     m_builder->CreateStore(elemVal, slotPtr);
                 }
-                llvm::Value* typedBuf = coerceType(rawBuf, callee->getFunctionType()->getParamType(args.size()));
+                llvm::Value* typedBuf = rawBuf;
+                if (args.size() < callee->getFunctionType()->getNumParams()) {
+                    typedBuf = coerceType(rawBuf, callee->getFunctionType()->getParamType(args.size()));
+                }
                 args.push_back(typedBuf);
             } else {
                 std::string calleeName = callee->getName().str();
@@ -7453,12 +7486,19 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
     return nullptr;
 }
 
-void LlvmEmitter::registerExternalProcedure(const std::string& name, const TypeSpec& retType, const std::vector<TypeSpec>& paramTypes, const std::string& aliasName, const std::vector<ExprASTNode*>& defExprs, const std::vector<bool>& paramByRefs) {
+void LlvmEmitter::registerExternalProcedure(const std::string& name, const TypeSpec& retType, const std::vector<TypeSpec>& paramTypes, const std::string& aliasName, const std::vector<ExprASTNode*>& defExprs, const std::vector<bool>& paramByRefs, bool hasParamArray) {
     std::string mangledName = aliasName.empty() ? name : aliasName;
     m_procReturnTypes[name] = retType;
     m_procReturnTypes[toLower(name)] = retType;
     m_procReturnTypes[mangledName] = retType;
     m_procReturnTypes[toLower(mangledName)] = retType;
+
+    if (hasParamArray) {
+        m_procParamArray[name] = true;
+        m_procParamArray[toLower(name)] = true;
+        m_procParamArray[mangledName] = true;
+        m_procParamArray[toLower(mangledName)] = true;
+    }
 
     if (!defExprs.empty()) {
         m_procDefaults[name] = defExprs;

@@ -129,18 +129,19 @@ setup_page_tables:
     mov %eax, 24(%ebx)
     movl $0, 28(%ebx)
 
-    /* Map IOAPIC physical 0xFEC00000 (Index (0xFEC00000 - 0xC0000000) / 2MB = 502 -> offset 502*8 = 4016) */
+    /* Identity map all 512 entries of L2_APIC (3GB to 4GB: 0xC0000000 - 0x100000000)
+     * This covers ACPI tables (RSDT/MADT/FADT around 0xFE232000), IOAPIC (0xFEC00000), and LAPIC (0xFEE00000).
+     */
     mov $page_table_l2_apic, %ebx
-    mov $0xFEC00000, %eax
-    or $0x93, %eax /* Present + Writable + HugePage (0x80) + Cache-Disable (0x10) for MMIO */
-    mov %eax, 4016(%ebx)
-    movl $0, 4020(%ebx)
-
-    /* Map Local APIC physical 0xFEE00000 (Index (0xFEE00000 - 0xC0000000) / 2MB = 503 -> offset 503*8 = 4024) */
-    mov $0xFEE00000, %eax
-    or $0x93, %eax /* Present + Writable + HugePage + Cache-Disable */
-    mov %eax, 4024(%ebx)
-    movl $0, 4028(%ebx)
+    mov $512, %ecx
+    mov $0xC0000083, %eax /* Physical 3GB | Present | Writable | HugePage */
+1:
+    mov %eax, (%ebx)
+    movl $0, 4(%ebx)
+    add $0x200000, %eax
+    add $8, %ebx
+    sub $1, %ecx
+    jnz 1b
     ret
 
 /* Enable PAE, SSE, and Long Mode in CR4/CR0/EFER */

@@ -1,13 +1,18 @@
 ' Project Name: PRK (Personal Research Kernel) / Low-Level Basic (LLB)
 ' Filename: tests/kernel/src/arch/x86_64/Apic.bas
-' Summary: Local APIC (Advanced Programmable Interrupt Controller) hardware driver.
+' Summary: Local APIC driver with x2APIC CPUID detection.
+'          Matches PRK apic.c: upgrades from MMIO to MSR interface when CPUID ECX bit 21 is set.
 
 Module Arch.X86_64.Apic
 
     Import Arch.X86_64.PortIO
+    Use Drivers.SerialUart
 
     ' Local APIC Physical MMIO Base Address
     Public Const LAPIC_BASE_PHYS As UInt64 = &HFEE00000
+
+    ' x2APIC MSR base (register offset >> 4 + 0x800)
+    Public Const X2APIC_MSR_BASE As UInt32 = &H800
 
     ' Standard Local APIC MMIO Register Offsets
     Public Const LAPIC_ID_REG       As UInt32 = &H020
@@ -26,8 +31,12 @@ Module Arch.X86_64.Apic
     Public Const LAPIC_TIMER_DIV    As UInt32 = &H3E0
 
     ' MSR Definitions
-    Public Const IA32_APIC_BASE_MSR As UInt32 = &H1B
-    Public Const APIC_ENABLE_BIT    As UInt64 = &H800
+    Public Const IA32_APIC_BASE_MSR  As UInt32 = &H1B
+    Public Const APIC_ENABLE_BIT     As UInt64 = &H800
+    Public Const APIC_X2APIC_ENABLE  As UInt64 = &H400  ' Bit 10
+
+    ' Runtime flag: True when x2APIC MSR mode is active
+    Private x2ApicActive As Boolean = False
 
     ' Read 64-bit Model-Specific Register
     Public Unsafe Function RdMsr(ByVal msr As UInt32) As UInt64
@@ -45,23 +54,43 @@ Module Arch.X86_64.Apic
         Asm "wrmsr" : : "c"(msr), "a"(lo), "d"(hi) : "memory"
     End Sub
 
-    ' Read from Local APIC MMIO Register
+    ''
+    ' @brief Read a LAPIC register. Routes through MSR in x2APIC mode, MMIO otherwise.
+    ' @param regOffset Standard LAPIC register offset (e.g. 0x020 for ID).
+    ' @return Register value.
+    ''
     Public Unsafe Function LapicRead(ByVal regOffset As UInt32) As UInt32
-        Dim ptr As Volatile Pointer To UInt32
-        ptr = CPtr(Volatile Pointer To UInt32, LAPIC_BASE_PHYS + regOffset)
-        LapicRead = ptr(0)
+        If x2ApicActive Then
+            LapicRead = CType(UInt32, RdMsr(X2APIC_MSR_BASE + (regOffset RShift 4)))
+        Else
+            Dim ptr As Volatile Pointer To UInt32
+            ptr = CPtr(Volatile Pointer To UInt32, LAPIC_BASE_PHYS + CType(UInt64, regOffset))
+            LapicRead = ptr(0)
+        End If
     End Function
 
-    ' Write to Local APIC MMIO Register
+    ''
+    ' @brief Write a LAPIC register. Routes through MSR in x2APIC mode, MMIO otherwise.
+    ' @param regOffset Standard LAPIC register offset.
+    ' @param val       Value to write.
+    ''
     Public Unsafe Sub LapicWrite(ByVal regOffset As UInt32, ByVal val As UInt32)
-        Dim ptr As Volatile Pointer To UInt32
-        ptr = CPtr(Volatile Pointer To UInt32, LAPIC_BASE_PHYS + regOffset)
-        ptr(0) = val
+        If x2ApicActive Then
+            WrMsr X2APIC_MSR_BASE + (regOffset RShift 4), CType(UInt64, val)
+        Else
+            Dim ptr As Volatile Pointer To UInt32
+            ptr = CPtr(Volatile Pointer To UInt32, LAPIC_BASE_PHYS + CType(UInt64, regOffset))
+            ptr(0) = val
+        End If
     End Sub
 
-    ' Send End of Interrupt (EOI) signal to LAPIC
+    ' Send End of Interrupt (EOI) to LAPIC
     Public Unsafe Sub SendEoi()
-        LapicWrite LAPIC_EOI_REG, 0
+        If x2ApicActive Then
+            WrMsr X2APIC_MSR_BASE + &H0B, 0   ' EOI MSR offset 0xB0 >> 4 = 0x0B
+        Else
+            LapicWrite LAPIC_EOI_REG, 0
+        End If
     End Sub
 
     ' Remap and mask legacy 8259 PIC to prevent ghost vector 0 interrupts
@@ -95,26 +124,53 @@ Module Arch.X86_64.Apic
         Arch.X86_64.PortIO.OutB &HA1, &HFF
     End Sub
 
-    ' Get the LAPIC ID of the current core
+    ''
+    ' @brief Get the Local APIC ID of the current core.
+    '        x2APIC mode returns full 32-bit ID; MMIO mode shifts bits 31:24.
+    ''
     Public Unsafe Function GetLapicId() As UInt32
-        Dim idReg As UInt32 = LapicRead(LAPIC_ID_REG)
-        GetLapicId = (idReg RShift 24) And &HFF
+        If x2ApicActive Then
+            GetLapicId = LapicRead(LAPIC_ID_REG)  ' x2APIC: full 32-bit ID
+        Else
+            GetLapicId = (LapicRead(LAPIC_ID_REG) RShift 24) And &HFF
+        End If
     End Function
 
-    ' Initialize Local APIC on BSP core
+    ''
+    ' @brief Initialize Local APIC on BSP core.
+    '        Detects x2APIC via CPUID ECX bit 21 (mirrors PRK apic_init).
+    '        Upgrades from MMIO to MSR interface if x2APIC is supported.
+    ''
     Public Unsafe Sub Initialize()
-        ' Disable old legacy 8259 PIC
+        ' Disable legacy 8259 PIC first
         DisableLegacyPic
 
-        ' Ensure APIC is enabled in IA32_APIC_BASE MSR
-        Dim apicBase As UInt64 = RdMsr(IA32_APIC_BASE_MSR)
-        apicBase = apicBase Or APIC_ENABLE_BIT
-        WrMsr IA32_APIC_BASE_MSR, apicBase
+        ' CPUID leaf 1: check ECX bit 21 for x2APIC support
+        Dim cpuEax As UInt32 = 0
+        Dim cpuEbx As UInt32 = 0
+        Dim cpuEcx As UInt32 = 0
+        Dim cpuEdx As UInt32 = 0
+        Asm "cpuid" : "=a"(cpuEax), "=b"(cpuEbx), "=c"(cpuEcx), "=d"(cpuEdx) : "0"(CType(UInt32, 1)) : "memory"
 
-        ' Software enable Local APIC + Set Spurious Interrupt Vector to 255 (0xFF | 0x100)
+        Dim apicBase As UInt64 = RdMsr(IA32_APIC_BASE_MSR)
+
+        If (cpuEcx And &H200000) <> 0 Then
+            ' x2APIC supported: enable both APIC enable (bit 11) and x2APIC (bit 10)
+            apicBase = apicBase Or APIC_ENABLE_BIT Or APIC_X2APIC_ENABLE
+            WrMsr IA32_APIC_BASE_MSR, apicBase
+            x2ApicActive = True
+            Drivers.SerialUart.PrintF "[APIC] x2APIC detected. Using MSR interface.\r\n"
+        Else
+            apicBase = apicBase Or APIC_ENABLE_BIT
+            WrMsr IA32_APIC_BASE_MSR, apicBase
+            x2ApicActive = False
+            Drivers.SerialUart.PrintF "[APIC] x2APIC not supported. Using MMIO interface.\r\n"
+        End If
+
+        ' Software enable LAPIC + Spurious Vector 0xFF
         LapicWrite LAPIC_SVR_REG, &H1FF
 
-        ' Mask all Local Vector Table (LVT) entries initially to prevent spurious traps
+        ' Mask all LVT entries to prevent stray vector 0 IRQs
         LapicWrite LAPIC_LVT_THERMAL, &H10000
         LapicWrite LAPIC_LVT_PERF,    &H10000
         LapicWrite LAPIC_LVT_LINT0,   &H10000

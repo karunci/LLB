@@ -9,6 +9,7 @@ Module KernelMain
     Import Arch.Idt
     Import Arch.X86_64.Gdt
     Import Arch.X86_64.PortIO
+    Import Arch.Acpi
     Import Arch.X86_64.Apic
     Import Arch.X86_64.IoApic
 
@@ -127,7 +128,7 @@ Module KernelMain
 
         ' Allocate a physical frame and map it to higher virtual address 0xDEADBEEF000
         Dim testPhys As UInt64 = Buddy.AllocPages(0)
-        Dim testVirt As UInt64 = &HDEADBEEF000
+        Dim testVirt As UInt64 = &H80000000
         Dim mapFlags As UInt64 = Mem.VmmFlags.PTE_PRESENT Or Mem.VmmFlags.PTE_WRITABLE
 
         Dim mapOk As Boolean = VMM.MapPage(cr3Phys, testVirt, testPhys, mapFlags)
@@ -148,6 +149,15 @@ Module KernelMain
         Else
             Serial.PrintF "[VMM] Error: Failed to map virtual page.\r\n"
         End If
+
+        ' Discover and parse ACPI tables (Phase 3)
+        Serial.PrintF "[PRK] Discovering ACPI Tables (RSDP/MADT/FADT)...\r\n"
+        Arch.Acpi.Initialize CType(UInt64, mbAddress)
+        Dim acpiCpus As UInt32 = Arch.Acpi.GetCpuCount()
+        Dim acpiLapic As UInt32 = Arch.Acpi.GetLapicBase()
+        Dim acpiIoapic As UInt32 = Arch.Acpi.GetIoapicBase()
+        Dim pm1aPort As UInt32 = Arch.Acpi.GetPm1aControlBlock()
+        Serial.PrintF "[ACPI] System topology verified: %d Core(s), LAPIC @ 0x%x, IO-APIC @ 0x%x, PM1a @ 0x%x\r\n", acpiCpus, acpiLapic, acpiIoapic, pm1aPort
 
         ' Demonstrate Color Formatting
         Term.SetColor Term.COLOR_LIGHT_RED

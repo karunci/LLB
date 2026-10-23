@@ -91,7 +91,7 @@ Module KernelMain
         ' Verify LibLLB_Metal Static Archive Subsystems
         Dim metalErrors As Int32 = TestMetal.RunMetalVerification()
         If metalErrors = 0 Then
-            WriteSerialString CPtr(Pointer To Byte, "[PRK] LibLLB_Metal static archive verification passed (6/6 tests).\r\n")
+            WriteSerialString CPtr(Pointer To Byte, "[PRK] LibLLB_Metal static archive verification passed (10/10 tests).\r\n")
         Else
             WriteSerialString CPtr(Pointer To Byte, "[PRK] LibLLB_Metal verification failed!\r\n")
         End If

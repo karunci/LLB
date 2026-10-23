@@ -52,8 +52,8 @@ Public Class TextWriter
     ''
     Public Unsafe Sub WriteUInt(ByVal value As UInt64)
         Dim buf(24) As Byte
-        Format.ToUInt value, CPtr(Pointer To Byte, AddressOf buf(0))
-        Write CPtr(Pointer To Byte, AddressOf buf(0))
+        Format.ToUInt value, CPtr(Pointer To Byte, buf)
+        Write CPtr(Pointer To Byte, buf)
     End Sub
 
     ''
@@ -62,8 +62,8 @@ Public Class TextWriter
     ''
     Public Unsafe Sub WriteInt(ByVal value As Int64)
         Dim buf(24) As Byte
-        Format.ToInt value, CPtr(Pointer To Byte, AddressOf buf(0))
-        Write CPtr(Pointer To Byte, AddressOf buf(0))
+        Format.ToInt value, CPtr(Pointer To Byte, buf)
+        Write CPtr(Pointer To Byte, buf)
     End Sub
 
     ''
@@ -73,8 +73,20 @@ Public Class TextWriter
     ''
     Public Unsafe Sub WriteHex(ByVal value As UInt64, ByVal prefix As Boolean)
         Dim buf(24) As Byte
-        Format.ToHex value, CPtr(Pointer To Byte, AddressOf buf(0)), prefix
-        Write CPtr(Pointer To Byte, AddressOf buf(0))
+        Format.ToHex value, CPtr(Pointer To Byte, buf), prefix
+        Write CPtr(Pointer To Byte, buf)
+    End Sub
+
+    ''
+    ' @brief Writes formatted string to the attached sink (printf-equivalent).
+    ' @param fmt Pointer to null-terminated format string (%s, %u, %d, %x, %c, %%).
+    ' @param args Variadic format arguments.
+    ''
+    Public Unsafe Sub PrintF(ByVal fmt As Pointer To Byte, ParamArray args() As Pointer To Int64)
+        Dim outBuf(256) As Byte
+        Dim outPtr As Pointer To Byte = CPtr(Pointer To Byte, outBuf)
+        Format.SprintF outPtr, 256, fmt, args
+        Write outPtr
     End Sub
 
 End Class

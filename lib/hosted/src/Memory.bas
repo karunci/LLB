@@ -73,4 +73,66 @@ Module Std.Memory
         Compare = 0
     End Function
 
+    ''
+    ' @brief Convenience alias for Fill (memset equivalent).
+    ' @param dest Pointer to destination memory buffer.
+    ' @param val Byte value to set.
+    ' @param count Number of bytes to set.
+    ''
+    Public Unsafe Sub SetBytes(ByVal dest As Pointer To Byte, ByVal val As Byte, ByVal count As UInt64)
+        Fill dest, val, count
+    End Sub
+
+    ''
+    ' @brief Searches the first count bytes of memory for the specified byte (memchr equivalent).
+    ' @param ptr Pointer to memory buffer to search.
+    ' @param val Byte value to locate.
+    ' @param count Maximum number of bytes to inspect.
+    ' @return Pointer to first matching byte, or 0 if not found.
+    ''
+    Public Unsafe Function Search(ByVal ptr As Pointer To Byte, ByVal val As Byte, ByVal count As UInt64) As Pointer To Byte
+        If ptr = 0 Or count = 0 Then
+            Search = 0
+            Exit Function
+        End If
+        Dim i As UInt64 = 0
+        Do While i < count
+            If ptr(i) = val Then
+                Search = CPtr(Pointer To Byte, CPtr(UInt64, ptr) + i)
+                Exit Function
+            End If
+            i = i + 1
+        Loop
+        Search = 0
+    End Function
+
+    ''
+    ' @brief Optimized 64-bit word chunk copy for aligned memory buffers.
+    ' @param dest Pointer to destination memory buffer.
+    ' @param src Pointer to source memory buffer.
+    ' @param count Total number of bytes to copy.
+    ''
+    Public Unsafe Sub CopyFast(ByVal dest As Pointer To Byte, ByVal src As Pointer To Byte, ByVal count As UInt64)
+        If dest = 0 Or src = 0 Or count = 0 Or dest = src Then Exit Sub
+        Dim words As UInt64 = count / 8
+        Dim remainder As UInt64 = count Mod 8
+        If words > 0 Then
+            Dim d64 As Pointer To UInt64 = CPtr(Pointer To UInt64, dest)
+            Dim s64 As Pointer To UInt64 = CPtr(Pointer To UInt64, src)
+            Dim w As UInt64 = 0
+            Do While w < words
+                d64(w) = s64(w)
+                w = w + 1
+            Loop
+        End If
+        If remainder > 0 Then
+            Dim offset As UInt64 = words * 8
+            Dim b As UInt64 = 0
+            Do While b < remainder
+                dest(offset + b) = src(offset + b)
+                b = b + 1
+            Loop
+        End If
+    End Sub
+
 End Module

@@ -30,6 +30,8 @@ struct ProjectConfig {
     std::string linkerScript;
     bool isFreestanding{false};
     bool emitDebugInfo{false};
+    bool keepTemps{false};
+    bool hasKeepTemps{false};
     int optLevel{0};
     bool hasOptLevel{false};
     bool disableStandardLibrary{false};
@@ -254,6 +256,9 @@ public:
                     else if (value == "Os" || value == "s") config.optLevel = 2; // size-optimized mapped to O2 passes
                 } else if (key == "EmitDebugInfo" || key == "Debug") {
                     config.emitDebugInfo = (value == "True" || value == "true" || value == "1");
+                } else if (key == "KeepTemps" || key == "KeepArtifacts" || key == "SaveTemps") {
+                    config.keepTemps = (value == "True" || value == "true" || value == "1");
+                    config.hasKeepTemps = true;
                 } else if (key == "DisableStandardLibrary" || key == "NoStdLib") {
                     config.disableStandardLibrary = (value == "True" || value == "true" || value == "1");
                 }

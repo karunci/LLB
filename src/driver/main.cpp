@@ -726,6 +726,7 @@ struct CliOptions {
     int optLevel = 0;
     int scriptTimeout = 30;
     bool skipPostBuild = false;
+    bool keepTemps = false;
 
     bool cliHasOutputFile = false;
     bool cliHasOptLevel = false;
@@ -735,6 +736,7 @@ struct CliOptions {
     bool cliHasFreestanding = false;
     bool cliHasSysroot = false;
     bool cliHasTimeout = false;
+    bool cliHasKeepTemps = false;
 };
 
 static int buildSingleProject(const std::string& manifestPath, const CliOptions& opts, const std::vector<std::string>& extraObjectFiles) {
@@ -802,11 +804,13 @@ static int buildSingleProject(const std::string& manifestPath, const CliOptions&
     }
 
     // Compile LLB Modules (.bas / .cls)
+    std::vector<std::string> compiledObjects;
     std::string codegenTriple = !config.targetArch.empty() ? config.targetArch : targetTriple;
     for (const auto& srcFile : config.sourceFiles) {
         std::string objFile = compileSourceFile(srcFile, optLevel, enableDebugInfo, codegenTriple, opts.sysroot, config.outDir);
         if (objFile.empty()) return 1;
         objectFiles.push_back(objFile);
+        compiledObjects.push_back(objFile);
     }
 
     // Assemble Raw Assembly Files (.S)
@@ -822,6 +826,7 @@ static int buildSingleProject(const std::string& manifestPath, const CliOptions&
             return 1;
         }
         objectFiles.push_back(objFile);
+        compiledObjects.push_back(objFile);
     }
 
     // Append libraries specified in project manifest
@@ -874,6 +879,18 @@ static int buildSingleProject(const std::string& manifestPath, const CliOptions&
         } else {
             std::cerr << "Error: LLD Linking stage failed!\n";
             return 1;
+        }
+    }
+
+    // Clean intermediate object files unless keepTemps or Debug info is requested
+    bool keepTemps = opts.cliHasKeepTemps ? opts.keepTemps
+                   : (config.hasKeepTemps ? config.keepTemps : enableDebugInfo);
+    if (!keepTemps) {
+        for (const auto& obj : compiledObjects) {
+            if (obj != outputFile && fs::exists(obj)) {
+                std::error_code ec;
+                fs::remove(obj, ec);
+            }
         }
     }
 
@@ -967,6 +984,9 @@ int main(int argc, char** argv) {
             cliOpts.cliHasOutputFile = true;
         } else if (arg == "-g") {
             cliOpts.enableDebugInfo = true;
+        } else if (arg == "--keep-temps" || arg == "-save-temps" || arg == "--save-temps") {
+            cliOpts.keepTemps = true;
+            cliOpts.cliHasKeepTemps = true;
         } else if (arg == "-I" && i + 1 < argc) {
             g_includeDirs.push_back(argv[++i]);
         } else if (arg.rfind("-I", 0) == 0 && arg.size() > 2) {
@@ -1194,10 +1214,12 @@ int main(int argc, char** argv) {
     resolveDependencies(sourceFilesToCompile, allSources);
 
     // Compile all discovered LLB modules
+    std::vector<std::string> compiledObjects;
     for (const auto& file : allSources) {
         std::string objFile = compileSourceFile(file, cliOpts.optLevel, cliOpts.enableDebugInfo, cliOpts.targetTriple, cliOpts.sysroot);
         if (objFile.empty()) return 1;
         objectFiles.push_back(objFile);
+        compiledObjects.push_back(objFile);
     }
 
     // Assemble Raw Assembly Files
@@ -1207,6 +1229,7 @@ int main(int argc, char** argv) {
         if (llbc::AsmCompiler::compileAssemblyFile(file, objFile, asmTarget)) {
             std::cout << "  [+] Assembled " << file << " -> " << objFile << "\n";
             objectFiles.push_back(objFile);
+            compiledObjects.push_back(objFile);
         } else {
             return 1;
         }
@@ -1272,6 +1295,17 @@ int main(int argc, char** argv) {
         } else {
             std::cerr << "Error: LLD Linking stage failed!\n";
             return 1;
+        }
+    }
+
+    // Clean intermediate object files unless keepTemps or Debug info is requested
+    bool keepTemps = cliOpts.cliHasKeepTemps ? cliOpts.keepTemps : cliOpts.enableDebugInfo;
+    if (!keepTemps) {
+        for (const auto& obj : compiledObjects) {
+            if (obj != cliOpts.outputFile && fs::exists(obj)) {
+                std::error_code ec;
+                fs::remove(obj, ec);
+            }
         }
     }
 

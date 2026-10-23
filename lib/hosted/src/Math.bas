@@ -91,4 +91,57 @@ Module Math
         AlignUp = (value + mask) And (Not mask)
     End Function
 
+    ''
+    ' @brief Counts the number of set bits (1s) in a 64-bit integer (popcount).
+    ' @param value Unsigned 64-bit integer.
+    ' @return Number of 1 bits.
+    ''
+    Public Function PopCount(ByVal value As UInt64) As UInt32
+        Dim count As UInt32 = 0
+        Dim v As UInt64 = value
+        Do While v <> 0
+            v = v And (v - 1)
+            count = count + 1
+        Loop
+        PopCount = count
+    End Function
+
+    ''
+    ' @brief Counts the number of leading zero bits in a 64-bit integer (clz).
+    ' @param value Unsigned 64-bit integer.
+    ' @return Number of leading zero bits (0 to 64).
+    ''
+    Public Function CountLeadingZeros(ByVal value As UInt64) As UInt32
+        If value = 0 Then
+            CountLeadingZeros = 64
+            Exit Function
+        End If
+        Dim zeros As UInt32 = 0
+        Dim bit As UInt64 = &H8000000000000000
+        Do While (value And bit) = 0
+            zeros = zeros + 1
+            bit = bit / 2
+        Loop
+        CountLeadingZeros = zeros
+    End Function
+
+    ''
+    ' @brief Counts the number of trailing zero bits in a 64-bit integer (ctz).
+    ' @param value Unsigned 64-bit integer.
+    ' @return Number of trailing zero bits (0 to 64).
+    ''
+    Public Function CountTrailingZeros(ByVal value As UInt64) As UInt32
+        If value = 0 Then
+            CountTrailingZeros = 64
+            Exit Function
+        End If
+        Dim zeros As UInt32 = 0
+        Dim v As UInt64 = value
+        Do While (v And 1) = 0
+            zeros = zeros + 1
+            v = v / 2
+        Loop
+        CountTrailingZeros = zeros
+    End Function
+
 End Module

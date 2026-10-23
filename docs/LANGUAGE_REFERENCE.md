@@ -1059,13 +1059,25 @@ Low-Level Basic provides standard runtime libraries tailored for each environmen
 
 ### Included Modules
 
-- **`Math`**: Signed 64-bit bounds clamping (`Clamp`), min/max (`Min`, `Max`), integer rounding (`DivRoundUp`, `AlignUp`).
+- **`Math`**: Bounds clamping (`Clamp`), min/max (`Min`, `Max`), integer rounding (`DivRoundUp`, `AlignUp`), bitwise operations (`PopCount`, `CountLeadingZeros`, `CountTrailingZeros`), and absolute value (`Abs`).
 - **`Ascii`**: Fast character classification (`IsDigit`, `IsAlpha`, `IsAlnum`, `IsWhitespace`, `IsHexDigit`, `ToUpper`, `ToLower`).
-- **`Std.Strings`**: Null-terminated ASCII string operations (`Length`, `Compare`, `Copy`).
-- **`Std.Memory`**: Freestanding memory primitives (`Fill`, `Copy`, `Move`, `Compare`).
+- **`Std.Strings`**: Null-terminated ASCII string operations (`Length`, `Compare`, `CompareN`, `CompareI`, `Copy`, `CopyN`, `Concat`, `SubString`, `Find`).
+- **`Std.Memory`**: Freestanding memory primitives (`Fill`, `SetBytes`, `Copy`, `CopyFast`, `Move`, `Compare`, `Search`).
 - **`Conv`**: Numeric string parsing (`ParseUInt`, `ParseInt`, `ParseHex`).
-- **`Format`**: Number to ASCII conversion (`ToHex`, `ToUInt`, `ToInt`).
-- **`TextWriter` / `ICharSink`**: Stream abstraction for outputting formatted text across devices (serial ports, VGA text consoles, file handles).
+- **`Format`**: Number formatting (`ToHex`, `ToUInt`, `ToInt`) and full variadic formatting (`SprintF` supporting `%s`, `%u`, `%d`/`%i`, `%x`/`%X`, `%c`, `%%`).
+- **`TextWriter` / `ICharSink`**: Stream abstraction for outputting text across devices (`Write`, `WriteLine`, `WriteHex`, `WriteInt`, `WriteUInt`, and `PrintF` variadic formatter).
+
+## 28. Intermediate Build Artifact Management
+
+During compilation, `llbc` automatically generates intermediate object files (`.o`, `_asm.o`) into the build directory before linking or archiving.
+
+### Automatic Cleanup Behavior
+
+- **Release / Standard Builds (`Debug = false` / default):** Intermediate `.o` files created during the build pass are automatically removed once the output binary or archive is successfully generated.
+- **Debug Builds (`Debug = true` / `EmitDebugInfo = true` / `-g`):** Intermediate `.o` files are preserved for symbolic inspection and debugging with `gdb` or `lldb`.
+- **Explicit Override:**
+  - Manifest: `KeepTemps = true` / `KeepArtifacts = true` under `[CompilerOptions]`
+  - CLI: `--keep-temps` / `-save-temps` / `--save-temps`
 
 
 

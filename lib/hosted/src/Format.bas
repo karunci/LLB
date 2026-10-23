@@ -104,20 +104,102 @@ Module Format
     End Function
 
     ''
-    ' @brief Formats arguments into a caller buffer according to a format string (snprintf-equivalent).
+    ' @brief Formats arguments into a caller buffer according to a format string (snprintf/vsprintf equivalent).
     ' @param outBuf Pointer to destination buffer.
     ' @param maxLen Maximum bytes available in destination buffer.
     ' @param fmt Pointer to null-terminated format string (%s, %u, %d, %x, %c, %%).
-    ' @return Total characters written to outBuf.
+    ' @param args Variadic format arguments.
+    ' @return Total characters written to outBuf (excluding null terminator).
     ''
-    Public Unsafe Function SprintF(ByVal outBuf As Pointer To Byte, ByVal maxLen As UInt32, ByVal fmt As Pointer To Byte) As UInt32
-        Dim i As UInt32 = 0
-        Do While fmt(i) <> 0 And i < maxLen - 1
-            outBuf(i) = fmt(i)
-            i = i + 1
+    Public Unsafe Function SprintF(ByVal outBuf As Pointer To Byte, ByVal maxLen As UInt32, ByVal fmt As Pointer To Byte, ParamArray args() As Pointer To Int64) As UInt32
+        If outBuf = 0 Or maxLen = 0 Then
+            SprintF = 0
+            Exit Function
+        End If
+
+        Dim outPos As UInt32 = 0
+        Dim fmtPos As UInt32 = 0
+        Dim argIdx As Int32 = 0
+        Dim tmpBuf(32) As Byte
+        Dim tmpPtr As Pointer To Byte = CPtr(Pointer To Byte, tmpBuf)
+        Dim tmpLen As UInt32 = 0
+        Dim tmpIdx As UInt32 = 0
+
+        Do While fmt(fmtPos) <> 0 And outPos < (maxLen - 1)
+            If fmt(fmtPos) = 37 Then ' '%'
+                fmtPos = fmtPos + 1
+                Dim spec As Byte = fmt(fmtPos)
+                If spec = 0 Then Exit Do
+
+                If spec = 37 Then ' '%%'
+                    outBuf(outPos) = 37
+                    outPos = outPos + 1
+                ElseIf spec = 115 Then ' '%s'
+                    Dim strArg As Pointer To Byte = CPtr(Pointer To Byte, args(argIdx))
+                    argIdx = argIdx + 1
+                    If strArg = 0 Then
+                        strArg = CPtr(Pointer To Byte, "(null)")
+                    End If
+                    Dim sIdx As UInt64 = 0
+                    Do While strArg(sIdx) <> 0 And outPos < (maxLen - 1)
+                        outBuf(outPos) = strArg(sIdx)
+                        outPos = outPos + 1
+                        sIdx = sIdx + 1
+                    Loop
+                ElseIf spec = 117 Then ' '%u'
+                    Dim uval As UInt64 = CType(UInt64, args(argIdx))
+                    argIdx = argIdx + 1
+                    tmpLen = ToUInt(uval, tmpPtr)
+                    tmpIdx = 0
+                    Do While tmpIdx < tmpLen And outPos < (maxLen - 1)
+                        outBuf(outPos) = tmpBuf(tmpIdx)
+                        outPos = outPos + 1
+                        tmpIdx = tmpIdx + 1
+                    Loop
+                ElseIf spec = 100 Or spec = 105 Then ' '%d', '%i'
+                    Dim ival As Int64 = args(argIdx)
+                    argIdx = argIdx + 1
+                    tmpLen = ToInt(ival, tmpPtr)
+                    tmpIdx = 0
+                    Do While tmpIdx < tmpLen And outPos < (maxLen - 1)
+                        outBuf(outPos) = tmpBuf(tmpIdx)
+                        outPos = outPos + 1
+                        tmpIdx = tmpIdx + 1
+                    Loop
+                ElseIf spec = 120 Or spec = 88 Then ' '%x', '%X'
+                    Dim xval As UInt64 = CType(UInt64, args(argIdx))
+                    argIdx = argIdx + 1
+                    tmpLen = ToHex(xval, tmpPtr, False)
+                    tmpIdx = 0
+                    Do While tmpIdx < tmpLen And outPos < (maxLen - 1)
+                        outBuf(outPos) = tmpBuf(tmpIdx)
+                        outPos = outPos + 1
+                        tmpIdx = tmpIdx + 1
+                    Loop
+                ElseIf spec = 99 Then ' '%c'
+                    Dim cval As Byte = CType(Byte, args(argIdx) And 255)
+                    argIdx = argIdx + 1
+                    outBuf(outPos) = cval
+                    outPos = outPos + 1
+                Else
+                    ' Unknown specifier: emit verbatim
+                    outBuf(outPos) = 37
+                    outPos = outPos + 1
+                    If outPos < (maxLen - 1) Then
+                        outBuf(outPos) = spec
+                        outPos = outPos + 1
+                    End If
+                End If
+                fmtPos = fmtPos + 1
+            Else
+                outBuf(outPos) = fmt(fmtPos)
+                outPos = outPos + 1
+                fmtPos = fmtPos + 1
+            End If
         Loop
-        outBuf(i) = 0
-        SprintF = i
+
+        outBuf(outPos) = 0
+        SprintF = outPos
     End Function
 
 End Module

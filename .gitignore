@@ -1,5 +1,7 @@
 # Build artifacts
 build/
+bin/
+*/bin/
 *.o
 *.so
 *.a

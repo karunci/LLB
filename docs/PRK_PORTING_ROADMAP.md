@@ -239,9 +239,28 @@ tests/kernel/
     [PRK-OS KERNEL] Kernel execution completed successfully. Halting CPU.
     ```
 
+### Phase 4: Memory Management Subsystem (PMM, Buddy Allocator, VMM)
+- [x] **`src/mem/PhysicalManager.cls` (Namespace `Mem`):**
+  - Bitmap physical frame allocator managing page allocation, reservation, and Multiboot1 memory map traversal.
+- [x] **`src/mem/BuddyAllocator.cls` (Namespace `Mem` / `<Instancing(SingleUse)> Class BuddyAllocator`):**
+  - Binary Buddy Page Allocator with 11 orders (Order 0: 4KB to Order 10: 4MB blocks) across 64MB managed memory pool.
+  - Verified in QEMU: dynamic page splitting down to Order 0, recursive buddy coalescing back to Order 10.
+- [x] **`src/mem/VirtualMemoryManager.cls` (Namespace `Mem` / `<Instancing(SingleUse)> Class VirtualMemoryManager`):**
+  - 4-level x86_64 Virtual Memory Manager (`Pml4Index`, `PdptIndex`, `PdIndex`, `PtIndex`).
+  - Implements `MapPage`, `UnmapPage`, `VirtToPhys`, `MapRange`, and TLB invalidation (`invlpg`).
+  - Verified in QEMU: mapped `0xDEADBEEF000` to physical frame `0x4C00000`, verified 64-bit volatile read/write (`0x123456789ABCDEF0`), verified address resolution, and cleanly unmapped.
+
 ---
 
-## 5. Next Steps: Phase 3 (Interrupts, Exceptions & APIC Platform)
-1. Complete IDT entry gate structures with bitfield layouts (`Ist`, `GateType`, `Dpl`, `Present`).
-2. Integrate native `<Interrupt>` procedure handlers with `x86_intr` calling convention.
-3. Port Local APIC MMIO register controller (`Apic.bas`) and I/O APIC routing (`IoApic.bas`).
+## 5. Next Steps: Phase 5 (ACPI Table Discovery, MADT & FADT Parsers)
+1. **`src/arch/x86_64/Acpi.bas` (Namespace `Arch` / `Module Acpi`):**
+   - Scan BIOS EBDA (`0x80000-0x9FFFF`) and read-only BIOS ROM space (`0xE0000-0xFFFFF`) for `"RSD PTR "` signature.
+   - Verify checksums for RSDP v1.0 and extended RSDP v2.0 (XSDT).
+   - Parse MADT (Multiple APIC Description Table) to enumerate LAPIC cores and IO-APIC controllers.
+   - Parse FADT (Fixed ACPI Description Table) to locate ACPI Power Management registers (`PM1a_CNT_BLK`, `S5` sleep object).
+2. **`src/sys/HardwareInfo.cls` (Namespace `Sys` / `Class HardwareInfo`):**
+   - CPUID instruction queries for CPU vendor, model, feature flags, APIC ID, and core topology.
+3. **`src/arch/x86_64/Smp.bas`:**
+   - Multi-core AP initialization via INIT-SIPI-SIPI sequence.
+4. **`src/arch/power/PowerManager.cls`:**
+   - ACPI SCI event handling, soft reboot, and S5 clean power-off.

@@ -60,4 +60,28 @@ Module Arch.X86_64.PortIO
         Asm "sti"
     End Sub
 
+    ' Read CR2 register (Page Fault Linear Address)
+    Public Unsafe Function ReadCr2() As UInt64
+        Dim val As UInt64 = 0
+        Asm "mov %%cr2, %0" : "=r"(val) : : "memory"
+        ReadCr2 = val
+    End Function
+
+    ' Read CR3 register (PML4 base address)
+    Public Unsafe Function ReadCr3() As UInt64
+        Dim val As UInt64 = 0
+        Asm "mov %%cr3, %0" : "=r"(val) : : "memory"
+        ReadCr3 = val
+    End Function
+
+    ' Write CR3 register (Switch address space / flush TLB)
+    Public Unsafe Sub WriteCr3(ByVal val As UInt64)
+        Asm "mov %0, %%cr3" : : "r"(val) : "memory"
+    End Sub
+
+    ' Invalidate TLB entry for a virtual page (invlpg)
+    Public Unsafe Sub Invlpg(ByVal virtAddr As UInt64)
+        Asm "invlpg (%0)" : : "r"(virtAddr) : "memory"
+    End Sub
+
 End Module

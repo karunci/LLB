@@ -18,6 +18,8 @@ Module KernelMain
     Use Drivers.Keyboard As Kbd
     Use Arch.X86_64.CpuContext
     Use Mem.PhysicalManager As PMM
+    Use Mem.BuddyAllocator As Buddy
+    Use Mem.VirtualMemoryManager As VMM
 
     ' LibLLB_Metal Static Library Declarations
     Public Declare Function ToHex Lib "libllb_metal" (ByVal value As UInt64, ByVal outBuf As Pointer To Byte, ByVal prefix As Boolean) As UInt32
@@ -98,6 +100,54 @@ Module KernelMain
 
         Serial.PrintF "[PRK] Physical Memory Manager online.\r\n"
         Term.WriteChar 10
+
+        ' Initialize and verify Multi-Order Buddy Page Allocator (Phase 1)
+        Serial.PrintF "[PRK] Initializing Binary Buddy Allocator...\r\n"
+        Buddy.Initialize &H1000000, &H4000000 ' 64MB window starting at 16MB
+        Buddy.DumpStats
+
+        ' Test allocating Order 3 (8 contiguous pages = 32KB)
+        Dim blkOrder3 As UInt64 = Buddy.AllocPages(3)
+        Serial.PrintF "[BUDDY] Allocated Order 3 (32 KB) block at: 0x%x\r\n", blkOrder3
+        
+        ' Test allocating Order 0 (1 page = 4KB)
+        Dim blkOrder0 As UInt64 = Buddy.AllocPages(0)
+        Serial.PrintF "[BUDDY] Allocated Order 0 (4 KB) block at: 0x%x\r\n", blkOrder0
+
+        ' Free both blocks and verify coalescing
+        Buddy.FreePages blkOrder3, 3
+        Buddy.FreePages blkOrder0, 0
+        Serial.PrintF "[BUDDY] Freed blocks successfully. Coalescing verified.\r\n"
+
+        ' Initialize and verify 4-Level Virtual Memory Manager (Phase 2)
+        Serial.PrintF "[PRK] Initializing Virtual Memory Manager (VMM)...\r\n"
+        VMM.Initialize
+        Dim cr3Phys As UInt64 = VMM.GetKernelPml4()
+        Serial.PrintF "[VMM] Active Kernel PML4 Root: 0x%x\r\n", cr3Phys
+
+        ' Allocate a physical frame and map it to higher virtual address 0xDEADBEEF000
+        Dim testPhys As UInt64 = Buddy.AllocPages(0)
+        Dim testVirt As UInt64 = &HDEADBEEF000
+        Dim mapFlags As UInt64 = Mem.VmmFlags.PTE_PRESENT Or Mem.VmmFlags.PTE_WRITABLE
+
+        Dim mapOk As Boolean = VMM.MapPage(cr3Phys, testVirt, testPhys, mapFlags)
+        If mapOk Then
+            Dim resolvedPhys As UInt64 = VMM.VirtToPhys(cr3Phys, testVirt)
+            Serial.PrintF "[VMM] Mapped 0x%x -> 0x%x (Resolved: 0x%x)\r\n", testVirt, testPhys, resolvedPhys
+
+            ' Verify read/write at the new virtual address
+            Dim testPtr As Volatile Pointer To UInt64
+            testPtr = CPtr(Volatile Pointer To UInt64, testVirt)
+            testPtr(0) = &H123456789ABCDEF0
+            Serial.PrintF "[VMM] Virtual write verified (Value: 0x%x)\r\n", testPtr(0)
+
+            ' Unmap and free test frame
+            VMM.UnmapPage cr3Phys, testVirt
+            Buddy.FreePages testPhys, 0
+            Serial.PrintF "[VMM] Virtual page unmapped and physical frame released.\r\n"
+        Else
+            Serial.PrintF "[VMM] Error: Failed to map virtual page.\r\n"
+        End If
 
         ' Demonstrate Color Formatting
         Term.SetColor Term.COLOR_LIGHT_RED

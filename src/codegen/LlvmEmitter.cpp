@@ -5521,14 +5521,49 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
                 for (auto& c : mangled) {
                     if (c == '.') c = '_';
                 }
-                auto enumIt = m_enumConstants.find(fullQual);
-                if (enumIt == m_enumConstants.end()) enumIt = m_enumConstants.find(toLower(fullQual));
-                if (enumIt != m_enumConstants.end()) {
-                    return llvm::ConstantInt::get(llvm::Type::getInt32Ty(*m_context), enumIt->second);
+
+                std::vector<std::string> candidates = {
+                    fullQual,
+                    toLower(fullQual),
+                    mangled,
+                    toLower(mangled)
+                };
+
+                if (!m_currentScopeClass.empty()) {
+                    std::string nsPrefix = m_currentScopeClass;
+                    size_t lastDot = nsPrefix.find_last_of(".");
+                    if (lastDot != std::string::npos) {
+                        nsPrefix = nsPrefix.substr(0, lastDot);
+                    }
+                    if (!nsPrefix.empty()) {
+                        std::string nsQual = nsPrefix + "." + fullQual;
+                        std::string nsMangled = nsPrefix + "_" + mangled;
+                        candidates.push_back(nsQual);
+                        candidates.push_back(toLower(nsQual));
+                        candidates.push_back(nsMangled);
+                        candidates.push_back(toLower(nsMangled));
+                    }
                 }
 
-                llvm::GlobalVariable* gVar = findGlobalCaseInsensitive(m_module.get(), fullQual);
-                if (!gVar) gVar = findGlobalCaseInsensitive(m_module.get(), mangled);
+                for (const auto& cand : candidates) {
+                    auto enumIt = m_enumConstants.find(cand);
+                    if (enumIt != m_enumConstants.end()) {
+                        llvm::Type* intTy = llvm::Type::getInt64Ty(*m_context);
+                        llvm::GlobalVariable* candGVar = findGlobalCaseInsensitive(m_module.get(), cand);
+                        if (candGVar) {
+                            intTy = candGVar->getValueType();
+                        } else if (enumIt->second >= 0 && enumIt->second <= 0xFFFFFFFFLL) {
+                            intTy = llvm::Type::getInt32Ty(*m_context);
+                        }
+                        return llvm::ConstantInt::get(intTy, enumIt->second);
+                    }
+                }
+
+                llvm::GlobalVariable* gVar = nullptr;
+                for (const auto& cand : candidates) {
+                    gVar = findGlobalCaseInsensitive(m_module.get(), cand);
+                    if (gVar) break;
+                }
                 if (gVar) {
                     return m_builder->CreateLoad(gVar->getValueType(), gVar, member->memberName);
                 }
@@ -7898,10 +7933,21 @@ bool LlvmEmitter::emitModule(const ModuleNode& moduleNode) {
     // 2.5 Emit Module-level Constants (Const)
     for (const auto& member : moduleNode.members) {
         if (auto c = dynamic_cast<const ConstStmtNode*>(member.get())) {
+            std::string modName = moduleNode.name;
+            std::string fullName = !modName.empty() ? (modName + "." + c->name) : c->name;
+            std::string mangledName = !modName.empty() ? (modName + "_" + c->name) : c->name;
+            for (auto& ch : mangledName) {
+                if (ch == '.') ch = '_';
+            }
+
             if (c->value) {
                 if (auto num = dynamic_cast<const NumberExprASTNode*>(c->value.get())) {
                     m_enumConstants[c->name] = num->val;
                     m_enumConstants[toLower(c->name)] = num->val;
+                    m_enumConstants[fullName] = num->val;
+                    m_enumConstants[toLower(fullName)] = num->val;
+                    m_enumConstants[mangledName] = num->val;
+                    m_enumConstants[toLower(mangledName)] = num->val;
                 }
             }
             llvm::Type* constType = getLlvmType(c->type);
@@ -7916,16 +7962,32 @@ bool LlvmEmitter::emitModule(const ModuleNode& moduleNode) {
                 }
             }
             llvm::GlobalValue::LinkageTypes linkage = c->isPublic ? llvm::GlobalValue::ExternalLinkage : llvm::GlobalValue::InternalLinkage;
-            new llvm::GlobalVariable(
-                *m_module,
-                constType,
-                true, // isConstant
-                linkage,
-                initVal,
-                c->name
-            );
+            if (!findGlobalCaseInsensitive(m_module.get(), c->name)) {
+                new llvm::GlobalVariable(
+                    *m_module,
+                    constType,
+                    true, // isConstant
+                    linkage,
+                    initVal,
+                    c->name
+                );
+            }
+            if (mangledName != c->name && !findGlobalCaseInsensitive(m_module.get(), mangledName)) {
+                new llvm::GlobalVariable(
+                    *m_module,
+                    constType,
+                    true,
+                    linkage,
+                    initVal,
+                    mangledName
+                );
+            }
             m_constants.insert(c->name);
             m_constants.insert(toLower(c->name));
+            m_constants.insert(fullName);
+            m_constants.insert(toLower(fullName));
+            m_constants.insert(mangledName);
+            m_constants.insert(toLower(mangledName));
         }
     }
 

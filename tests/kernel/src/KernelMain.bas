@@ -12,15 +12,19 @@ Module KernelMain
     Import Arch.Acpi
     Import Arch.X86_64.Apic
     Import Arch.X86_64.IoApic
+    Import Arch.Smp
 
     ' --- Instantiable Classes ---
     Use Drivers.Terminal As Term
     Use Drivers.SerialUart As Serial
     Use Drivers.Keyboard As Kbd
     Use Arch.X86_64.CpuContext
-    Use Mem.PhysicalManager As PMM
+    Use Mem.PhysicalMemoryManager As PMM
     Use Mem.BuddyAllocator As Buddy
     Use Mem.VirtualMemoryManager As VMM
+    Use Mem.KernelHeap As KHeap
+    Use Arch.Power.PowerManager As Power
+    Use Sys.HardwareInfo As HwInfo
 
     ' LibLLB_Metal Static Library Declarations
     Public Declare Function ToHex Lib "libllb_metal" (ByVal value As UInt64, ByVal outBuf As Pointer To Byte, ByVal prefix As Boolean) As UInt32
@@ -150,6 +154,20 @@ Module KernelMain
             Serial.PrintF "[VMM] Error: Failed to map virtual page.\r\n"
         End If
 
+        ' Initialize and verify Kernel Dynamic Heap (kmalloc / kfree)
+        KHeap.Initialize
+        Dim heapBuf As UInt64 = KHeap.KMalloc(128)
+        If heapBuf <> 0 Then
+            Dim hPtr As Volatile Pointer To UInt64
+            hPtr = CPtr(Volatile Pointer To UInt64, heapBuf)
+            hPtr(0) = &HCAFEBABEDEADBEEF
+            Serial.PrintF "[HEAP] KMalloc(128) returned: 0x%x, Verified write: 0x%x\r\n", heapBuf, hPtr(0)
+            KHeap.KFree heapBuf
+            Serial.PrintF "[HEAP] KFree successfully returned block to heap pool.\r\n"
+        Else
+            Serial.PrintF "[HEAP] Error: KMalloc returned null.\r\n"
+        End If
+
         ' Discover and parse ACPI tables (Phase 3)
         Serial.PrintF "[PRK] Discovering ACPI Tables (RSDP/MADT/FADT)...\r\n"
         Arch.Acpi.Initialize CType(UInt64, mbAddress)
@@ -158,6 +176,14 @@ Module KernelMain
         Dim acpiIoapic As UInt32 = Arch.Acpi.GetIoapicBase()
         Dim pm1aPort As UInt32 = Arch.Acpi.GetPm1aControlBlock()
         Serial.PrintF "[ACPI] System topology verified: %d Core(s), LAPIC @ 0x%x, IO-APIC @ 0x%x, PM1a @ 0x%x\r\n", acpiCpus, acpiLapic, acpiIoapic, pm1aPort
+
+        ' Dump CPU topology and feature flags via CPUID
+        Serial.PrintF "[PRK] Querying CPU Hardware Info...\r\n"
+        HwInfo.DumpCpu
+
+        ' Initialize Application Processor cores (SMP bring-up via INIT-SIPI-SIPI)
+        Serial.PrintF "[PRK] Starting SMP AP bring-up...\r\n"
+        Arch.Smp.InitCores
 
         ' Demonstrate Color Formatting
         Term.SetColor Term.COLOR_LIGHT_RED

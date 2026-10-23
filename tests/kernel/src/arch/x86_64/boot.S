@@ -312,3 +312,117 @@ memcmp:
 2:
     retq
 
+/* ============================================================================
+ * SMP AP STARTUP TRAMPOLINE (16-bit Real Mode -> 64-bit Long Mode)
+ * Ported from PRK kernel/boot.S (smp_trampoline_start..smp_trampoline_end).
+ * BSP copies this blob to physical 0x8000, patches smp_cr3_slot with the
+ * current kernel CR3, then sends INIT-SIPI-SIPI. The AP climbs to 64-bit
+ * long mode and calls ap_main (Arch.Smp.ApMain).
+ * ============================================================================ */
+.section .text
+.global smp_trampoline_start
+.global smp_trampoline_end
+.global smp_cr3_slot
+.global smp_stack_slot
+
+smp_trampoline_start:
+    .code16
+    cli
+    xorw %ax, %ax
+    movw %ax, %ds
+    movw %ax, %es
+    movw %ax, %ss
+
+    data32 lgdt (ap_gdt_desc - smp_trampoline_start + 0x8000)
+
+    movl %cr0, %eax
+    orl $1, %eax
+    movl %eax, %cr0
+
+    ljmpl $0x08, $(ap_protected_mode - smp_trampoline_start + 0x8000)
+
+.code32
+ap_protected_mode:
+    movw $0x10, %ax
+    movw %ax, %ds
+    movw %ax, %es
+    movw %ax, %fs
+    movw %ax, %gs
+    movw %ax, %ss
+
+    /* Enable PAE (0x20), OSFXSR (0x200), and OSXMMEXCPT (0x400) for SSE */
+    movl %cr4, %eax
+    orl $0x620, %eax
+    movl %eax, %cr4
+
+    movl (smp_cr3_slot - smp_trampoline_start + 0x8000), %eax
+    movl %eax, %cr3
+
+    movl $0xC0000080, %ecx
+    rdmsr
+    orl $0x0100, %eax
+    wrmsr
+
+    movl %cr0, %eax
+    orl $0x80000001, %eax
+    movl %eax, %cr0
+
+    lgdt (ap_gdt64_desc - smp_trampoline_start + 0x8000)
+
+    .byte 0xea
+    .long (ap_long_mode - smp_trampoline_start + 0x8000)
+    .word 0x08
+
+.code64
+ap_long_mode:
+    movw $0x10, %ax
+    movw %ax, %ds
+    movw %ax, %es
+    movw %ax, %fs
+    movw %ax, %gs
+    movw %ax, %ss
+
+    /* Load the AP stack allocated by BSP in Smp.InitCores */
+    movq (smp_stack_slot - smp_trampoline_start + 0x8000), %rsp
+
+    /* Jump to LLB Arch.Smp.ApMain */
+    movabs $ap_main, %rax
+    callq *%rax
+
+.ap_hang:
+    cli
+    hlt
+    jmp .ap_hang
+
+/* --- BSP<->AP Communication Slots (patched at runtime) --- */
+.align 8
+smp_cr3_slot:   .long 0
+smp_stack_slot: .quad 0
+
+/* --- Temporary AP Transition GDTs (32-bit and 64-bit) --- */
+.align 8
+ap_gdt:
+    .quad 0
+    .quad 0x00cf9a000000ffff   /* 32-bit code */
+    .quad 0x00cf92000000ffff   /* 32-bit data */
+ap_gdt_desc:
+    .word (. - ap_gdt - 1)
+    .long (ap_gdt - smp_trampoline_start + 0x8000)
+
+.align 8
+ap_gdt64:
+    .quad 0
+    .quad 0x00af9a000000ffff   /* 64-bit code */
+    .quad 0x00cf92000000ffff   /* 64-bit data */
+ap_gdt64_desc:
+    .word (. - ap_gdt64 - 1)
+    .long (ap_gdt64 - smp_trampoline_start + 0x8000)
+
+smp_trampoline_end:
+
+/* ap_main symbol -> Arch_Smp_ApMain emitted by llbc */
+.extern Arch_Smp_ApMain
+.global ap_main
+ap_main:
+    jmp Arch_Smp_ApMain
+

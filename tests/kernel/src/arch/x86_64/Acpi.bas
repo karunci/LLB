@@ -7,7 +7,7 @@ Module Arch.Acpi
 
     Import Sync
     Import Arch.X86_64.PortIO
-    Use Drivers.SerialUart
+    Use Drivers.SerialUart As Serial
 
     ' -------------------------------------------------------------------------
     ' Packed ACPI Structures
@@ -60,6 +60,7 @@ Module Arch.Acpi
     Private lapicAddress  As UInt32 = &HFEE00000
     Private ioapicAddress As UInt32 = &HFEC00000
     Private cpuCount      As UInt32 = 0
+    Private discoveredApicIds(16) As Byte   ' APIC ID for each logical CPU index
 
     ' FADT power registers
     Private pm1aControlBlock As UInt32 = 0
@@ -140,7 +141,7 @@ Module Arch.Acpi
         Sync.SpinlockOps.Init acpiLock
 
         If Not LocateRsdpFromMbi(mbAddress) Then
-            Drivers.SerialUart.PrintF "[ACPI] Warning: RSDP not found in MBI tags.\r\n"
+            Serial.PrintF "[ACPI] Warning: RSDP not found in MBI tags.\r\n"
             Exit Sub
         End If
 
@@ -149,7 +150,7 @@ Module Arch.Acpi
         rsdtPhys    = rsdp.RsdtAddress
         xsdtPhys    = rsdp.XsdtAddress
 
-        Drivers.SerialUart.PrintF "[ACPI] RSDP @ 0x%x | Rev: %d | RSDT: 0x%x | XSDT: 0x%x\r\n", _
+        Serial.PrintF "[ACPI] RSDP @ 0x%x | Rev: %d | RSDT: 0x%x | XSDT: 0x%x\r\n", _
             rsdpPhys, CType(UInt32, acpiVersion), CType(UInt64, rsdtPhys), xsdtPhys
 
         If acpiVersion >= 2 And xsdtPhys <> 0 Then
@@ -169,7 +170,7 @@ Module Arch.Acpi
     Private Unsafe Sub ParseRsdt(ByVal base As UInt32)
         Dim hdr As Volatile Pointer To AcpiHeader = CPtr(Volatile Pointer To AcpiHeader, CType(UInt64, base))
         If Not VerifyChecksum(CType(UInt64, base), hdr.Length) Then
-            Drivers.SerialUart.PrintF "[ACPI] Error: RSDT checksum failure.\r\n"
+            Serial.PrintF "[ACPI] Error: RSDT checksum failure.\r\n"
             Exit Sub
         End If
 
@@ -199,7 +200,7 @@ Module Arch.Acpi
     Private Unsafe Sub ParseXsdt(ByVal base As UInt64)
         Dim hdr As Volatile Pointer To AcpiHeader = CPtr(Volatile Pointer To AcpiHeader, base)
         If Not VerifyChecksum(base, hdr.Length) Then
-            Drivers.SerialUart.PrintF "[ACPI] Error: XSDT checksum failure.\r\n"
+            Serial.PrintF "[ACPI] Error: XSDT checksum failure.\r\n"
             Exit Sub
         End If
 
@@ -229,7 +230,7 @@ Module Arch.Acpi
     Private Unsafe Sub ParseMadt(ByVal base As UInt64)
         Dim hdr As Volatile Pointer To AcpiHeader = CPtr(Volatile Pointer To AcpiHeader, base)
         If Not VerifyChecksum(base, hdr.Length) Then
-            Drivers.SerialUart.PrintF "[ACPI] Error: MADT checksum failure.\r\n"
+            Serial.PrintF "[ACPI] Error: MADT checksum failure.\r\n"
             Exit Sub
         End If
 
@@ -254,9 +255,12 @@ Module Arch.Acpi
                 ' Byte 4 = Flags; Bit 0 = Enabled. Only count Bit 0, not Bit 1 (Online Capable).
                 Dim flags As Byte = entryPtr(4)
                 If (flags And 1) <> 0 Then
-                    cpuCount = cpuCount + 1
-                    Dim apicId As Byte = entryPtr(3)
-                    Drivers.SerialUart.PrintF "[SMP] Core #%d | APIC ID: %d\r\n", cpuCount - 1, CType(UInt32, apicId)
+                    If cpuCount < 16 Then
+                        Dim apicId As Byte = entryPtr(3)
+                        discoveredApicIds(CType(UInt32, cpuCount)) = apicId
+                        cpuCount = cpuCount + 1
+                        Serial.PrintF "[SMP] Core #%d | APIC ID: %d\r\n", cpuCount - 1, CType(UInt32, apicId)
+                    End If
                 End If
             ElseIf entryType = 1 Then
                 ' Type 1: I/O APIC - MMIO address at byte offset 4
@@ -269,7 +273,7 @@ Module Arch.Acpi
 
         If cpuCount = 0 Then cpuCount = 1
 
-        Drivers.SerialUart.PrintF "[ACPI] MADT: %d core(s), LAPIC @ 0x%x, IO-APIC @ 0x%x\r\n", _
+        Serial.PrintF "[ACPI] MADT: %d core(s), LAPIC @ 0x%x, IO-APIC @ 0x%x\r\n", _
             cpuCount, lapicAddress, ioapicAddress
     End Sub
 
@@ -280,7 +284,7 @@ Module Arch.Acpi
     Private Unsafe Sub ParseFadt(ByVal base As UInt64)
         Dim hdr As Volatile Pointer To AcpiHeader = CPtr(Volatile Pointer To AcpiHeader, base)
         If Not VerifyChecksum(base, hdr.Length) Then
-            Drivers.SerialUart.PrintF "[ACPI] Error: FADT checksum failure.\r\n"
+            Serial.PrintF "[ACPI] Error: FADT checksum failure.\r\n"
             Exit Sub
         End If
 
@@ -301,7 +305,7 @@ Module Arch.Acpi
             hasResetReg = (resetRegister <> 0)
         End If
 
-        Drivers.SerialUart.PrintF "[ACPI] FADT: PM1a_CNT_BLK = 0x%x, ResetReg = 0x%x\r\n", _
+        Serial.PrintF "[ACPI] FADT: PM1a_CNT_BLK = 0x%x, ResetReg = 0x%x\r\n", _
             pm1aControlBlock, resetRegister
     End Sub
 
@@ -326,11 +330,25 @@ Module Arch.Acpi
     End Function
 
     ''
+    ' @brief Get the physical APIC ID for a given logical CPU index.
+    '        Mirrors PRK acpi_get_apic_id(). Returns 0 for out-of-range indices.
+    ' @param logicalId Zero-based logical CPU index.
+    ' @return Physical APIC ID byte.
+    ''
+    Public Function GetApicId(ByVal logicalId As UInt32) As Byte
+        If logicalId < cpuCount Then
+            GetApicId = discoveredApicIds(logicalId)
+        Else
+            GetApicId = 0
+        End If
+    End Function
+
+    ''
     ' @brief ACPI S5 soft power-off via PM1a control register.
     ''
     Public Unsafe Sub PowerOff()
         If pm1aControlBlock <> 0 Then
-            Drivers.SerialUart.PrintF "[ACPI] Sending S5 Power Off...\r\n"
+            Serial.PrintF "[ACPI] Sending S5 Power Off...\r\n"
             Dim val As UInt16 = slpTypA Or &H2000  ' SLP_EN bit 13
             Arch.X86_64.PortIO.OutW CType(UInt16, pm1aControlBlock), val
         End If

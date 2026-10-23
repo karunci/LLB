@@ -6,7 +6,7 @@
 Module Arch.X86_64.Apic
 
     Import Arch.X86_64.PortIO
-    Use Drivers.SerialUart
+    Use Drivers.SerialUart As Serial
 
     ' Local APIC Physical MMIO Base Address
     Public Const LAPIC_BASE_PHYS As UInt64 = &HFEE00000
@@ -159,12 +159,12 @@ Module Arch.X86_64.Apic
             apicBase = apicBase Or APIC_ENABLE_BIT Or APIC_X2APIC_ENABLE
             WrMsr IA32_APIC_BASE_MSR, apicBase
             x2ApicActive = True
-            Drivers.SerialUart.PrintF "[APIC] x2APIC detected. Using MSR interface.\r\n"
+            Serial.PrintF "[APIC] x2APIC detected. Using MSR interface.\r\n"
         Else
             apicBase = apicBase Or APIC_ENABLE_BIT
             WrMsr IA32_APIC_BASE_MSR, apicBase
             x2ApicActive = False
-            Drivers.SerialUart.PrintF "[APIC] x2APIC not supported. Using MMIO interface.\r\n"
+            Serial.PrintF "[APIC] x2APIC not supported. Using MMIO interface.\r\n"
         End If
 
         ' Software enable LAPIC + Spurious Vector 0xFF

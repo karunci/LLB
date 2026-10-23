@@ -22,7 +22,7 @@ Rather than writing simple monolithic C-style procedural modules (`.bas`), the p
 | **Console & Character Devices** | `Interface ICharDevice` + `Implements` | Abstract I/O interface declaring `Sub WriteChar(ByVal ch As Byte)` and `Sub WriteString(...)`. Implemented by both `VgaTerminal` and `SerialUart`. |
 | **Drivers (UART, PS/2 Keyboard)** | `Class Drivers.SerialUart`, `Class Drivers.Keyboard` | Encapsulates controller state, I/O ports, FIFO ring buffers, and modifier key tracking with `<Instancing(SingleUse)>`. |
 | **Synchronization Primitives** | `Structure Spinlock` with atomic intrinsics | High-signal, ticket or test-and-set SMP spinlocks guarding driver and scheduler state. |
-| **Physical Memory Allocator (PMM)** | `Class Mem.PhysicalManager` (`<Instancing(SingleUse)>`) | Manages bitmap memory frames, total frame counts, and allocation state. |
+| **Physical Memory Allocator (PMM)** | `Class Mem.PhysicalMemoryManager` (`<Instancing(SingleUse)>`) | Intrusive free-list physical page frame allocator (4KB granularity, stack-based). |
 | **Virtual Memory Manager (VMM)** | `Class Mem.VirtualSpace` + `Structure PageTable` | Scoped page directory manipulation, 4-level PML4 translation, and kernel higher-half mappings. |
 
 ---
@@ -113,10 +113,10 @@ graph TD
 ### Phase 4: Memory Management (PMM & VMM)
 **Goal:** Self-contained physical page frame allocator and 4-level x86_64 page directory management.
 
-1. **`src/mem/PhysicalManager.cls` (Namespace `Mem`):**
+1. **`src/mem/PhysicalMemoryManager.cls` (Namespace `Mem`):**
    - Source: `include/prk/pmm.h`, `kernel/pmm.c`
-   - Class: `<Instancing(SingleUse)> Class PhysicalManager`
-   - Encapsulates: Physical memory bitmap, total memory bytes, used frames, and frame allocation / deallocation routines (`AllocFrame`, `FreeFrame`).
+   - Class: `<Instancing(SingleUse)> Class PhysicalMemoryManager`
+   - Encapsulates: Intrusive singly-linked physical free-list stack (`free_frame_t`), total memory bytes, free frames, and frame allocation / deallocation routines (`AllocPage`, `FreePage`).
 2. **`src/mem/PageTableTypes.bas` & `src/mem/VirtualManager.cls`:**
    - Source: `include/prk/vmm.h`, `kernel/vmm.c`
    - Bitfield Page Table Entries:
@@ -192,7 +192,7 @@ tests/kernel/
     │   └── Keyboard.cls            <-- PS/2 Keyboard controller class
     └── mem/
         ├── PmmTypes.bas            <-- Frame structures & constants
-        ├── PhysicalManager.cls     <-- PMM bitmap frame allocator
+        ├── PhysicalMemoryManager.cls <-- PMM intrusive free-list frame allocator
         ├── PageTableTypes.bas      <-- 64-bit PTE bitfield structures
         └── VirtualManager.cls      <-- 4-level paging manager
 ```
@@ -240,27 +240,51 @@ tests/kernel/
     ```
 
 ### Phase 4: Memory Management Subsystem (PMM, Buddy Allocator, VMM)
-- [x] **`src/mem/PhysicalManager.cls` (Namespace `Mem`):**
-  - Bitmap physical frame allocator managing page allocation, reservation, and Multiboot1 memory map traversal.
+- [x] **`src/mem/PhysicalMemoryManager.cls` (Namespace `Mem`):**
+  - Intrusive singly-linked physical free-list stack allocator managing page allocation, reservation, and Multiboot1/2 memory map traversal.
 - [x] **`src/mem/BuddyAllocator.cls` (Namespace `Mem` / `<Instancing(SingleUse)> Class BuddyAllocator`):**
   - Binary Buddy Page Allocator with 11 orders (Order 0: 4KB to Order 10: 4MB blocks) across 64MB managed memory pool.
   - Verified in QEMU: dynamic page splitting down to Order 0, recursive buddy coalescing back to Order 10.
 - [x] **`src/mem/VirtualMemoryManager.cls` (Namespace `Mem` / `<Instancing(SingleUse)> Class VirtualMemoryManager`):**
   - 4-level x86_64 Virtual Memory Manager (`Pml4Index`, `PdptIndex`, `PdIndex`, `PtIndex`).
   - Implements `MapPage`, `UnmapPage`, `VirtToPhys`, `MapRange`, and TLB invalidation (`invlpg`).
-  - Verified in QEMU: mapped `0xDEADBEEF000` to physical frame `0x4C00000`, verified 64-bit volatile read/write (`0x123456789ABCDEF0`), verified address resolution, and cleanly unmapped.
+- [x] **`src/mem/KernelHeap.cls` (Namespace `Mem` / `<Instancing(SingleUse)> Class KernelHeap` aliased as `KHeap`):**
+  - 16-byte aligned kernel dynamic heap allocator (`KMalloc`, `KFree`) with intrusive doubly-linked boundary tags (`KBlockHeader`).
+  - Mirrors PRK `kernel/heap.c`: dynamic block splitting and bidirectional boundary tag coalescing on free.
+  - Verified in QEMU: mapped 1MB pool at `0x81000000`, allocated 128-byte block at `0x81000020`, verified 64-bit pattern write (`0xCAFEBABEDEADBEEF`), and cleanly recycled back to the arena.
 
 ---
 
-## 5. Next Steps: Phase 5 (ACPI Table Discovery, MADT & FADT Parsers)
-1. **`src/arch/x86_64/Acpi.bas` (Namespace `Arch` / `Module Acpi`):**
-   - Scan BIOS EBDA (`0x80000-0x9FFFF`) and read-only BIOS ROM space (`0xE0000-0xFFFFF`) for `"RSD PTR "` signature.
-   - Verify checksums for RSDP v1.0 and extended RSDP v2.0 (XSDT).
-   - Parse MADT (Multiple APIC Description Table) to enumerate LAPIC cores and IO-APIC controllers.
-   - Parse FADT (Fixed ACPI Description Table) to locate ACPI Power Management registers (`PM1a_CNT_BLK`, `S5` sleep object).
-2. **`src/sys/HardwareInfo.cls` (Namespace `Sys` / `Class HardwareInfo`):**
-   - CPUID instruction queries for CPU vendor, model, feature flags, APIC ID, and core topology.
-3. **`src/arch/x86_64/Smp.bas`:**
-   - Multi-core AP initialization via INIT-SIPI-SIPI sequence.
-4. **`src/arch/power/PowerManager.cls`:**
-   - ACPI SCI event handling, soft reboot, and S5 clean power-off.
+### Phase 5: Platform Architecture, APIC, ACPI, CPU Topology & SMP Bring-up
+- [x] **`src/arch/x86_64/Apic.bas` & `IoApic.bas` (Namespace `Arch.X86_64`):**
+  - Local APIC driver with CPUID-based x2APIC detection and fallback to physical MMIO at `0xFEE00000`.
+  - Configures Spurious Vector, EOI signaling, and LAPIC Timer calibration (Vector 32).
+  - I/O APIC redirection engine routing PS/2 Keyboard IRQ 1 to IDT Vector 33.
+- [x] **`src/arch/x86_64/Acpi.bas` (Namespace `Arch` / `Module Acpi`):**
+  - Reads RSDP from Multiboot2 tags (types 14 and 15) matching PRK `kernel/acpi.c` logic.
+  - Parses MADT (Multiple APIC Description Table) to enumerate physical LAPIC IDs (`discoveredApicIds`) and I/O APIC MMIO addresses.
+  - Parses FADT (Fixed ACPI Description Table) to locate ACPI Power Management registers (`PM1a_CNT_BLK`, `S5` sleep object).
+  - Implements clean software reset via Port `0x64` / `0xCF9` and ACPI S5 shutdown.
+- [x] **`src/arch/power/PowerManager.cls` (Namespace `Arch.Power` / `<Instancing(SingleUse)> Class PowerManager` aliased as `Power`):**
+  - Object-oriented power management facade wrapping ACPI S5 shutdown and system reboot.
+- [x] **`src/sys/HardwareInfo.cls` (Namespace `Sys` / `Class HardwareInfo` aliased as `HwInfo`):**
+  - CPUID leaf 0 / 0x80000002-4 query extracting CPU vendor string (`AuthenticAMD` / `GenuineIntel`) and model brand string.
+  - CPU feature flag decoder (FPU, APIC, SSE, SSE2, SSE3, AVX) and Invariant TSC detection (Leaf 0x80000007 EDX bit 8).
+  - Verified in QEMU: cleanly prints vendor and model strings to serial COM1 console.
+- [x] **`src/arch/x86_64/Smp.bas` & `boot.S` AP Trampoline:**
+  - Relocatable 16-bit real mode -> 32-bit protected mode -> 64-bit long mode AP trampoline assembled at `0x8000`.
+  - Dispatches standard INIT-SIPI-SIPI sequence to each active AP core enumerated by ACPI MADT.
+  - BSP <-> AP atomic join counter synchronization and dedicated per-CPU stack switching jumping to `Arch_Smp_ApMain`.
+  - Verified in QEMU: single-core detection correctly handles MB1 environment without hanging.
+
+---
+
+## 5. Next Steps: Phase 6 (Preemptive Scheduler, Task Context & IPC)
+1. **`src/arch/x86_64/CpuContext.cls` & Task State:**
+   - Integrate TSS RSP0 switching per-task and save/restore general-purpose register frames.
+2. **`src/sched/Task.cls` & `src/sched/Scheduler.cls`:**
+   - Round-robin preemptive scheduler driven by APIC Timer interrupts (Vector 32).
+3. **`src/ipc/MessageQueue.cls`:**
+   - Synchronous and asynchronous port-based messaging queues.
+4. **`src/drivers/Framebuffer.cls`:**
+   - High-resolution linear framebuffer console driver.

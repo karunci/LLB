@@ -1,10 +1,10 @@
 ' Project Name: PRK (Personal Research Kernel) / Low-Level Basic (LLB)
-' Filename: tests/kernel/src/mem/PhysicalManager.cls
+' Filename: tests/kernel/src/mem/PhysicalMemoryManager.cls
 ' Summary: Intrusive free-list physical page frame allocator (4KB granularity).
 
 Import Sync
-Use Drivers.Terminal
-Use Drivers.SerialUart
+Use Drivers.Terminal As Term
+Use Drivers.SerialUart As Serial
 
 Namespace Mem
 
@@ -50,7 +50,7 @@ Namespace Mem
     End Structure
 
     <Instancing(SingleUse)>
-    Public Class PhysicalManager
+    Public Class PhysicalMemoryManager
 
         ' Head of intrusive singly-linked physical free-list stack
         Private freeListHeadPhys As UInt64
@@ -143,7 +143,7 @@ Namespace Mem
                 Dim mb1 As Pointer To Multiboot1Info
                 mb1 = CPtr(Pointer To Multiboot1Info, mbiAddr)
 
-                Drivers.SerialUart.PrintF "DEBUG - [MB1] Flags: 0x%x, MmapAddr: 0x%x, MmapLen: 0x%x\n", mb1.Flags, mb1.MmapAddr, mb1.MmapLength
+                Serial.PrintF "DEBUG - [MB1] Flags: 0x%x, MmapAddr: 0x%x, MmapLen: 0x%x\n", mb1.Flags, mb1.MmapAddr, mb1.MmapLength
 
                 ' Check if MMAP bit (bit 6 = 0x40) is set in Flags
                 If (mb1.Flags And &H40) <> 0 Then
@@ -155,7 +155,7 @@ Namespace Mem
                         Dim entry As Pointer To Multiboot1MmapEntry
                         entry = CPtr(Pointer To Multiboot1MmapEntry, currPtr)
 
-                        Drivers.SerialUart.PrintF "DEBUG - [MB1 Mmap] Base: 0x%x, Len: 0x%x, Type: 0x%x\n", entry.BaseAddr, entry.Length, entry.EntryType
+                        Serial.PrintF "DEBUG - [MB1 Mmap] Base: 0x%x, Len: 0x%x, Type: 0x%x\n", entry.BaseAddr, entry.Length, entry.EntryType
 
                         ' EntryType 1 = Usable RAM strictly
                         If entry.EntryType = 1 Then

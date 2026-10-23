@@ -3,7 +3,7 @@
 ' Summary: Multi-order binary buddy page frame allocator (Order 0: 4KB to Order 10: 4MB).
 
 Import Sync
-Use Drivers.SerialUart
+Use Drivers.SerialUart As Serial
 
 Namespace Mem
 
@@ -236,11 +236,11 @@ Namespace Mem
 
         ' Print status of buddy orders to serial console
         Public Unsafe Sub DumpStats()
-            Drivers.SerialUart.PrintF "[BUDDY] Managed Pool: 0x%x - 0x%x (%u MB)\r\n", poolBasePhys, poolBasePhys + poolSizePhys, CType(UInt32, poolSizePhys RShift 20)
+            Serial.PrintF "[BUDDY] Managed Pool: 0x%x - 0x%x (%u MB)\r\n", poolBasePhys, poolBasePhys + poolSizePhys, CType(UInt32, poolSizePhys RShift 20)
             Dim o As UInt32
             For o = 0 To MAX_ORDER
                 Dim blkSizeKb As UInt32 = CType(UInt32, (PAGE_SIZE LShift o) RShift 10)
-                Drivers.SerialUart.PrintF "  [Order %u] Size: %u KB | Free: %u blocks\r\n", o, blkSizeKb, CType(UInt32, freeCount(o))
+                Serial.PrintF "  [Order %u] Size: %u KB | Free: %u blocks\r\n", o, blkSizeKb, CType(UInt32, freeCount(o))
             Next o
         End Sub
 

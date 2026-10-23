@@ -4,8 +4,7 @@
 
 Import Sync
 Import Arch.X86_64.PortIO
-Use Mem.BuddyAllocator
-Use Drivers.SerialUart
+Use Mem.BuddyAllocator As Buddy
 
 Namespace Mem
 
@@ -63,7 +62,7 @@ Namespace Mem
 
         ' Helper to allocate and clear a 4KB page table frame using BuddyAllocator (Order 0)
         Private Unsafe Function AllocTableFrame() As UInt64
-            Dim framePhys As UInt64 = Mem.BuddyAllocator.AllocPages(0)
+            Dim framePhys As UInt64 = Buddy.AllocPages(0)
             If framePhys <> 0 Then
                 ' Clear all 512 64-bit entries (4096 bytes)
                 Dim tablePtr As Volatile Pointer To UInt64

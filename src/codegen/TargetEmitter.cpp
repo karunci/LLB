@@ -25,6 +25,7 @@
 
 #include <iostream>
 #include <cstdlib>
+#include <filesystem>
 
 namespace lld {
 namespace elf {
@@ -277,7 +278,7 @@ bool TargetEmitter::linkExecutable(
         if (isShared) {
             argStorage.push_back("-shared");
             argStorage.push_back("-soname");
-            argStorage.push_back(outputFile);
+            argStorage.push_back(std::filesystem::path(outputFile).filename().string());
         } else {
             argStorage.push_back("-pie"); // Position Independent Executable (Required by Android)
             // Allow looking for shared libraries in the same directory as the executable ($ORIGIN)

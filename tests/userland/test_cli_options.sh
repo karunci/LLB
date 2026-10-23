@@ -137,12 +137,28 @@ else
     ERR_COUNT=$((ERR_COUNT + 1))
 fi
 
+# 9. Test LibLLB dynamic shared library build and hosted execution
+$LLBC ../../lib/hosted/Hosted.llbproj 2>&1 > /dev/null
+$LLBC ../lib_hosted/TestHosted.llbproj 2>&1 > /dev/null
+if [ -f "../lib_hosted/build/testhosted" ]; then
+    LD_LIBRARY_PATH=../../lib/hosted/build ../lib_hosted/build/testhosted 2>&1 | grep -q "ALL LIBLLB HOSTED SHARED LIBRARY TESTS PASSED"
+    if [ $? -eq 0 ]; then
+        echo "[PASS] CLI 11: LibLLB dynamic shared library (.so) build & hosted execution verified"
+    else
+        echo "[FAIL] CLI 11: LibLLB dynamic shared library test execution failed"
+        ERR_COUNT=$((ERR_COUNT + 1))
+    fi
+else
+    echo "[FAIL] CLI 11: Failed to build testhosted"
+    ERR_COUNT=$((ERR_COUNT + 1))
+fi
+
 # Cleanup
 rm -rf "$BUILD_DIR"
 
 echo "========================================="
 if [ $ERR_COUNT -eq 0 ]; then
-    echo "   ALL 10 CLI OPTIONS TESTS PASSED!      "
+    echo "   ALL 11 CLI OPTIONS TESTS PASSED!      "
     echo "========================================="
     exit 0
 else

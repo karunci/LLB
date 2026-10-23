@@ -35,6 +35,8 @@ struct ProjectConfig {
     bool disableStandardLibrary{false};
     std::vector<std::string> sourceFiles;    // .bas / .cls
     std::vector<std::string> assemblyFiles;  // .S / .s
+    std::vector<std::string> libraries;      // static archives (.a), shared libs (.so), or bare lib names
+    std::vector<std::string> libraryPaths;  // -L search paths
     std::vector<std::string> postBuildCommands; // sequential post-build commands/scripts
     int scriptTimeout{30};               // default post-build timeout in seconds (0 = disabled)
 };
@@ -60,12 +62,13 @@ public:
         std::string currentSection = "";
         std::string line;
         bool inFilesArray = false;
+        bool inLibsArray = false;
 
         while (std::getline(file, line)) {
             if (line.empty() || line[0] == '\'' || line[0] == ';') continue;
 
-            // Handle multi-line Files = [ ... ] parsing
-            if (inFilesArray) {
+            // Handle multi-line Files = [ ... ] or Libraries = [ ... ] parsing
+            if (inFilesArray || inLibsArray) {
                 size_t endBracket = line.find(']');
                 std::string slice = (endBracket != std::string::npos) ? line.substr(0, endBracket) : line;
                 
@@ -78,7 +81,9 @@ public:
                     if (q2 == std::string::npos) break;
                     std::string item = slice.substr(q1 + 1, q2 - q1 - 1);
                     if (!item.empty()) {
-                        if (item.rfind(".S") != std::string::npos || item.rfind(".s") != std::string::npos) {
+                        if (inLibsArray) {
+                            config.libraries.push_back(resolvePath(item));
+                        } else if (item.size() >= 2 && (item.substr(item.size() - 2) == ".S" || item.substr(item.size() - 2) == ".s")) {
                             config.assemblyFiles.push_back(resolvePath(item));
                         } else {
                             config.sourceFiles.push_back(resolvePath(item));
@@ -88,6 +93,7 @@ public:
                 }
                 if (endBracket != std::string::npos) {
                     inFilesArray = false;
+                    inLibsArray = false;
                 }
                 continue;
             }
@@ -134,10 +140,12 @@ public:
                 auto lastVal = value.find_last_not_of(" \t\r\n");
                 if (lastVal != std::string::npos) value.erase(lastVal + 1);
 
-                // Check for Files array: Files = [ ... ]
-                if (key == "Files" && value.find('[') != std::string::npos) {
+                // Check for Files or Libraries array: [ ... ]
+                if ((key == "Files" || key == "Libraries") && value.find('[') != std::string::npos) {
+                    bool isLibs = (key == "Libraries");
                     if (value.find(']') == std::string::npos) {
-                        inFilesArray = true;
+                        if (isLibs) inLibsArray = true;
+                        else inFilesArray = true;
                     }
                     size_t p = value.find('[');
                     size_t endB = value.find(']');
@@ -150,7 +158,9 @@ public:
                         if (q2 == std::string::npos) break;
                         std::string item = slice.substr(q1 + 1, q2 - q1 - 1);
                         if (!item.empty()) {
-                            if (item.rfind(".S") != std::string::npos || item.rfind(".s") != std::string::npos) {
+                            if (isLibs) {
+                                config.libraries.push_back(resolvePath(item));
+                            } else if (item.rfind(".S") != std::string::npos || item.rfind(".s") != std::string::npos) {
                                 config.assemblyFiles.push_back(resolvePath(item));
                             } else {
                                 config.sourceFiles.push_back(resolvePath(item));
@@ -231,6 +241,10 @@ public:
                     config.sourceFiles.push_back(resolvePath(value));
                 } else if (key == "Assembly") {
                     config.assemblyFiles.push_back(resolvePath(value));
+                } else if (key == "Library" || key == "Lib") {
+                    config.libraries.push_back(resolvePath(value));
+                } else if (key == "LibraryPath" || key == "LibPath") {
+                    config.libraryPaths.push_back(resolvePath(value));
                 } else if (key == "OptimizationLevel" || key == "OptLevel") {
                     config.hasOptLevel = true;
                     if (value == "O0" || value == "0") config.optLevel = 0;

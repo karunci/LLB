@@ -772,6 +772,9 @@ EntryPoint = "_start"
 
 [Linker]
 LinkerScript = "linker.ld"
+Libraries    = [
+    "../../lib/metal/build/libllb_metal.a" ; Statically linked archive or shared .so
+]
 
 [Output]
 OutputDirectory = "build"
@@ -1041,7 +1044,28 @@ To satisfy the linker in the absence of a host C library (`libc`), freestanding 
 | **`memmove`** | `(dest: Pointer To Byte, src: Pointer To Byte, count: UInt64) As Pointer To Byte` | Copies potentially overlapping memory blocks safely. |
 | **`memcmp`** | `(s1: Pointer To Byte, s2: Pointer To Byte, count: UInt64) As Int32` | Lexicographically compares two memory blocks. |
 
-These primitives can be defined directly in LLB, assembly stubs (`boot.S`), or linked via `libLLB_Metal.dlb`.
+These primitives can be defined directly in LLB, assembly stubs (`boot.S`), or linked via `libllb_metal.a`.
+
+---
+
+## 27. Standard Libraries (`LibLLB` & `LibLLB_Metal`)
+
+Low-Level Basic provides standard runtime libraries tailored for each environment:
+
+| Library | Directory | Target Type | Artifact | Description |
+|:---|:---|:---:|:---:|:---|
+| **`LibLLB`** | `lib/hosted/` | `SharedLibrary` | `libllb.so` | Dynamic shared library for hosted userland runtimes (Linux / Android). Links against host CRT and allows shared execution across applications. |
+| **`LibLLB_Metal`** | `lib/metal/` | `StaticLibrary` | `libllb_metal.a` | Static code archive for freestanding bare-metal kernels, embedded microcontrollers, and bootloaders with zero libc dependencies. |
+
+### Included Modules
+
+- **`Math`**: Signed 64-bit bounds clamping (`Clamp`), min/max (`Min`, `Max`), integer rounding (`DivRoundUp`, `AlignUp`).
+- **`Ascii`**: Fast character classification (`IsDigit`, `IsAlpha`, `IsAlnum`, `IsWhitespace`, `IsHexDigit`, `ToUpper`, `ToLower`).
+- **`Std.Strings`**: Null-terminated ASCII string operations (`Length`, `Compare`, `Copy`).
+- **`Std.Memory`**: Freestanding memory primitives (`Fill`, `Copy`, `Move`, `Compare`).
+- **`Conv`**: Numeric string parsing (`ParseUInt`, `ParseInt`, `ParseHex`).
+- **`Format`**: Number to ASCII conversion (`ToHex`, `ToUInt`, `ToInt`).
+- **`TextWriter` / `ICharSink`**: Stream abstraction for outputting formatted text across devices (serial ports, VGA text consoles, file handles).
 
 
 

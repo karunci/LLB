@@ -824,6 +824,11 @@ static int buildSingleProject(const std::string& manifestPath, const CliOptions&
         objectFiles.push_back(objFile);
     }
 
+    // Append libraries specified in project manifest
+    for (const auto& lib : config.libraries) {
+        objectFiles.push_back(lib);
+    }
+
     // Auto-detect static archive from output file extension (.a)
     if (hasExtension(outputFile, ".a")) {
         isStatic = true;

@@ -5,6 +5,7 @@
 Module KernelMain
 
     ' --- Procedural Modules ---
+    Import TestMetal
     Import Arch.Idt
     Import Arch.X86_64.Gdt
     Import Arch.X86_64.PortIO
@@ -32,29 +33,18 @@ Module KernelMain
         Loop
     End Sub
 
+    ' LibLLB_Metal Static Library Declarations
+    Public Declare Function ToHex Lib "libllb_metal" (ByVal value As UInt64, ByVal outBuf As Pointer To Byte, ByVal prefix As Boolean) As UInt32
+
     Private Unsafe Sub WriteSerialHex(ByVal value As UInt64)
-        WriteSerialString CPtr(Pointer To Byte, "0x")
-        If value = 0 Then
-            WriteSerialString CPtr(Pointer To Byte, "0")
-            Exit Sub
-        End If
-
-        Dim digits As Pointer To Byte
-        digits = CPtr(Pointer To Byte, "0123456789ABCDEF")
-
-        Dim buffer(16) As Byte
-        Dim pos As Int32 = 0
-
-        Do While value > 0
-            buffer(pos) = digits(CType(Byte, value And CType(UInt64, 15)))
-            value = value RShift 4
-            pos = pos + 1
+        Dim buffer(32) As Byte
+        Dim bufPtr As Pointer To Byte = CPtr(Pointer To Byte, buffer)
+        Dim lenVal As UInt32 = ToHex(value, bufPtr, True)
+        Dim i As UInt32 = 0
+        Do While i < lenVal
+            WriteSerial bufPtr(i)
+            i = i + 1
         Loop
-
-        Dim i As Int32
-        For i = pos - 1 To 0 Step -1
-            WriteSerial buffer(i)
-        Next i
     End Sub
 
     Public Unsafe Sub KernelEntry(ByVal magic As UInt32, ByVal mbAddress As Pointer To Byte)
@@ -97,6 +87,14 @@ Module KernelMain
         Term.WriteHex CType(UInt64, apContext.GetCpuId())
         Term.WriteChar 10
         WriteSerialString CPtr(Pointer To Byte, "[PRK] MultiUse CpuContext instances verified (BSP ID: 0, AP ID: 1).\r\n")
+
+        ' Verify LibLLB_Metal Static Archive Subsystems
+        Dim metalErrors As Int32 = TestMetal.RunMetalVerification()
+        If metalErrors = 0 Then
+            WriteSerialString CPtr(Pointer To Byte, "[PRK] LibLLB_Metal static archive verification passed (6/6 tests).\r\n")
+        Else
+            WriteSerialString CPtr(Pointer To Byte, "[PRK] LibLLB_Metal verification failed!\r\n")
+        End If
 
         ' Output Multiboot info address in Hex
         Term.SetColor Term.COLOR_LIGHT_CYAN

@@ -1,0 +1,29 @@
+' Project Name: Low-Level Basic Compiler (llbc)
+' Filename: tests/lib_hosted/TestHosted.llbproj
+' Summary: Test harness project linking dynamically against LibLLB (libllb.so).
+
+[Project]
+Name    = "TestHosted"
+Type    = "Executable"
+Version = "0.1.0"
+
+[Target]
+Platform = "hosted"
+
+[Output]
+OutputDirectory = "build"
+BinaryName      = "testhosted"
+
+[CompilerOptions]
+OptimizationLevel = "O2"
+EmitDebugInfo     = true
+
+[Sources]
+Files = [
+    "TestHosted.bas"
+]
+
+[Linker]
+Libraries = [
+    "../../lib/hosted/build/libllb.so"
+]

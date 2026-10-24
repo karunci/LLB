@@ -335,12 +335,88 @@ tests/kernel/
   - Verified with QEMU `-cpu max -smp 4`: all 4 cores detected x2APIC and successfully completed AP bootstrap and scheduler bringup.
 - [x] **Hybrid BIOS & UEFI ISO Generator (`tests/kernel/scripts/build_iso.sh`):**
   - Proot-distro Ubuntu container setup using dynamic `$HOME:$HOME` binding and `grub-mkrescue` with x86_64 EFI modules.
-  - Generates bootable `tests/kernel/build/kernel.iso` verified in QEMU and compatible with real bare-metal (Intel Core i5-10310U via Ventoy).
+  - Generates bootable `tests/kernel/build/kernel.iso` verified in QEMU and compatible with standard x86_64 UEFI and BIOS boot specifications.
 
 ---
 
-## 5. Next Steps: Phase 8 (IPC & Framebuffer)
-1. **`src/ipc/MessageQueue.cls`:**
-   - Synchronous and asynchronous port-based messaging queues.
-2. **`src/drivers/Framebuffer.cls`:**
-   - High-resolution linear framebuffer console driver.
+### Phase 8: Dual-Plane Neural Node Architecture & High-Resolution Framebuffer
+- [x] **Philosophy & Architecture:** *"Everything is a Node connected via Synaptic Channels"* (Dual-Plane Neural Hybrid Architecture).
+  - Documented in [`docs/DUAL_PLANE_NODE_ARCHITECTURE.md`](file:///T:/projects/LLB/llbc/docs/DUAL_PLANE_NODE_ARCHITECTURE.md).
+  - Control Plane: Synaptic capability enforcement, topological connection routing, and Node lifecycle management.
+  - Data Plane: Lock-free 128-slot circular ring buffers (`AxonPacket`), zero-copy transfers, and atomic spinlock protection.
+- [x] **`src/node/NodeTypes.bas` (Namespace `Core.Nodes`):**
+  - `<Packed> Structure AxonPacket`: 32-byte header (Sequence, PacketType, PayloadLength, SourceNode, TargetNode) + 256-byte payload.
+  - `<Packed> Structure NodeDescriptor`: Node metadata (NodeId, Kind, OwnerPid, Capabilities, Flags, Name).
+  - `Enum NodeKind`: `NODE_COMPUTE` (1), `NODE_DEVICE` (2), `NODE_MEMORY` (3), `NODE_ROUTER` (4).
+  - `Module SynapseCaps`: Capability masks (`CAP_SYNAPSE_READ`, `CAP_SYNAPSE_WRITE`, `CAP_SYNAPSE_NOTIFY`, `CAP_SYNAPSE_DMA`, `CAP_SYNAPSE_ADMIN`).
+- [x] **`src/node/SynapseChannel.cls` (Namespace `Core.Nodes` / `<Instancing(MultiUse)> Class SynapseChannel`):**
+  - Lock-free, interrupt-safe fast-path channel between connected nodes.
+  - `PushPacket(ByRef pkt As AxonPacket)`: Enforces write capabilities and enqueues packet into ring buffer.
+  - `PopPacket(ByRef outPkt As AxonPacket, ByVal block As Boolean)`: Dequeues packet; integrates with `Scheduler.BlockCurrentTask` for blocking reads.
+- [x] **`src/node/NodeRegistry.cls` (Namespace `Core.Nodes` / `<Instancing(SingleUse)> Class NodeRegistry`):**
+  - Control Plane registry managing topological node registration (`RegisterNode`), name lookup (`LookupNode`), synapse connection establishment (`ConnectSynapse`), and channel resolution (`GetChannel`).
+- [x] **`src/drivers/Font8x16_data.S` & `Font8x16.bas` (Namespace `Drivers`):**
+  - 2048-byte assembly table containing all 128 glyphs (ASCII 0-127) extracted directly from PRK `user/font.c`.
+  - `GetGlyphByte(ch, row)` procedural accessor.
+- [x] **`src/drivers/Framebuffer.cls` (Namespace `Drivers` / `<Instancing(SingleUse)> Class Framebuffer`):**
+  - **Dynamic Hardware Graphics Mode Switch (BGA):** Direct I/O register programming (`0x1CE` index, `0x1CF` data) to dynamically switch hardware out of VGA 80x25 text mode to 1024x768x32 true color mode on the fly (`SetVideoMode`).
+  - **Dynamic PCI VGA Aperture Discovery:** Probes PCI Bus 0 (`0xCF8`/`0xCFC`) for Display Controller (Class 0x03) BAR 0 (`0xFD000000`), ensuring valid LFB physical mapping without relying on BIOS interrupts.
+  - **RAM Double-Buffering & High-Speed Blitting:** 3072 KB RAM backbuffer dynamically allocated from 8MB `KernelHeap`, with hardware-accelerated row bursts via `memcpy` (`rep movsb`), and dirty-region burst flusher (`FlushRegion`).
+  - **Drawing & Typography Engine:** `ClearScreen`, `PutPixel`, `FillRect`, `DrawChar`, and `DrawString` rendering complete 128-glyph ASCII character set from PRK `user/font.c`.
+- [x] **LLBC Compiler (`llbc-stage0`) Enhancements:**
+  - Qualified inner module indexing in `g_moduleFileIndex` allowing dotted imports (`Import Core.Nodes.SynapseCaps`).
+  - Pre-registration opaque struct synthesis in `getLlvmType` enabling mutual cross-referencing between classes and structures.
+  - Compile-time immediate evaluation of module constants (`m_enumConstants`), eliminating undefined external global symbols at link time.
+  - `ByRef` parameter index matching and automatic pointer coercion for aggregate arguments in method calls.
+- [x] **Verified & Visual Confirmation:**
+  - Full kernel project builds and links with zero errors (`tests/kernel/build/kernel.elf`).
+  - Verified on Termux and Windows QEMU (SMP 4 cores, 512MB RAM):
+    - Hardware transition from VGA Text Mode (80x25) to 1024x768x32 BPP graphics mode verified via QEMU screendump.
+    - Linear Framebuffer: `0xFD000000` (1024x768x32 BPP).
+    - 3072 KB RAM Double-buffering enabled at `0x81011AC0`.
+    - Node Registry online (Max: 64 Nodes).
+    - Registered Node #1000 (`core.kernel`, Compute) and Node #1001 (`drivers.display.lfb`, Device).
+    - Established Synapse Channel #5000 (Caps: 0x3).
+    - Verified fast-path Axonal Data Plane packet transmission and delivery (Seq: 1, Type: 1).
+    - All 4 CPU cores initialized and online.
+    - Graphical Dashboard with Nord-themed cards, crisp typography, and verified synapse connection active on display.
+
+  ![PRK Dual-Plane Node Kernel 1024x768 Graphics Mode](graphics_mode_dashboard.png)
+
+---
+
+### Phase 9: Userspace Syscall Dispatch & Neural Node Interface (TODO)
+- [ ] **Hardened Assembly Syscall Entry (`src/arch/x86_64/SyscallEntry.S`):**
+  - Implement `syscall_entry` using x86_64 `swapgs`.
+  - Save User RSP into `%gs:0` (`CpuScratch.UserRsp`) and load Per-CPU Kernel Stack Top into RSP from `%gs:8` (`CpuScratch.KernelStack`).
+  - Construct Interrupt/Syscall return frame on kernel stack (User SS `0x1B`, User RSP, User RFLAGS, User CS `0x23`, User RIP, Syscall Number).
+  - Preserve general-purpose register frame (`rdi`, `rsi`, `rdx`, `r10`, `r8`, `r9`, `rbx`, `rbp`, `r12`-`r15`).
+  - Marshal System V ABI arguments to LLB dispatcher: `rdi`=Syscall Num, `rsi`=Arg1, `rdx`=Arg2, `rcx`=Arg3, `r8`=Arg4.
+  - Restore user registers, sanitize User RFLAGS (`IF=1`, `NT=0`), swap GS base, and exit via `sysretq`.
+- [ ] **MSR Hardware Configuration & Dispatch Engine (`src/sys/Syscall.bas`):**
+  - Namespace `Sys`, Module `Syscall`.
+  - Program MSR registers:
+    - `IA32_EFER` (`0xC0000080`): Enable System Call Extensions (Bit 0 `SCE=1`).
+    - `IA32_STAR` (`0xC0000081`): Kernel CS `0x08` (bits 47:32) & User CS/SS base `0x10` (bits 63:48).
+    - `IA32_LSTAR` (`0xC0000082`): Target RIP set to `AddressOf syscall_entry`.
+    - `IA32_FMASK` (`0xC0000084`): Mask Interrupt Flag (`0x200`) and direction/trap flags on syscall entry.
+  - Implement `ValidateUserBuffer(userPtr, size)`: enforce canonical lower-half user space bounds (`<= 0x00007FFFFFFFFFFF`) with overflow protection.
+- [ ] **Core PRK Syscall Table Implementation:**
+  - `SYS_WRITE` (1): Write bytes to serial UART COM1 or terminal console.
+  - `SYS_YIELD` (2): Preemptively yield current time slice via `Scheduler.Yield()`.
+  - `SYS_SLEEP` (3): Block current task for specified milliseconds via `Scheduler.Sleep(ms)`.
+  - `SYS_GETPID` (6): Return running PID from `Scheduler.GetCurrentPid()`.
+  - `SYS_GET_UPTIME` (28): Return system uptime in milliseconds derived from APIC timer ticks.
+  - `SYS_GET_SYS_INFO` (33): Populate system telemetry (total/free physical RAM from PMM and buddy allocator).
+  - `SYS_GET_CPU_CORES` (34): Return number of online SMP cores discovered via ACPI MADT.
+- [ ] **Dual-Plane Neural Node Syscall Extensions:**
+  - `SYS_NODE_REGISTER` (50): Dynamic registration of userspace compute/device nodes in `NodeRegistry`.
+  - `SYS_SYNAPSE_CONNECT` (51): Establish capability-authenticated synaptic channels between nodes.
+  - `SYS_SYNAPSE_PUSH` (52): High-speed axonal data plane packet enqueue into zero-copy ring buffers.
+  - `SYS_SYNAPSE_POP` (53): Axonal data plane packet dequeue with blocking/non-blocking support.
+- [ ] **Verification Plan:**
+  - Build `tests/kernel/Kernel.llbproj` with `llbc-stage0`.
+  - Add userspace syscall invocation test harness in `KernelMain.bas` triggering `syscall` instructions.
+  - Verify register preservation, correct return values in `%rax`, and multi-core APIC dispatch in QEMU.
+
+

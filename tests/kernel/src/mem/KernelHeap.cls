@@ -28,7 +28,7 @@ Public Class KernelHeap
     Public Const KMETA_SIZE As UInt64 = 32
     Public Const KMAGIC_NUM As UInt64 = &H87654321ABCDEF00
     Public Const HEAP_BASE_ADDR As UInt64 = &H81000000    ' Distinct virtual address space above 1GB identity map
-    Public Const HEAP_INITIAL_PAGES As UInt32 = 256       ' 1MB initial dynamic heap pool (256 * 4KB)
+    Public Const HEAP_INITIAL_PAGES As UInt32 = 2048      ' 8MB initial dynamic heap pool (2048 * 4KB)
 
     Private heapBasePhys As UInt64
     Private heapLock As Sync.Spinlock

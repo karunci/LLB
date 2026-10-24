@@ -564,6 +564,72 @@ Public Class Scheduler
         GetCurrentPid = curr.Id
     End Function
 
+    ''
+    ' @brief Transition current task to STATE_BLOCKED and immediately yield CPU.
+    ''
+    Public Unsafe Sub BlockCurrentTask()
+        SchedYieldInternal Sched.ThreadState.STATE_BLOCKED, 0
+    End Sub
+
+    ''
+    ' @brief Unblock a sleeping or blocked task by PID, transitioning it back to STATE_READY.
+    '        Mirrors PRK thread_wake(pid).
+    ' @param targetPid Task ID of thread to wake.
+    ' @return True if task was found and unblocked, False otherwise.
+    ''
+    Public Unsafe Function WakeTask(ByVal targetPid As UInt64) As Boolean
+        If targetPid = 0 Then
+            WakeTask = False
+            Exit Function
+        End If
+
+        Dim onlineCores As UInt32 = Arch.Acpi.GetCpuCount()
+        If onlineCores = 0 Or onlineCores > MAX_SCHED_CPUS Then onlineCores = 1
+
+        Dim coreIdx As UInt32 = 0
+        While coreIdx < onlineCores
+            ' Search GPOS queue
+            Dim headAddr As UInt64 = gposQueueHeads(coreIdx)
+            If headAddr <> 0 Then
+                Dim iterAddr As UInt64 = headAddr
+                Do
+                    Dim iter As Pointer To TaskControlBlock = CPtr(Pointer To TaskControlBlock, iterAddr)
+                    If iter.Id = targetPid Then
+                        If iter.State = Sched.ThreadState.STATE_BLOCKED Then
+                            iter.State = Sched.ThreadState.STATE_READY
+                            iter.WakeUptime = 0
+                            WakeTask = True
+                            Exit Function
+                        End If
+                    End If
+                    iterAddr = iter.NextTask
+                Loop While iterAddr <> headAddr
+            End If
+
+            ' Search RTOS queue
+            headAddr = rtosQueueHeads(coreIdx)
+            If headAddr <> 0 Then
+                Dim iterRtosAddr As UInt64 = headAddr
+                Do
+                    Dim iterRtos As Pointer To TaskControlBlock = CPtr(Pointer To TaskControlBlock, iterRtosAddr)
+                    If iterRtos.Id = targetPid Then
+                        If iterRtos.State = Sched.ThreadState.STATE_BLOCKED Then
+                            iterRtos.State = Sched.ThreadState.STATE_READY
+                            iterRtos.WakeUptime = 0
+                            WakeTask = True
+                            Exit Function
+                        End If
+                    End If
+                    iterRtosAddr = iterRtos.NextTask
+                Loop While iterRtosAddr <> headAddr
+            End If
+
+            coreIdx = coreIdx + 1
+        Wend
+
+        WakeTask = False
+    End Function
+
 End Class
 
 End Namespace

@@ -85,8 +85,8 @@ Namespace Mem
                 Exit Sub
             End If
 
-            ' Protect lower 4MB (kernel code, stack, early BSS, and hardware structures)
-            If physAddr < &H400000 Then
+            ' Protect lower 16MB (kernel code, stack, BSS up to 8MB, and hardware structures)
+            If physAddr < &H1000000 Then
                 Exit Sub
             End If
 
@@ -166,7 +166,7 @@ Namespace Mem
 
                             Dim addr As UInt64 = startAddr
                             While addr < endAddr
-                                If addr >= &H400000 And addr < &H100000000 Then
+                                If addr >= &H1000000 And addr < &H100000000 Then
                                     Me.FreePage addr
                                 End If
                                 addr = addr + 4096
@@ -224,7 +224,7 @@ Namespace Mem
 
                                 addr = startAddr
                                 While addr < endAddr
-                                    If addr >= &H400000 And addr < &H100000000 Then
+                                    If addr >= &H1000000 And addr < &H100000000 Then
                                         Me.FreePage addr
                                     End If
                                     addr = addr + 4096

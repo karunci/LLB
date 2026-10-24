@@ -1128,7 +1128,8 @@ std::unique_ptr<ASTNode> Parser::parseAssignOrCallStatement() {
                     if (!call->args.empty()) {
                         std::unique_ptr<ExprASTNode> base;
                         if (call->calleeExpr) {
-                            base = convertCallToIndex(std::move(call->calleeExpr));
+                            auto calleeConverted = convertCallToIndex(std::move(call->calleeExpr));
+                            base = std::make_unique<MemberAccessExprASTNode>(std::move(calleeConverted), call->funcName);
                         } else {
                             base = std::make_unique<VariableExprASTNode>(call->funcName);
                         }

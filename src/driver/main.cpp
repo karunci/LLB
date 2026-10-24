@@ -241,6 +241,9 @@ static std::shared_ptr<llbc::ModuleNode> getOrParseModule(const std::string& sou
                 if (!inMod) continue;
                 std::string inLower = toLowerStr(inMod->name);
                 indexAdd(inLower, sourcePath);
+                if (!m->name.empty() && inLower.find('.') == std::string::npos) {
+                    indexAdd(toLowerStr(m->name + "." + inMod->name), sourcePath);
+                }
                 size_t d = inLower.rfind('.');
                 if (d != std::string::npos && d + 1 < inLower.size()) {
                     std::string sName = inLower.substr(d + 1);
@@ -364,6 +367,10 @@ static std::string compileSourceFile(
                 }
             } else if (auto en = dynamic_cast<const llbc::EnumNode*>(member.get())) {
                 irEmitter.emitEnum(*en, m->name);
+            } else if (auto c = dynamic_cast<const llbc::ConstStmtNode*>(member.get())) {
+                if (c->isPublic) {
+                    irEmitter.declareConstant(*c, m->name);
+                }
             }
         }
         for (const auto& inMod : m->innerModules) {
@@ -399,18 +406,19 @@ static std::string compileSourceFile(
         };
 
         std::shared_ptr<llbc::ModuleNode> specificChild = nullptr;
-        std::function<void(const std::shared_ptr<llbc::ModuleNode>&)> findChild = [&](const std::shared_ptr<llbc::ModuleNode>& m) {
+        std::function<void(const std::shared_ptr<llbc::ModuleNode>&, const std::string&)> findChild = [&](const std::shared_ptr<llbc::ModuleNode>& m, const std::string& parentNs) {
             if (!m || specificChild) return;
-            if (toLowerStr(m->name) == toLowerStr(imp.moduleName)) {
+            std::string qual = (!parentNs.empty() && m->name.find('.') == std::string::npos) ? (parentNs + "." + m->name) : m->name;
+            if (toLowerStr(m->name) == toLowerStr(imp.moduleName) || toLowerStr(qual) == toLowerStr(imp.moduleName)) {
                 specificChild = m;
                 return;
             }
             for (const auto& inMod : m->innerModules) {
-                findChild(inMod);
+                findChild(inMod, qual);
             }
         };
         if (!imp.moduleName.empty() && toLowerStr(targetMod->name) != toLowerStr(imp.moduleName)) {
-            findChild(targetMod);
+            findChild(targetMod, targetMod->name);
         }
         if (specificChild) {
             collectTargets(specificChild);
@@ -471,6 +479,13 @@ static std::string compileSourceFile(
                     if (c->isPublic && (imp.symbolName.empty() || imp.symbolName == c->name)) {
                         std::string pref = curMod->name;
                         irEmitter.declareConstant(*c, pref);
+                        size_t lastDot = curMod->name.rfind('.');
+                        if (lastDot != std::string::npos) {
+                            irEmitter.declareConstant(*c, curMod->name.substr(lastDot + 1));
+                        }
+                        if (!imp.aliasName.empty()) {
+                            irEmitter.declareConstant(*c, imp.aliasName);
+                        }
                     }
                 }
                 // Import Procedures (Public Functions & Subs)
@@ -619,7 +634,14 @@ static std::string compileSourceFile(
                     }
                 }
                 irEmitter.emitStructure(classStruct);
-                if (!useDir.aliasName.empty() && useDir.aliasName != curMod->name) {
+                std::string shortName = curMod->name;
+                size_t dotPos = shortName.rfind('.');
+                if (dotPos != std::string::npos) {
+                    shortName = shortName.substr(dotPos + 1);
+                    classStruct.name = shortName;
+                    irEmitter.emitStructure(classStruct);
+                }
+                if (!useDir.aliasName.empty() && useDir.aliasName != curMod->name && useDir.aliasName != shortName) {
                     classStruct.name = useDir.aliasName;
                     irEmitter.emitStructure(classStruct);
                 }
@@ -678,6 +700,13 @@ static std::string compileSourceFile(
 
                         irEmitter.registerExternalProcedure(curMod->name + "." + proc->name, retType, pTypes, symbolMangled, defExprs, paramByRefs, hasParamArray);
                         irEmitter.registerExternalProcedure(curMod->name + "_" + proc->name, retType, pTypes, symbolMangled, defExprs, paramByRefs, hasParamArray);
+                        std::string shortName = curMod->name;
+                        size_t dotPos = shortName.rfind('.');
+                        if (dotPos != std::string::npos) {
+                            shortName = shortName.substr(dotPos + 1);
+                            irEmitter.registerExternalProcedure(shortName + "." + proc->name, retType, pTypes, symbolMangled, defExprs, paramByRefs, hasParamArray);
+                            irEmitter.registerExternalProcedure(shortName + "_" + proc->name, retType, pTypes, symbolMangled, defExprs, paramByRefs, hasParamArray);
+                        }
                         if (!useDir.aliasName.empty()) {
                             irEmitter.registerExternalProcedure(useDir.aliasName + "." + proc->name, retType, pTypes, symbolMangled, defExprs, paramByRefs, hasParamArray);
                             irEmitter.registerExternalProcedure(useDir.aliasName + "_" + proc->name, retType, pTypes, symbolMangled, defExprs, paramByRefs, hasParamArray);

@@ -39,7 +39,18 @@ header_start:
     .long header_end - header_start
     .long -(MULTIBOOT2_HEADER_MAGIC + MULTIBOOT_ARCHITECTURE_I386 + (header_end - header_start))
 
+    /* Multiboot2 Framebuffer Request Tag (Type 5) */
+    .align 8
+    .short 5     /* type = MULTIBOOT_HEADER_TAG_FRAMEBUFFER */
+    .short 0     /* flags = 0 */
+    .long  24    /* size = 24 bytes */
+    .long  1280  /* preferred width */
+    .long  720   /* preferred height */
+    .long  32    /* preferred depth (bpp) */
+    .long  0     /* padding to 8-byte boundary */
+
     /* Multiboot2 End Tag */
+    .align 8
     .word MULTIBOOT_HEADER_TAG_END
     .word 0
     .long 8

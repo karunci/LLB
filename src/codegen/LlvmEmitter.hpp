@@ -51,7 +51,7 @@ public:
     void emitSelectStatement(const SelectStmtNode& selectNode);
     void emitMatchStatement(const MatchStmtNode& matchNode);
     void emitAsmStatement(const AsmStmtNode& asmNode);
-    void emitEnum(const EnumNode& enumNode);
+    void emitEnum(const EnumNode& enumNode, const std::string& nsPrefix = "");
     void emitWithStatement(const WithStmtNode& withNode);
     void emitPrintStatement(const PrintStmtNode& printNode);
     void emitPrintFileStatement(const PrintFileStmtNode& printFileNode);
@@ -154,6 +154,7 @@ private:
     std::unordered_set<std::string> m_singleUseInstantiated;
     std::unordered_set<std::string> m_initializedObjects;
     std::unordered_set<std::string> m_constants;
+    std::unordered_set<std::string> m_externalDeclares; // Names registered via Declare Function/Sub
     std::unordered_map<std::string, const InterfaceNode*> m_interfaces;
     std::unordered_set<std::string> m_delegates;
 

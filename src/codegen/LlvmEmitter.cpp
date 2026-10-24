@@ -2985,12 +2985,28 @@ llvm::GlobalVariable* LlvmEmitter::getOrCreateErrDescription() {
     return g;
 }
 
-void LlvmEmitter::emitEnum(const EnumNode& enumNode) {
+void LlvmEmitter::emitEnum(const EnumNode& enumNode, const std::string& nsPrefix) {
     for (const auto& member : enumNode.members) {
         m_enums[enumNode.name][member.name] = member.value;
         m_enums[toLower(enumNode.name)][toLower(member.name)] = member.value;
         m_enumConstants[member.name] = member.value;
         m_enumConstants[toLower(member.name)] = member.value;
+
+        if (!nsPrefix.empty()) {
+            // Qualified key: "Sched.ThreadState" and member "STATE_READY"
+            std::string qualEnum = nsPrefix + "." + enumNode.name;
+            m_enums[qualEnum][member.name] = member.value;
+            m_enums[toLower(qualEnum)][toLower(member.name)] = member.value;
+            // Full qualified constant: "Sched.ThreadState.STATE_READY"
+            std::string fullKey = qualEnum + "." + member.name;
+            m_enumConstants[fullKey] = member.value;
+            m_enumConstants[toLower(fullKey)] = member.value;
+            // Mangled variant: "Sched_ThreadState_STATE_READY"
+            std::string mangledKey = fullKey;
+            for (auto& ch : mangledKey) if (ch == '.') ch = '_';
+            m_enumConstants[mangledKey] = member.value;
+            m_enumConstants[toLower(mangledKey)] = member.value;
+        }
     }
 }
 
@@ -5436,7 +5452,28 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
         if (addrOf->targetExpr) {
             llvm::Value* ptr = getPointerToExpr(addrOf->targetExpr.get());
             if (ptr) return ptr;
+            // Reconstruct fully-qualified dotted name from MemberAccess chain and look up function
+            std::function<std::string(ExprASTNode*)> getDotted = [&](ExprASTNode* e) -> std::string {
+                if (auto v = dynamic_cast<VariableExprASTNode*>(e)) return v->name;
+                if (auto m = dynamic_cast<MemberAccessExprASTNode*>(e)) {
+                    std::string p = getDotted(m->base.get());
+                    return p.empty() ? m->memberName : (p + "." + m->memberName);
+                }
+                return "";
+            };
+            std::string dottedName = getDotted(addrOf->targetExpr.get());
+            if (!dottedName.empty()) {
+                auto aIt = m_funcAliases.find(dottedName);
+                if (aIt != m_funcAliases.end()) dottedName = aIt->second;
+                std::string normName = dottedName;
+                for (auto& ch : normName) if (ch == '.') ch = '_';
+                llvm::Function* fn = findFunctionCaseInsensitive(m_module.get(), dottedName);
+                if (!fn) fn = findFunctionCaseInsensitive(m_module.get(), normName);
+                if (fn) return fn;
+            }
             return emitExpression(addrOf->targetExpr.get());
+
+
         }
         std::string targetName = addrOf->targetName;
         auto aliasIt = m_funcAliases.find(targetName);
@@ -5463,6 +5500,22 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
         llvm::GlobalVariable* gVar = findGlobalCaseInsensitive(m_module.get(), addrOf->targetName);
         if (gVar) {
             return gVar;
+        }
+        // Implicit Me field lookup (e.g. @schedLock inside a class method)
+        if (!m_currentScopeClass.empty() && m_namedValues.count("Me")) {
+            std::string varLower = toLower(addrOf->targetName);
+            auto fIt = m_structFieldIndices[m_currentScopeClass].find(varLower);
+            if (fIt == m_structFieldIndices[m_currentScopeClass].end())
+                fIt = m_structFieldIndices[toLower(m_currentScopeClass)].find(varLower);
+            if (fIt != m_structFieldIndices[m_currentScopeClass].end()) {
+                llvm::Value* mePtr = m_namedValues["Me"];
+                llvm::Value* thisPtr = m_builder->CreateLoad(llvm::PointerType::get(*m_context, 0), mePtr, "me.this");
+                auto stIt = m_structTypes.find(m_currentScopeClass);
+                if (stIt == m_structTypes.end()) stIt = m_structTypes.find(toLower(m_currentScopeClass));
+                if (stIt != m_structTypes.end()) {
+                    return m_builder->CreateStructGEP(stIt->second, thisPtr, fIt->second, addrOf->targetName + ".gep");
+                }
+            }
         }
         return nullptr;
     }
@@ -6912,13 +6965,27 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
         std::string rawTargetName = targetFuncName;
         if (m_funcAliases.count(rawTargetName)) rawTargetName = m_funcAliases[rawTargetName];
         else if (m_funcAliases.count(toLower(rawTargetName))) rawTargetName = m_funcAliases[toLower(rawTargetName)];
-        if (call->calleeExpr == nullptr && callee && callee->isDeclaration()) {
-            isDeclareCallee = true;
+        if (call->calleeExpr == nullptr) {
+            // Only treat as external Declare if explicitly registered via registerExternalProcedure.
+            // callee->isDeclaration() is NOT used here because forward-declared internal class
+            // methods (two-pass compile) also return isDeclaration()==true before body emission.
+            if (m_externalDeclares.count(targetFuncName) || m_externalDeclares.count(toLower(targetFuncName)) ||
+                m_externalDeclares.count(rawTargetName) || m_externalDeclares.count(toLower(rawTargetName)) ||
+                m_externalDeclares.count(call->funcName) || m_externalDeclares.count(toLower(call->funcName))) {
+                isDeclareCallee = true;
+            }
         }
 
         std::string normClass = prefixClass;
         for (auto& ch : normClass) if (ch == '.') ch = '_';
-        bool isClassSingletonCall = (!isDeclareCallee && !prefixClass.empty() && 
+        // Do NOT treat as singleton call when calling a method within the same class scope —
+        // those use the implicit Me pointer (branch 2), not a global singleton.
+        std::string normScopeClass = m_currentScopeClass;
+        for (auto& ch : normScopeClass) if (ch == '.') ch = '_';
+        bool isSelfClassCall = (!m_currentScopeClass.empty() && call->calleeExpr == nullptr &&
+            (toLower(prefixClass) == toLower(m_currentScopeClass) ||
+             toLower(normClass) == toLower(normScopeClass)));
+        bool isClassSingletonCall = (!isDeclareCallee && !prefixClass.empty() && !isSelfClassCall &&
             (m_classSingletons.count(prefixClass) || m_classSingletons.count(toLower(prefixClass)) ||
              m_classSingletons.count(normClass) || m_classSingletons.count(toLower(normClass)) ||
              m_classInstancing.count(prefixClass) || m_classInstancing.count(toLower(prefixClass)) ||
@@ -6976,7 +7043,10 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
             args.push_back(thisPtr);
         } else if (!isDeclareCallee && !call->calleeExpr && !m_currentScopeClass.empty() && m_namedValues.count("Me") &&
                    (callee->getFunctionType()->getNumParams() >= call->args.size() + 1 || isParamArrayEarly)) {
-            args.push_back(m_namedValues["Me"]);
+            // Load the actual Me pointer from its alloca (m_namedValues["Me"] is AllocaInst*, not the ptr itself)
+            llvm::Value* meAlloca = m_namedValues["Me"];
+            llvm::Value* meVal = m_builder->CreateLoad(llvm::PointerType::get(*m_context, 0), meAlloca, "me.this");
+            args.push_back(meVal);
         } else if (isClassSingletonCall && (callee->getFunctionType()->getNumParams() >= call->args.size() + 1 || isParamArrayEarly)) {
             auto sIt = m_classSingletons.find(prefixClass);
             if (sIt == m_classSingletons.end()) sIt = m_classSingletons.find(toLower(prefixClass));
@@ -7223,6 +7293,7 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
                 m_hadError = true;
                 return nullptr;
             }
+
         }
 
         return m_builder->CreateCall(callee, args);
@@ -7715,6 +7786,15 @@ llvm::Function* LlvmEmitter::emitProcedure(const ProcedureNode& procNode, const 
     }
 
     if (procNode.isDeclare) {
+        // Track as true external Declare (never takes implicit Me / singleton pointer at call sites)
+        m_externalDeclares.insert(procNode.name);
+        m_externalDeclares.insert(toLower(procNode.name));
+        m_externalDeclares.insert(mangledName);
+        m_externalDeclares.insert(toLower(mangledName));
+        if (!procNode.aliasName.empty()) {
+            m_externalDeclares.insert(procNode.aliasName);
+            m_externalDeclares.insert(toLower(procNode.aliasName));
+        }
         return func;
     }
 
@@ -7903,9 +7983,12 @@ bool LlvmEmitter::emitModule(const ModuleNode& moduleNode) {
         );
     }
     // 1. Emit Enums
+    // Use module name as namespace prefix for qualified enum constant registration
+    // (e.g. "Sched" for TaskTypes.bas in Namespace Sched, so STATE_READY is accessible as Sched.ThreadState.STATE_READY)
+    std::string enumNsPrefix = moduleNode.isNamespace ? moduleNode.name : "";
     for (const auto& member : moduleNode.members) {
         if (auto en = dynamic_cast<const EnumNode*>(member.get())) {
-            emitEnum(*en);
+            emitEnum(*en, enumNsPrefix);
         }
     }
 

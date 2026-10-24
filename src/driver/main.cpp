@@ -114,8 +114,16 @@ static std::string toLowerStr(const std::string& str) {
     return lower;
 }
 
-// Global project module catalog: ModuleName -> FilePath
-static std::unordered_map<std::string, std::string> g_moduleFileIndex;
+// Global project module catalog: ModuleName -> [FilePaths]
+// Multiple files can share the same namespace name (e.g. TaskTypes.bas and Scheduler.cls both declare Namespace Sched)
+static std::unordered_map<std::string, std::vector<std::string>> g_moduleFileIndex;
+
+// Push a file into the index for a given key, avoiding duplicates
+static void indexAdd(const std::string& key, const std::string& path) {
+    auto& vec = g_moduleFileIndex[key];
+    for (const auto& p : vec) { if (p == path) return; }
+    vec.push_back(path);
+}
 static std::vector<std::string> g_includeDirs;
 
 static std::string resolveImportPath(const llbc::ImportDirective& imp, const std::string& currentFilePath) {
@@ -141,7 +149,12 @@ static std::string resolveImportPath(const llbc::ImportDirective& imp, const std
         std::string lowerMod = toLowerStr(imp.moduleName);
         auto it = g_moduleFileIndex.find(lowerMod);
         if (it != g_moduleFileIndex.end()) {
-            return it->second;
+            // Return first entry that isn't the current file (avoids self-import)
+            for (const auto& candidate : it->second) {
+                if (candidate != currentFilePath) return candidate;
+            }
+            // Fallback: all entries are self — return first anyway
+            if (!it->second.empty()) return it->second.front();
         }
 
         // Try candidate filenames in current directory and include directories
@@ -199,22 +212,18 @@ static std::shared_ptr<llbc::ModuleNode> getOrParseModule(const std::string& sou
         g_parsedModules[sourcePath] = mod;
 
         std::string modNameLower = toLowerStr(mod->name);
-        g_moduleFileIndex[modNameLower] = sourcePath;
+        indexAdd(modNameLower, sourcePath);
 
         // Also index short name if dotted (e.g. "Gdt" for "Arch.X86_64.Gdt")
         size_t lastDot = modNameLower.rfind('.');
         if (lastDot != std::string::npos && lastDot + 1 < modNameLower.size()) {
             std::string shortName = modNameLower.substr(lastDot + 1);
-            if (g_moduleFileIndex.find(shortName) == g_moduleFileIndex.end()) {
-                g_moduleFileIndex[shortName] = sourcePath;
-            }
+            indexAdd(shortName, sourcePath);
         }
         // Also index namespace prefix if applicable (e.g. "Arch.X86_64")
         if (lastDot != std::string::npos) {
             std::string nsPrefix = modNameLower.substr(0, lastDot);
-            if (g_moduleFileIndex.find(nsPrefix) == g_moduleFileIndex.end()) {
-                g_moduleFileIndex[nsPrefix] = sourcePath;
-            }
+            indexAdd(nsPrefix, sourcePath);
         }
 
         std::function<void(const std::shared_ptr<llbc::ModuleNode>&)> indexInner = [&](const std::shared_ptr<llbc::ModuleNode>& m) {
@@ -222,22 +231,20 @@ static std::shared_ptr<llbc::ModuleNode> getOrParseModule(const std::string& sou
             for (const auto& member : m->members) {
                 if (auto iface = dynamic_cast<const llbc::InterfaceNode*>(member.get())) {
                     std::string ifLower = toLowerStr(iface->name);
-                    g_moduleFileIndex[ifLower] = sourcePath;
+                    indexAdd(ifLower, sourcePath);
                     if (!m->name.empty() && ifLower.find('.') == std::string::npos) {
-                        g_moduleFileIndex[toLowerStr(m->name + "." + iface->name)] = sourcePath;
+                        indexAdd(toLowerStr(m->name + "." + iface->name), sourcePath);
                     }
                 }
             }
             for (const auto& inMod : m->innerModules) {
                 if (!inMod) continue;
                 std::string inLower = toLowerStr(inMod->name);
-                g_moduleFileIndex[inLower] = sourcePath;
+                indexAdd(inLower, sourcePath);
                 size_t d = inLower.rfind('.');
                 if (d != std::string::npos && d + 1 < inLower.size()) {
                     std::string sName = inLower.substr(d + 1);
-                    if (g_moduleFileIndex.find(sName) == g_moduleFileIndex.end()) {
-                        g_moduleFileIndex[sName] = sourcePath;
-                    }
+                    indexAdd(sName, sourcePath);
                 }
                 indexInner(inMod);
             }
@@ -259,7 +266,7 @@ static bool resolveDependencies(
     for (const auto& f : entryFiles) {
         auto mod = getOrParseModule(f);
         if (mod) {
-            g_moduleFileIndex[toLowerStr(mod->name)] = f;
+            indexAdd(toLowerStr(mod->name), f);
         }
     }
 
@@ -303,14 +310,14 @@ static bool resolveDependencies(
                     ? (useDir.containerPath + "." + useDir.targetPath)
                     : useDir.targetPath;
                 auto it = g_moduleFileIndex.find(toLowerStr(targetModName));
-                if (it != g_moduleFileIndex.end()) {
-                    targetFilePath = it->second;
+                if (it != g_moduleFileIndex.end() && !it->second.empty()) {
+                    targetFilePath = it->second.front();
                 } else if (!useDir.containerPath.empty()) {
                     auto it2 = g_moduleFileIndex.find(toLowerStr(useDir.containerPath));
-                    if (it2 != g_moduleFileIndex.end()) targetFilePath = it2->second;
+                    if (it2 != g_moduleFileIndex.end() && !it2->second.empty()) targetFilePath = it2->second.front();
                 } else {
                     auto it3 = g_moduleFileIndex.find(toLowerStr(useDir.targetPath));
-                    if (it3 != g_moduleFileIndex.end()) targetFilePath = it3->second;
+                    if (it3 != g_moduleFileIndex.end() && !it3->second.empty()) targetFilePath = it3->second.front();
                 }
             }
             if (!targetFilePath.empty() && !visited.count(targetFilePath)) {
@@ -356,7 +363,7 @@ static std::string compileSourceFile(
                     irEmitter.emitStructure(qualSt);
                 }
             } else if (auto en = dynamic_cast<const llbc::EnumNode*>(member.get())) {
-                irEmitter.emitEnum(*en);
+                irEmitter.emitEnum(*en, m->name);
             }
         }
         for (const auto& inMod : m->innerModules) {
@@ -445,7 +452,7 @@ static std::string compileSourceFile(
                 // Import Enums
                 if (auto en = dynamic_cast<const llbc::EnumNode*>(member.get())) {
                     if (en->isPublic && (imp.symbolName.empty() || imp.symbolName == en->name)) {
-                        irEmitter.emitEnum(*en);
+                        irEmitter.emitEnum(*en, curMod->name);
                     }
                 }
                 // Import Structures & Unions
@@ -473,6 +480,7 @@ static std::string compileSourceFile(
                         if (matchSymbol) {
                             std::vector<llbc::TypeSpec> pTypes;
                             std::vector<bool> paramByRefs;
+
                             if (curMod->isClass) {
                                 pTypes.push_back(llbc::TypeSpec{curMod->name, 1}); // Me pointer
                                 paramByRefs.push_back(false);
@@ -545,14 +553,14 @@ static std::string compileSourceFile(
             }
         } else {
             auto it = g_moduleFileIndex.find(toLowerStr(targetModName));
-            if (it != g_moduleFileIndex.end()) {
-                targetFilePath = it->second;
+            if (it != g_moduleFileIndex.end() && !it->second.empty()) {
+                targetFilePath = it->second.front();
             } else if (!useDir.containerPath.empty()) {
                 auto it2 = g_moduleFileIndex.find(toLowerStr(useDir.containerPath));
-                if (it2 != g_moduleFileIndex.end()) targetFilePath = it2->second;
+                if (it2 != g_moduleFileIndex.end() && !it2->second.empty()) targetFilePath = it2->second.front();
             } else {
                 auto it3 = g_moduleFileIndex.find(toLowerStr(useDir.targetPath));
-                if (it3 != g_moduleFileIndex.end()) targetFilePath = it3->second;
+                if (it3 != g_moduleFileIndex.end() && !it3->second.empty()) targetFilePath = it3->second.front();
             }
         }
 
@@ -621,7 +629,7 @@ static std::string compileSourceFile(
             for (const auto& member : curMod->members) {
                 if (auto en = dynamic_cast<const llbc::EnumNode*>(member.get())) {
                     if (en->isPublic) {
-                        irEmitter.emitEnum(*en);
+                        irEmitter.emitEnum(*en, curMod->name);
                     }
                 } else if (auto st = dynamic_cast<const llbc::StructureNode*>(member.get())) {
                     irEmitter.emitStructure(*st);

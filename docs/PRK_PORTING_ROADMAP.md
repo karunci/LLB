@@ -279,12 +279,38 @@ tests/kernel/
 
 ---
 
-## 5. Next Steps: Phase 6 (Preemptive Scheduler, Task Context & IPC)
-1. **`src/arch/x86_64/CpuContext.cls` & Task State:**
-   - Integrate TSS RSP0 switching per-task and save/restore general-purpose register frames.
-2. **`src/sched/Task.cls` & `src/sched/Scheduler.cls`:**
-   - Round-robin preemptive scheduler driven by APIC Timer interrupts (Vector 32).
-3. **`src/ipc/MessageQueue.cls`:**
+### Phase 6: Preemptive Scheduler, Task Context & TCB
+- [x] **`src/arch/x86_64/CpuContext.cls` (Namespace `Arch.X86_64` / `<Instancing(MultiUse)> Class CpuContext`):**
+  - Per-CPU context holding saved register frame, APIC ID, kernel stack base, and current task pointer.
+- [x] **`src/sched/TaskTypes.bas` (Namespace `Sched` / `Module TaskRoutines`):**
+  - `<Packed> Structure TaskControlBlock` (TCB): PID, PPID, `ThreadState`, `ThreadType`, priority, wake-up timestamp, CPU ticks, signal bitmask, CR3 root, kernel stack base, `ContextRsp`, and circular linked-list `NextTask` pointer.
+  - `Enum ThreadState` (`STATE_READY=0`, `STATE_RUNNING=1`, `STATE_BLOCKED=2`, `STATE_TERMINATED=3`).
+  - `Enum ThreadType` (`TYPE_RTOS=0`, `TYPE_GPOS=1`).
+  - `Unsafe Sub CpuIdleLoop()`: Infinite `sti/hlt` idle loop for when the runqueue is empty (mirrors PRK `cpu_idle_loop()`).
+- [x] **`src/sched/TaskControlBlock.cls` (Namespace `Sched` / `<Instancing(SingleUse)> Class TaskControlBlock`):**
+  - Factory and lifecycle manager for TCB allocation (`KMalloc`), initialization, and destruction (`KFree`).
+  - `Function CreateTask(...)`: Allocates and initializes a TCB node; wires `NextTask` pointer into circular list.
+  - `Sub DestroyTask(...)`: Releases TCB memory and delinks from the circular list.
+- [x] **`src/sched/Scheduler.cls` (Namespace `Sched` / `<Instancing(SingleUse)> Class Scheduler`):**
+  - Round-robin preemptive scheduler driven by APIC Timer interrupts.
+  - `Sub Initialize()`: Creates kernel idle task pointing to `Sched_TaskRoutines_CpuIdleLoop`, sets up synthetic kernel stack frame via `SetupSyntheticStack`.
+  - `Sub CreateKernelThread(name, entry, priority)`: Allocates TCB, sets up synthetic context switch frame, inserts into runqueue.
+  - `Sub Yield()` / `Sub Sleep(ms)`: Voluntarily yields or blocks the current task.
+  - `Sub OnTimerTick()`: Called from APIC Timer ISR; advances `CpuTicks`, unblocks tasks past `WakeUptime`, calls `SchedYieldInternal`.
+  - `Function GetCurrentPid() As UInt64`: Returns PID of currently running task.
+  - External `Declare Sub switch_context(prev, next)` implemented in `boot.S` assembly.
+- [x] **LLBC Compiler Fixes (required to compile Phase 6):**
+  - **Enum namespace qualification**: `emitEnum` now registers fully-qualified keys (`Sched.ThreadState.STATE_READY`) in `m_enumConstants` for cross-module access via dotted names.
+  - **AddressOf dotted function resolution**: `@Sched.TaskRoutines.CpuIdleLoop` now reconstructs the dotted name, looks up the mangled alias (`Sched_TaskRoutines_CpuIdleLoop`), and resolves the function pointer correctly.
+  - **Implicit Me field AddressOf**: `@schedLock` inside a class method correctly GEPs into the `Me` struct for spinlock address-passing.
+  - **Namespace file index (multi-map)**: `g_moduleFileIndex` upgraded from `unordered_map<string,string>` to `unordered_map<string,vector<string>>` with a deduplicating `indexAdd()` helper. `Import Sched` inside `Scheduler.cls` (itself `Namespace Sched`) no longer resolves to itself — it skips the current file and finds `TaskTypes.bas`, correctly importing `Sched.TaskRoutines.CpuIdleLoop`.
+  - **External declare guard**: `m_externalDeclares` is now populated only for true `Declare Function/Sub` AST nodes (not for intra-class forward declarations), preventing false external procedure shadowing.
+- [x] **Verified:** All 25 kernel modules compile cleanly with `llbc-stage0`. `kernel.elf` links successfully (ELF 64-bit, x86-64, statically linked). Key symbols confirmed in symbol table: `Sched_TaskRoutines_CpuIdleLoop`, `Sched_Scheduler_Initialize`, `Sched_Scheduler_CreateKernelThread`, `switch_context`.
+
+---
+
+## 5. Next Steps: Phase 7 (IPC & Framebuffer)
+1. **`src/ipc/MessageQueue.cls`:**
    - Synchronous and asynchronous port-based messaging queues.
-4. **`src/drivers/Framebuffer.cls`:**
+2. **`src/drivers/Framebuffer.cls`:**
    - High-resolution linear framebuffer console driver.

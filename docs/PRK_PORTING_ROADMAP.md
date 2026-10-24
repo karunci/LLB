@@ -330,6 +330,12 @@ tests/kernel/
   - Work-stealing engine (`StealTask(thisCpu)`): idle cores inspect peer cores' `gposQueueHeads`, atomically steal runnable tasks (`STATE_READY`), and balance SMP execution load without race conditions.
   - Per-core context switching: `SchedYieldInternal` updates caller core's TSS RSP0 and switches hardware state via `switch_context`.
 - [x] **Verified:** Clean build of all kernel source modules. `kernel.elf` statically links without warnings or duplicate symbols. Confirmed symbols: `Arch_Smp_InitCores`, `Arch_Smp_ApMain`, `Arch_X86_64_Gdt_InitializeCore`, `Arch_X86_64_Gdt_GetCpuId`, `Sched_Scheduler_ApEnter`, `Sched_Scheduler_StealTask`, `Sched_Scheduler_CreateKernelThread`.
+- [x] **x2APIC MSR & IPI Support:**
+  - Implemented unified `SendIpi` in `Arch.X86_64.Apic` handling 64-bit `IA32_X2APIC_ICR` MSR (`0x830`, target ID in bits 63:32) when x2APIC is active, and MMIO ICR (`0x300`/`0x310`) in legacy mode.
+  - Verified with QEMU `-cpu max -smp 4`: all 4 cores detected x2APIC and successfully completed AP bootstrap and scheduler bringup.
+- [x] **Hybrid BIOS & UEFI ISO Generator (`tests/kernel/scripts/build_iso.sh`):**
+  - Proot-distro Ubuntu container setup using dynamic `$HOME:$HOME` binding and `grub-mkrescue` with x86_64 EFI modules.
+  - Generates bootable `tests/kernel/build/kernel.iso` verified in QEMU and compatible with real bare-metal (Intel Core i5-10310U via Ventoy).
 
 ---
 

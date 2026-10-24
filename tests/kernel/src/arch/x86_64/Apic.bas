@@ -137,6 +137,29 @@ Module Arch.X86_64.Apic
     End Function
 
     ''
+    ' @brief Send an Inter-Processor Interrupt (IPI).
+    '        In x2APIC mode, writes 64-bit MSR 0x830 (destination APIC ID in bits 63:32, command in bits 31:0).
+    '        In MMIO mode, polls delivery status, writes target ID to 0x310, and flags to 0x300.
+    '        Mirrors PRK lapic_send_ipi().
+    ' @param targetApicId Physical APIC ID of destination core.
+    ' @param vectorFlags  ICR command flags (delivery mode, vector, assert).
+    ''
+    Public Unsafe Sub SendIpi(ByVal targetApicId As UInt32, ByVal vectorFlags As UInt32)
+        If x2ApicActive Then
+            Dim icr As UInt64 = (CType(UInt64, targetApicId) LShift 32) Or CType(UInt64, vectorFlags)
+            WrMsr X2APIC_MSR_BASE + &H30, icr
+        Else
+            Dim timeout As UInt32 = 100000
+            While ((LapicRead(&H300) And &H1000) <> 0) And timeout > 0
+                Asm "pause" : : : "memory"
+                timeout = timeout - 1
+            Wend
+            LapicWrite &H310, targetApicId LShift 24
+            LapicWrite &H300, vectorFlags
+        End If
+    End Sub
+
+    ''
     ' @brief Initialize Local APIC on BSP core.
     '        Detects x2APIC via CPUID ECX bit 21 (mirrors PRK apic_init).
     '        Upgrades from MMIO to MSR interface if x2APIC is supported.

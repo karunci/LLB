@@ -41,23 +41,12 @@ Module Arch.Smp
     End Sub
 
     ''
-    ' @brief Send an IPI using LAPIC ICR registers.
-    '        Matches PRK lapic_send_ipi() MMIO path (x2APIC handled in Apic.bas).
+    ' @brief Send an IPI using LAPIC ICR registers (delegates to Apic.SendIpi).
     ' @param targetApicId Physical APIC ID of the destination core.
     ' @param vectorFlags  ICR command word (delivery mode | vector).
     ''
     Public Unsafe Sub SendIpi(ByVal targetApicId As UInt32, ByVal vectorFlags As UInt32)
-        ' Wait for ICR send-pending (bit 12) to clear before writing
-        Dim timeout As UInt32 = 100000
-        While ((Arch.X86_64.Apic.LapicRead(&H300) And &H1000) <> 0) And timeout > 0
-            Asm "pause" : : : "memory"
-            timeout = timeout - 1
-        Wend
-
-        ' Write destination APIC ID into ICR_HIGH (bits 31:24)
-        Arch.X86_64.Apic.LapicWrite &H310, targetApicId LShift 24
-        ' Write command into ICR_LOW (triggers send)
-        Arch.X86_64.Apic.LapicWrite &H300, vectorFlags
+        Arch.X86_64.Apic.SendIpi targetApicId, vectorFlags
     End Sub
 
     ''

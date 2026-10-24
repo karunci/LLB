@@ -1,7 +1,8 @@
 ' Project Name: PRK (Personal Research Kernel) / Low-Level Basic (LLB)
 ' Filename: tests/kernel/src/arch/x86_64/Acpi.bas
-' Summary: ACPI Parser - reads RSDP from Multiboot2 tag (type 14/15), then parses
-'          RSDT/XSDT to extract MADT (CPU topology, LAPIC, IO-APIC) and FADT (power).
+' Summary: ACPI Parser - reads RSDP from Multiboot2 tag (type 14/15) with BIOS-range
+'          fallback scan (0xE0000-0xFFFFF) for MB1 boots, then parses RSDT/XSDT to
+'          extract MADT (CPU topology, LAPIC, IO-APIC) and FADT (power).
 
 Module Arch.Acpi
 
@@ -17,13 +18,13 @@ Module Arch.Acpi
     Public Structure RsdpDescriptor
         Public Signature As UInt64        ' "RSD PTR " (8 bytes)
         Public Checksum As Byte
-        Public OemId(5) As Byte
+        Public OemId(6) As Byte           ' 6 bytes OEM ID
         Public Revision As Byte           ' 0 = ACPI 1.0, 2 = ACPI 2.0+
         Public RsdtAddress As UInt32      ' Physical address of RSDT
         Public Length As UInt32
         Public XsdtAddress As UInt64      ' Physical address of XSDT (64-bit)
         Public ExtendedChecksum As Byte
-        Public Reserved(2) As Byte
+        Public Reserved(3) As Byte        ' 3 bytes reserved
     End Structure
 
     <Packed>
@@ -32,7 +33,7 @@ Module Arch.Acpi
         Public Length As UInt32
         Public Revision As Byte
         Public Checksum As Byte
-        Public OemId(5) As Byte
+        Public OemId(6) As Byte           ' 6 bytes OEM ID
         Public OemTableId As UInt64
         Public OemRevision As UInt32
         Public CreatorId As UInt32
@@ -134,15 +135,75 @@ Module Arch.Acpi
     End Function
 
     ''
-    ' @brief Initialize ACPI: find RSDP via MBI tags, parse RSDT/XSDT, extract MADT and FADT.
+    ' @brief Inner helper: scan [scanStart, scanLimit) for a valid RSDP candidate.
+    '        Accepts only Rev 0-2 with a sane RSDT address below 0xFF000000.
+    ' @param scanStart Start of the memory region to scan.
+    ' @param scanLimit Exclusive end of the region.
+    ' @return Physical address of RSDP if found, 0 otherwise.
+    ''
+    Private Unsafe Function ScanRsdpRegion(ByVal scanStart As UInt64, ByVal scanLimit As UInt64) As UInt64
+        Dim RSD_SIGNATURE As UInt64 = &H2052545020445352  ' "RSD PTR " LE
+        Dim addr As UInt64 = scanStart
+        While addr < scanLimit
+            Dim sigPtr As Volatile Pointer To UInt64 = CPtr(Volatile Pointer To UInt64, addr)
+            If sigPtr(0) = RSD_SIGNATURE Then
+                Dim revPtr  As Volatile Pointer To Byte   = CPtr(Volatile Pointer To Byte,   addr)
+                Dim rsdtPtr As Volatile Pointer To UInt32 = CPtr(Volatile Pointer To UInt32, addr + 16)
+                Dim rev  As Byte   = revPtr(15)   ' Revision at RSDP byte offset 15
+                Dim rsdt As UInt32 = rsdtPtr(0)   ' RsdtAddress at RSDP byte offset 16
+
+                ' Sanity: valid revision, non-zero RSDT, below MMIO boundary
+                If rev <= 2 And rsdt <> 0 And rsdt < &HFF000000 Then
+                    Dim rsdpLen As UInt32 = 20
+                    If rev >= 2 Then rsdpLen = 36
+                    If VerifyChecksum(addr, rsdpLen) Then
+                        ScanRsdpRegion = addr
+                        Exit Function
+                    End If
+                End If
+            End If
+            addr = addr + 16  ' RSDP is always 16-byte aligned
+        Wend
+        ScanRsdpRegion = 0
+    End Function
+
+    ''
+    ' @brief Fallback: scan EBDA (0x80000-0x9FFFF) then BIOS ROM (0xE0000-0xFFFFF)
+    '        for the "RSD PTR " signature. Used when MB1 bootloader does not provide
+    '        ACPI MBI tags (types 14/15).
+    ' @return True if a valid RSDP was found and rsdpPhys was set.
+    ''
+    Private Unsafe Function LocateRsdpInBiosRange() As Boolean
+        ' Try EBDA first (QEMU -kernel places ACPI tables here)
+        Dim found As UInt64 = ScanRsdpRegion(&H80000, &HA0000)
+        If found = 0 Then
+            ' Fallback to BIOS ROM region
+            found = ScanRsdpRegion(&HE0000, &H100000)
+        End If
+
+        If found <> 0 Then
+            rsdpPhys = found
+            LocateRsdpInBiosRange = True
+        Else
+            LocateRsdpInBiosRange = False
+        End If
+    End Function
+
+    ''
+    ' @brief Initialize ACPI: find RSDP via MBI tags (MB2) or BIOS range scan (MB1
+    '        fallback), then parse RSDT/XSDT to extract MADT and FADT.
     ' @param mbAddress Physical address of the Multiboot2 info structure passed by bootloader.
     ''
     Public Unsafe Sub Initialize(ByVal mbAddress As UInt64)
         Sync.SpinlockOps.Init acpiLock
 
         If Not LocateRsdpFromMbi(mbAddress) Then
-            Serial.PrintF "[ACPI] Warning: RSDP not found in MBI tags.\r\n"
-            Exit Sub
+            Serial.PrintF "[ACPI] MBI RSDP not found; scanning BIOS range 0xE0000-0xFFFFF...\r\n"
+            If Not LocateRsdpInBiosRange() Then
+                Serial.PrintF "[ACPI] Error: RSDP not found. Defaulting to 1 CPU.\r\n"
+                cpuCount = 1
+                Exit Sub
+            End If
         End If
 
         Dim rsdp As Volatile Pointer To RsdpDescriptor = CPtr(Volatile Pointer To RsdpDescriptor, rsdpPhys)

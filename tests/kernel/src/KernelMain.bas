@@ -25,6 +25,7 @@ Module KernelMain
     Use Mem.KernelHeap As KHeap
     Use Arch.Power.PowerManager As Power
     Use Sys.HardwareInfo As HwInfo
+    Use Sched.Scheduler As SchedEngine
 
     ' LibLLB_Metal Static Library Declarations
     Public Declare Function ToHex Lib "libllb_metal" (ByVal value As UInt64, ByVal outBuf As Pointer To Byte, ByVal prefix As Boolean) As UInt32
@@ -181,28 +182,6 @@ Module KernelMain
         Serial.PrintF "[PRK] Querying CPU Hardware Info...\r\n"
         HwInfo.DumpCpu
 
-        ' Initialize Application Processor cores (SMP bring-up via INIT-SIPI-SIPI)
-        Serial.PrintF "[PRK] Starting SMP AP bring-up...\r\n"
-        Arch.Smp.InitCores
-
-        ' Demonstrate Color Formatting
-        Term.SetColor Term.COLOR_LIGHT_RED
-        Term.WriteLine CPtr(Pointer To Byte, "[ERROR] Demonstrating red text formatting.")
-
-        Term.SetColor Term.COLOR_LIGHT_MAGENTA
-        Term.WriteLine CPtr(Pointer To Byte, "[INFO] Demonstrating magenta text formatting.")
-
-        Term.SetColor Term.COLOR_LIGHT_BROWN
-        Term.WriteLine CPtr(Pointer To Byte, "[WARN] Demonstrating auto-scrolling terminal...")
-        Term.WriteChar 10
-
-        ' Demonstrate scrolling with a few lines so the banner remains visible
-        Term.SetColor Term.COLOR_WHITE
-        Dim i As UInt32
-        For i = 1 To 3
-            Term.PrintF "Log Entry #0x%x - Terminal scrolling line test.\n", i
-        Next i
-
         Serial.PrintF "[PRK] Initializing IDT interrupt descriptors...\r\n"
         Arch.Idt.Initialize
         Serial.PrintF "[PRK] IDT gates registered successfully.\r\n"
@@ -226,6 +205,13 @@ Module KernelMain
         Serial.PrintF "[PRK] Calibrating Local APIC Timer (Vector 32)...\r\n"
         Arch.X86_64.Apic.InitializeTimer 3, &H200000
         Serial.PrintF "[PRK] Local APIC Timer active.\r\n"
+
+        ' Initialize Preemptive Scheduler & Core Runqueues
+        SchedEngine.Initialize
+
+        ' Initialize Application Processor cores (SMP bring-up via INIT-SIPI-SIPI)
+        Serial.PrintF "[PRK] Starting SMP AP bring-up...\r\n"
+        Arch.Smp.InitCores
 
         ' Enable hardware interrupts on CPU
         Arch.X86_64.PortIO.Sti

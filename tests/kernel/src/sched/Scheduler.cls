@@ -1,11 +1,14 @@
 ' Project Name: PRK (Personal Research Kernel) / Low-Level Basic (LLB)
 ' Filename: tests/kernel/src/sched/Scheduler.cls
-' Summary: Multitasking scheduler managing circular runqueues, priority aging,
-'          and hardware context switching. Ports PRK kernel/sched.c.
+' Summary: SMP-aware multitasking scheduler managing per-CPU circular runqueues,
+'          priority aging, work-stealing, and hardware context switching.
+'          Ports PRK kernel/sched.c.
 
 Import Sync
 Import Sched
 Import Arch.X86_64.Gdt
+Import Arch.X86_64.PortIO
+Import Arch.Acpi
 Use Drivers.SerialUart As Serial
 Use Mem.KernelHeap As KHeap
 
@@ -19,99 +22,25 @@ Public Declare Sub thread_start_trampoline()
 Public Class Scheduler
 
     Public Const KERNEL_STACK_SIZE As UInt32 = 4096
+    Public Const MAX_SCHED_CPUS    As UInt32 = 16
 
     Private schedLock As Sync.Spinlock
     Private masterKernelCr3 As UInt64
-    Private currentTaskAddr As UInt64
-    Private rtosQueueHead As UInt64
-    Private gposQueueHead As UInt64
-    Private idleTaskAddr As UInt64
     Private nextPid As UInt64
     Private systemUptimeMs As UInt64
+    Private targetCoreIndex As UInt32
 
-
-    ''
-    ' @brief Initialize the multitasking scheduler, create BSP boot thread and idle thread.
-    '        Mirrors PRK sched_init().
-    ''
-    Public Unsafe Sub Initialize()
-        Sync.SpinlockOps.Init schedLock
-        nextPid = 1
-        systemUptimeMs = 0
-        currentTaskAddr = 0
-        rtosQueueHead = 0
-        gposQueueHead = 0
-        idleTaskAddr = 0
-
-        ' Capture initial master kernel CR3 root
-        Dim currentCr3 As UInt64 = 0
-        Asm "mov %%cr3, %0" : "=r"(currentCr3)
-        masterKernelCr3 = currentCr3
-
-        Serial.PrintF "[SCHED] Initializing Circular Runqueue Scheduler...\r\n"
-
-        ' 1. Allocate and initialize Boot Task (PID 999) representing currently running KernelEntry
-        Dim bootTcbMem As UInt64 = KHeap.KMalloc(SizeOf(TaskControlBlock))
-        If bootTcbMem = 0 Then
-            Serial.PrintF "[SCHED] Fatal: Failed to allocate TCB for boot task!\r\n"
-            Exit Sub
-        End If
-
-        Dim bootTask As Pointer To TaskControlBlock
-        bootTask = CPtr(Pointer To TaskControlBlock, bootTcbMem)
-        bootTask.Id = 999
-        bootTask.ParentId = 0
-        bootTask.State = Sched.ThreadState.STATE_RUNNING
-        bootTask.TaskType = Sched.ThreadType.TYPE_GPOS
-        bootTask.Priority = 10
-        bootTask.WakeUptime = 0
-        bootTask.CpuTicks = 0
-        bootTask.PendingSignals = 0
-        bootTask.Cr3Root = masterKernelCr3
-        bootTask.KStackBase = KHeap.KMalloc(KERNEL_STACK_SIZE)
-        bootTask.ContextRsp = 0
-        bootTask.Rsp = 0
-        bootTask.NextTask = bootTcbMem
-
-        currentTaskAddr = bootTcbMem
-        gposQueueHead = bootTcbMem
-
-        ' Ensure TSS RSP0 points to the boot thread stack top
-        Dim bootKstackTop As UInt64 = bootTask.KStackBase + CType(UInt64, KERNEL_STACK_SIZE)
-        Arch.X86_64.Gdt.SetKernelStack bootKstackTop
-
-        ' 2. Allocate and initialize Idle Task (PID 0)
-        Dim idleTcbMem As UInt64 = KHeap.KMalloc(SizeOf(TaskControlBlock))
-        If idleTcbMem = 0 Then
-            Serial.PrintF "[SCHED] Fatal: Failed to allocate TCB for idle task!\r\n"
-            Exit Sub
-        End If
-
-        Dim idleTask As Pointer To TaskControlBlock
-        idleTask = CPtr(Pointer To TaskControlBlock, idleTcbMem)
-        idleTask.Id = 0
-        idleTask.ParentId = 0
-        idleTask.State = Sched.ThreadState.STATE_READY
-        idleTask.TaskType = Sched.ThreadType.TYPE_GPOS
-        idleTask.Priority = 0
-        idleTask.WakeUptime = 0
-        idleTask.CpuTicks = 0
-        idleTask.PendingSignals = 0
-        idleTask.Cr3Root = masterKernelCr3
-        idleTask.KStackBase = KHeap.KMalloc(KERNEL_STACK_SIZE)
-        idleTask.NextTask = idleTcbMem
-
-        ' Setup synthetic execution stack for Idle Task
-        SetupSyntheticStack idleTask, @Sched.TaskRoutines.CpuIdleLoop
-
-        idleTaskAddr = idleTcbMem
-
-        Serial.PrintF "[SCHED] Scheduler active. Boot PID: %u, Idle PID: 0\r\n", CType(UInt32, bootTask.Id)
-    End Sub
+    ' Per-CPU Scheduler State (Index 0..MAX_SCHED_CPUS-1)
+    Private currentTaskAddrs(15) As UInt64
+    Private rtosQueueHeads(15)   As UInt64
+    Private gposQueueHeads(15)   As UInt64
+    Private idleTaskAddrs(15)    As UInt64
 
     ''
     ' @brief Helper to construct synthetic call frame on a thread stack for context switching.
     '        Mirrors PRK stack layout in create_kernel_thread.
+    ' @param tcbPtr Pointer to the target TaskControlBlock.
+    ' @param entryPoint Target procedure entry address.
     ''
     Private Unsafe Sub SetupSyntheticStack(ByVal tcbPtr As Pointer To TaskControlBlock, ByVal entryPoint As Pointer To Byte)
         Dim stackTop As UInt64 = (tcbPtr.KStackBase + CType(UInt64, KERNEL_STACK_SIZE)) And (Not CType(UInt64, 15))
@@ -166,7 +95,152 @@ Public Class Scheduler
     End Sub
 
     ''
-    ' @brief Create a kernel thread and insert it into the appropriate circular runqueue.
+    ' @brief Allocate and configure a dedicated idle task for a specific core.
+    ' @param cpuId Target CPU core index.
+    ' @return Address of the allocated idle TCB.
+    ''
+    Private Unsafe Function CreateIdleTaskForCore(ByVal cpuId As UInt32) As UInt64
+        Dim idleTcbMem As UInt64 = KHeap.KMalloc(SizeOf(TaskControlBlock))
+        If idleTcbMem = 0 Then
+            Serial.PrintF "[SCHED] Fatal: Failed to allocate idle task for core %d!\r\n", cpuId
+            CreateIdleTaskForCore = 0
+            Exit Function
+        End If
+
+        Dim idleTask As Pointer To TaskControlBlock = CPtr(Pointer To TaskControlBlock, idleTcbMem)
+        idleTask.Id = 0
+        idleTask.ParentId = 0
+        idleTask.State = Sched.ThreadState.STATE_READY
+        idleTask.TaskType = Sched.ThreadType.TYPE_GPOS
+        idleTask.Priority = 0
+        idleTask.WakeUptime = 0
+        idleTask.CpuTicks = 0
+        idleTask.PendingSignals = 0
+        idleTask.Cr3Root = masterKernelCr3
+        idleTask.KStackBase = KHeap.KMalloc(KERNEL_STACK_SIZE)
+        idleTask.NextTask = idleTcbMem
+
+        SetupSyntheticStack idleTask, @Sched.TaskRoutines.CpuIdleLoop
+
+        CreateIdleTaskForCore = idleTcbMem
+    End Function
+
+    ''
+    ' @brief Initialize the multitasking scheduler, create BSP boot thread and idle threads.
+    '        Mirrors PRK sched_init().
+    ''
+    Public Unsafe Sub Initialize()
+        Sync.SpinlockOps.Init schedLock
+        nextPid = 1
+        systemUptimeMs = 0
+        targetCoreIndex = 0
+
+        ' Clear per-CPU runqueue tracking
+        Dim c As UInt32
+        For c = 0 To 15
+            currentTaskAddrs(c) = 0
+            rtosQueueHeads(c) = 0
+            gposQueueHeads(c) = 0
+            idleTaskAddrs(c) = 0
+        Next c
+
+        ' Capture initial master kernel CR3 root
+        Dim currentCr3 As UInt64 = 0
+        Asm "mov %%cr3, %0" : "=r"(currentCr3)
+        masterKernelCr3 = currentCr3
+
+        Serial.PrintF "[SCHED] Initializing SMP Circular Runqueue Scheduler...\r\n"
+
+        ' 1. Allocate and initialize Boot Task (PID 999) on BSP (Core 0)
+        Dim bootTcbMem As UInt64 = KHeap.KMalloc(SizeOf(TaskControlBlock))
+        If bootTcbMem = 0 Then
+            Serial.PrintF "[SCHED] Fatal: Failed to allocate TCB for boot task!\r\n"
+            Exit Sub
+        End If
+
+        Dim bootTask As Pointer To TaskControlBlock = CPtr(Pointer To TaskControlBlock, bootTcbMem)
+        bootTask.Id = 999
+        bootTask.ParentId = 0
+        bootTask.State = Sched.ThreadState.STATE_RUNNING
+        bootTask.TaskType = Sched.ThreadType.TYPE_GPOS
+        bootTask.Priority = 10
+        bootTask.WakeUptime = 0
+        bootTask.CpuTicks = 0
+        bootTask.PendingSignals = 0
+        bootTask.Cr3Root = masterKernelCr3
+        bootTask.KStackBase = KHeap.KMalloc(KERNEL_STACK_SIZE)
+        bootTask.ContextRsp = 0
+        bootTask.Rsp = 0
+        bootTask.NextTask = bootTcbMem
+
+        currentTaskAddrs(0) = bootTcbMem
+        gposQueueHeads(0) = bootTcbMem
+
+        ' Ensure Core 0 TSS RSP0 points to the boot thread stack top
+        Dim bootKstackTop As UInt64 = bootTask.KStackBase + CType(UInt64, KERNEL_STACK_SIZE)
+        Arch.X86_64.Gdt.SetKernelStackForCore 0, bootKstackTop
+
+        ' 2. Create idle task for Core 0 (BSP)
+        idleTaskAddrs(0) = CreateIdleTaskForCore(0)
+
+        ' 3. Pre-create idle tasks for AP cores so they are immediately available
+        For c = 1 To 15
+            idleTaskAddrs(c) = CreateIdleTaskForCore(c)
+        Next c
+
+        Serial.PrintF "[SCHED] Scheduler active. Boot PID: %u, Idle PID: 0\r\n", CType(UInt32, bootTask.Id)
+    End Sub
+
+    ''
+    ' @brief Application Processor (AP) core entry into the scheduler.
+    '        Sets active task to this core's idle thread and enters yield loop.
+    '        Mirrors PRK kernel/smp.c ap_main scheduler handoff.
+    ' @param cpuId Logical ID of the AP core.
+    ''
+    Public Unsafe Sub ApEnter(ByVal cpuId As UInt32)
+        If cpuId >= MAX_SCHED_CPUS Then Exit Sub
+
+        Dim idleMem As UInt64 = idleTaskAddrs(cpuId)
+        If idleMem = 0 Then
+            idleMem = CreateIdleTaskForCore(cpuId)
+            idleTaskAddrs(cpuId) = idleMem
+        End If
+
+        Dim idleTask As Pointer To TaskControlBlock = CPtr(Pointer To TaskControlBlock, idleMem)
+        idleTask.State = Sched.ThreadState.STATE_RUNNING
+        currentTaskAddrs(cpuId) = idleMem
+
+        Dim idleKstackTop As UInt64 = idleTask.KStackBase + CType(UInt64, KERNEL_STACK_SIZE)
+        Arch.X86_64.Gdt.SetKernelStackForCore cpuId, idleKstackTop
+
+        Serial.PrintF "[SCHED] AP Core #%d online: idle task ready. Enabling interrupts...\r\n", cpuId
+
+        ' Enable hardware interrupts on AP and start cooperative yield loop
+        Arch.X86_64.PortIO.Sti
+        Do
+            Yield
+            Asm "sti\n\thlt" : : : "memory"
+        Loop
+    End Sub
+
+    ''
+    ' @brief Determine target core for scheduling new threads via round-robin.
+    '        Mirrors PRK get_next_target_core().
+    ' @return Logical CPU index to receive the new thread.
+    ''
+    Private Function GetNextTargetCore() As UInt32
+        Dim onlineCores As UInt32 = Arch.Acpi.GetCpuCount()
+        If onlineCores = 0 Or onlineCores > MAX_SCHED_CPUS Then
+            onlineCores = 1
+        End If
+
+        Dim target As UInt32 = targetCoreIndex Mod onlineCores
+        targetCoreIndex = targetCoreIndex + 1
+        GetNextTargetCore = target
+    End Function
+
+    ''
+    ' @brief Create a new kernel thread and enqueue it into a core's runqueue.
     '        Mirrors PRK create_kernel_thread().
     ' @param entryPoint Address of subroutine to execute.
     ' @param taskType ThreadType (RTOS or GPOS).
@@ -181,8 +255,7 @@ Public Class Scheduler
             Exit Function
         End If
 
-        Dim thread As Pointer To TaskControlBlock
-        thread = CPtr(Pointer To TaskControlBlock, tcbMem)
+        Dim thread As Pointer To TaskControlBlock = CPtr(Pointer To TaskControlBlock, tcbMem)
 
         Dim flags As UInt64 = Sync.SpinlockOps.AcquireIrqSave(schedLock)
         Dim assignedPid As UInt64 = nextPid
@@ -209,32 +282,32 @@ Public Class Scheduler
 
         SetupSyntheticStack thread, entryPoint
 
-        ' Insert into circular runqueue
+        ' Select target CPU core and insert into its circular runqueue
+        Dim targetCore As UInt32 = GetNextTargetCore()
+
         flags = Sync.SpinlockOps.AcquireIrqSave(schedLock)
         If taskType = Sched.ThreadType.TYPE_RTOS Then
-            If rtosQueueHead = 0 Then
-                rtosQueueHead = tcbMem
+            If rtosQueueHeads(targetCore) = 0 Then
+                rtosQueueHeads(targetCore) = tcbMem
                 thread.NextTask = tcbMem
             Else
-                Dim rHead As Pointer To TaskControlBlock
-                rHead = CPtr(Pointer To TaskControlBlock, rtosQueueHead)
+                Dim rHead As Pointer To TaskControlBlock = CPtr(Pointer To TaskControlBlock, rtosQueueHeads(targetCore))
                 thread.NextTask = rHead.NextTask
                 rHead.NextTask = tcbMem
             End If
         Else
-            If gposQueueHead = 0 Then
-                gposQueueHead = tcbMem
+            If gposQueueHeads(targetCore) = 0 Then
+                gposQueueHeads(targetCore) = tcbMem
                 thread.NextTask = tcbMem
             Else
-                Dim gHead As Pointer To TaskControlBlock
-                gHead = CPtr(Pointer To TaskControlBlock, gposQueueHead)
+                Dim gHead As Pointer To TaskControlBlock = CPtr(Pointer To TaskControlBlock, gposQueueHeads(targetCore))
                 thread.NextTask = gHead.NextTask
                 gHead.NextTask = tcbMem
             End If
         End If
         Sync.SpinlockOps.ReleaseIrqRestore schedLock, flags
 
-        Serial.PrintF "[SCHED] Spawned Kernel Thread (PID: %u, Priority: %u)\r\n", CType(UInt32, assignedPid), priority
+        Serial.PrintF "[SCHED] Spawned Kernel Thread (PID: %u, Priority: %u) assigned to Core #%d\r\n", CType(UInt32, assignedPid), priority, targetCore
         CreateKernelThread = tcbMem
     End Function
 
@@ -256,8 +329,7 @@ Public Class Scheduler
         Dim iterAddr As UInt64 = queueHead
 
         Do
-            Dim iter As Pointer To TaskControlBlock
-            iter = CPtr(Pointer To TaskControlBlock, iterAddr)
+            Dim iter As Pointer To TaskControlBlock = CPtr(Pointer To TaskControlBlock, iterAddr)
 
             ' Wake sleeping tasks whose timer has expired
             If iter.State = Sched.ThreadState.STATE_BLOCKED And iter.WakeUptime > 0 Then
@@ -302,8 +374,7 @@ Public Class Scheduler
 
         ' Allow previous thread to continue if runnable
         If prevAddr <> 0 Then
-            Dim prevTask As Pointer To TaskControlBlock
-            prevTask = CPtr(Pointer To TaskControlBlock, prevAddr)
+            Dim prevTask As Pointer To TaskControlBlock = CPtr(Pointer To TaskControlBlock, prevAddr)
             If prevTask.State = Sched.ThreadState.STATE_READY Or prevTask.State = Sched.ThreadState.STATE_RUNNING Then
                 PickNextReady = prevAddr
                 Exit Function
@@ -314,13 +385,78 @@ Public Class Scheduler
     End Function
 
     ''
-    ' @brief Core scheduling engine performing context switch to next task.
+    ' @brief Attempt to steal a ready task from other CPU cores' runqueues when local queue is empty.
+    '        Balances workloads across SMP cores.
+    ' @param thisCpu Logical ID of the calling CPU core looking for work.
+    ' @return Address of stolen ready TCB, or 0 if all cores are idle.
+    ''
+    Private Unsafe Function StealTask(ByVal thisCpu As UInt32) As UInt64
+        Dim onlineCores As UInt32 = Arch.Acpi.GetCpuCount()
+        If onlineCores <= 1 Then
+            StealTask = 0
+            Exit Function
+        End If
+        If onlineCores > MAX_SCHED_CPUS Then onlineCores = MAX_SCHED_CPUS
+
+        Dim otherCore As UInt32 = 0
+        While otherCore < onlineCores
+            If otherCore <> thisCpu Then
+                Dim headAddr As UInt64 = gposQueueHeads(otherCore)
+                If headAddr <> 0 Then
+                    Dim iterAddr As UInt64 = headAddr
+                    Do
+                        Dim iter As Pointer To TaskControlBlock = CPtr(Pointer To TaskControlBlock, iterAddr)
+                        ' Only steal tasks in STATE_READY (not currently running on the other core)
+                        If iter.State = Sched.ThreadState.STATE_READY Then
+                            ' Remove iter from otherCore's queue if there are multiple tasks
+                            If iter.NextTask <> iterAddr Then
+                                ' Find predecessor
+                                Dim predAddr As UInt64 = iterAddr
+                                While CPtr(Pointer To TaskControlBlock, predAddr).NextTask <> iterAddr
+                                    predAddr = CPtr(Pointer To TaskControlBlock, predAddr).NextTask
+                                Wend
+                                CPtr(Pointer To TaskControlBlock, predAddr).NextTask = iter.NextTask
+                                If gposQueueHeads(otherCore) = iterAddr Then
+                                    gposQueueHeads(otherCore) = iter.NextTask
+                                End If
+                            Else
+                                gposQueueHeads(otherCore) = 0
+                            End If
+
+                            ' Insert into thisCpu's runqueue
+                            If gposQueueHeads(thisCpu) = 0 Then
+                                gposQueueHeads(thisCpu) = iterAddr
+                                iter.NextTask = iterAddr
+                            Else
+                                Dim thisHead As Pointer To TaskControlBlock = CPtr(Pointer To TaskControlBlock, gposQueueHeads(thisCpu))
+                                iter.NextTask = thisHead.NextTask
+                                thisHead.NextTask = iterAddr
+                            End If
+
+                            StealTask = iterAddr
+                            Exit Function
+                        End If
+                        iterAddr = iter.NextTask
+                    Loop While iterAddr <> headAddr
+                End If
+            End If
+            otherCore = otherCore + 1
+        Wend
+
+        StealTask = 0
+    End Function
+
+    ''
+    ' @brief Core scheduling engine performing context switch to next task on calling core.
     '        Mirrors PRK _sched_yield_internal().
     ''
     Private Unsafe Sub SchedYieldInternal(ByVal targetState As UInt32, ByVal sleepMs As UInt64)
+        Dim coreId As UInt32 = Arch.X86_64.Gdt.GetCpuId()
+        If coreId >= MAX_SCHED_CPUS Then coreId = 0
+
         Dim flags As UInt64 = Sync.SpinlockOps.AcquireIrqSave(schedLock)
 
-        Dim prevAddr As UInt64 = currentTaskAddr
+        Dim prevAddr As UInt64 = currentTaskAddrs(coreId)
         Dim prevTask As Pointer To TaskControlBlock = CPtr(Pointer To TaskControlBlock, prevAddr)
 
         If prevAddr <> 0 And prevTask.State = Sched.ThreadState.STATE_RUNNING Then
@@ -330,13 +466,20 @@ Public Class Scheduler
             End If
         End If
 
-        ' Pick next runnable task: RTOS queue first, then GPOS queue, fallback to Idle
-        Dim nextAddr As UInt64 = PickNextReady(prevAddr, rtosQueueHead)
+        ' Pick next runnable task: RTOS queue first, then local GPOS queue
+        Dim nextAddr As UInt64 = PickNextReady(prevAddr, rtosQueueHeads(coreId))
         If nextAddr = 0 Then
-            nextAddr = PickNextReady(prevAddr, gposQueueHead)
+            nextAddr = PickNextReady(prevAddr, gposQueueHeads(coreId))
         End If
+
+        ' If local queues have no ready tasks, attempt work-stealing from peer cores
         If nextAddr = 0 Then
-            nextAddr = idleTaskAddr
+            nextAddr = StealTask(coreId)
+        End If
+
+        ' Fallback to dedicated Idle task for this core
+        If nextAddr = 0 Then
+            nextAddr = idleTaskAddrs(coreId)
         End If
 
         If prevAddr = nextAddr Then
@@ -349,13 +492,13 @@ Public Class Scheduler
             Exit Sub
         End If
 
-        currentTaskAddr = nextAddr
+        currentTaskAddrs(coreId) = nextAddr
         Dim nextTask As Pointer To TaskControlBlock = CPtr(Pointer To TaskControlBlock, nextAddr)
         nextTask.State = Sched.ThreadState.STATE_RUNNING
 
-        ' Set TSS RSP0 stack pointer to next task's kernel stack
+        ' Set per-core TSS RSP0 stack pointer to next task's kernel stack
         Dim kstackTop As UInt64 = nextTask.KStackBase + CType(UInt64, KERNEL_STACK_SIZE)
-        Arch.X86_64.Gdt.SetKernelStack kstackTop
+        Arch.X86_64.Gdt.SetKernelStackForCore coreId, kstackTop
 
         Dim targetCr3 As UInt64 = nextTask.Cr3Root
         If targetCr3 = 0 Then
@@ -394,24 +537,30 @@ Public Class Scheduler
     '        Mirrors PRK schedule().
     ''
     Public Unsafe Sub OnTimerTick(ByVal elapsedMs As UInt64)
+        Dim coreId As UInt32 = Arch.X86_64.Gdt.GetCpuId()
+        If coreId >= MAX_SCHED_CPUS Then coreId = 0
+
         systemUptimeMs = systemUptimeMs + elapsedMs
-        If currentTaskAddr <> 0 Then
-            Dim curr As Pointer To TaskControlBlock = CPtr(Pointer To TaskControlBlock, currentTaskAddr)
+        If currentTaskAddrs(coreId) <> 0 Then
+            Dim curr As Pointer To TaskControlBlock = CPtr(Pointer To TaskControlBlock, currentTaskAddrs(coreId))
             curr.CpuTicks = curr.CpuTicks + 1
         End If
         Yield
     End Sub
 
     ''
-    ' @brief Get the currently active task ID (PID).
+    ' @brief Get the currently active task ID (PID) on the calling core.
     ' @return Current PID or 0.
     ''
     Public Unsafe Function GetCurrentPid() As UInt64
-        If currentTaskAddr = 0 Then
+        Dim coreId As UInt32 = Arch.X86_64.Gdt.GetCpuId()
+        If coreId >= MAX_SCHED_CPUS Then coreId = 0
+
+        If currentTaskAddrs(coreId) = 0 Then
             GetCurrentPid = 0
             Exit Function
         End If
-        Dim curr As Pointer To TaskControlBlock = CPtr(Pointer To TaskControlBlock, currentTaskAddr)
+        Dim curr As Pointer To TaskControlBlock = CPtr(Pointer To TaskControlBlock, currentTaskAddrs(coreId))
         GetCurrentPid = curr.Id
     End Function
 

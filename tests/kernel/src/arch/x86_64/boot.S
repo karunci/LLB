@@ -77,17 +77,21 @@ _start:
     cli
     mov $stack_top, %esp
 
-    /* Store Multiboot Magic Number (%eax) and Information Structure (%ebx) */
-    mov %eax, %edi
-    mov %ebx, %esi
+    /* Store Multiboot Magic Number (%eax) and Information Structure (%ebx) on stack */
+    push %ebx
+    push %eax
 
-    /* 1. Setup Early Paging structures (Identity map 0 - 2MB) */
+    /* 1. Setup Early Paging structures (Zeroes 16KB and identity maps) */
     call setup_page_tables
     call enable_paging
 
     /* 2. Load 64-bit Global Descriptor Table (GDT) */
     mov $gdt64_pointer, %eax
     lgdt (%eax)
+
+    /* Restore Multiboot arguments for long mode (%edi = magic, %esi = mbi) */
+    pop %edi
+    pop %esi
 
     /* 3. Far jump to 64-bit code segment using 32-bit far return (lret) */
     push $0x08
@@ -96,6 +100,13 @@ _start:
 
 /* Setup 4-level Page Tables */
 setup_page_tables:
+    /* Zero out all early boot page tables (16KB: page_table_l4, page_table_l3, page_table_l2, page_table_l2_apic) */
+    mov $page_table_l4, %edi
+    xor %eax, %eax
+    mov $4096, %ecx       /* 4096 dwords = 16384 bytes */
+    cld
+    rep stosl
+
     /* Map L4[0] -> L3 */
     mov $page_table_l3, %eax
     or $0x3, %eax /* Present + Writable */

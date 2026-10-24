@@ -54,7 +54,7 @@ Public Class KernelHeap
             End If
 
             Dim virtTarget As UInt64 = HEAP_BASE_ADDR + (CType(UInt64, p) * 4096)
-            Dim flags As UInt64 = Mem.VmmFlags.PTE_PRESENT Or Mem.VmmFlags.PTE_WRITABLE
+            Dim flags As UInt64 = &H03
             VMM.MapPage pml4Root, virtTarget, physPage, flags
         Next p
 
@@ -99,7 +99,7 @@ Public Class KernelHeap
 
             If curr.Magic <> KMAGIC_NUM Then
                 Sync.SpinlockOps.ReleaseIrqRestore heapLock, flags
-                Serial.PrintF "[HEAP] Fatal: Corrupt heap block header magic at 0x%x!\r\n", currAddr
+                Serial.PrintF "[HEAP] Fatal: Corrupt heap magic at 0x%x! Magic=0x%x%08x Size=%u Free=%u\r\n", currAddr, CType(UInt32, curr.Magic RShift 32), CType(UInt32, curr.Magic And &HFFFFFFFF), curr.Size, curr.IsFree
                 KMalloc = 0
                 Exit Function
             End If

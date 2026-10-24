@@ -397,7 +397,7 @@ llvm::Value* LlvmEmitter::getPointerToExpr(ExprASTNode* expr) {
             auto tIt = m_variableTypes.find(call->funcName);
             if (tIt == m_variableTypes.end()) tIt = m_variableTypes.find(toLower(call->funcName));
             llvm::GlobalVariable* gVar = nullptr;
-            if (it == m_namedValues.end() && tIt != m_variableTypes.end()) {
+            if (it == m_namedValues.end()) {
                 gVar = findGlobalCaseInsensitive(m_module.get(), call->funcName);
             }
             if (it != m_namedValues.end() || gVar) {
@@ -416,12 +416,32 @@ llvm::Value* LlvmEmitter::getPointerToExpr(ExprASTNode* expr) {
                     baseVal = gVar;
                 }
 
-                if (baseVal && (baseType.pointerDepth > 0 || baseType.isArray)) {
+                if (baseVal && (baseType.pointerDepth > 0 || baseType.isArray || (gVar && gVar->getValueType()->isArrayTy()))) {
                     llvm::Value* idxVal = emitExpression(call->args[0].get());
                     if (idxVal) {
-                        llvm::Type* elemType = getElementType(baseType);
-                        idxVal = coerceType(idxVal, llvm::Type::getInt64Ty(*m_context));
-                        return m_builder->CreateGEP(elemType, baseVal, idxVal, "callidxgep");
+                        llvm::Type* elemType = nullptr;
+                        if (!baseType.name.empty() || baseType.pointerDepth > 0 || baseType.isArray) {
+                            elemType = getElementType(baseType);
+                        } else if (gVar && gVar->getValueType()->isArrayTy()) {
+                            elemType = gVar->getValueType()->getArrayElementType();
+                        }
+                        if (elemType) {
+                            idxVal = coerceType(idxVal, llvm::Type::getInt64Ty(*m_context));
+                            // Arrays (global or local alloca) need {0, idx} to index elements.
+                            // Raw pointer types only need {idx}.
+                            bool isArrBase = baseType.isArray ||
+                                            (gVar && gVar->getValueType()->isArrayTy() && baseType.pointerDepth == 0);
+                            if (isArrBase) {
+                                llvm::Value* indices[] = {
+                                    llvm::ConstantInt::get(llvm::Type::getInt64Ty(*m_context), 0),
+                                    idxVal
+                                };
+                                return m_builder->CreateGEP(gVar ? gVar->getValueType()
+                                                                   : llvm::cast<llvm::AllocaInst>(baseVal)->getAllocatedType(),
+                                                            baseVal, indices, "callidxgep");
+                            }
+                            return m_builder->CreateGEP(elemType, baseVal, idxVal, "callidxgep");
+                        }
                     }
                 }
             }
@@ -5493,7 +5513,13 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
         }
         // Try looking up in named local values
         auto localIt = m_namedValues.find(addrOf->targetName);
+        if (localIt == m_namedValues.end()) {
+            localIt = m_namedValues.find(toLower(addrOf->targetName));
+        }
         if (localIt != m_namedValues.end()) {
+            if (m_byRefParams.count(addrOf->targetName) || m_byRefParams.count(toLower(addrOf->targetName))) {
+                return m_builder->CreateLoad(localIt->second->getAllocatedType(), localIt->second, addrOf->targetName + ".ref");
+            }
             return localIt->second;
         }
         // Try looking up in global variables
@@ -7368,18 +7394,38 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
 
         // Pointer Arithmetic: ptr + offset or ptr - offset
         if (l->getType()->isPointerTy() && r->getType()->isIntegerTy()) {
+            llvm::Type* elemType = llvm::Type::getInt8Ty(*m_context);
+            TypeSpec ptrType = deduceExprType(bin->lhs.get());
+            if (ptrType.pointerDepth > 0) {
+                TypeSpec pointeeType = ptrType;
+                pointeeType.pointerDepth--;
+                llvm::Type* deducedElem = getLlvmType(pointeeType);
+                if (deducedElem && !deducedElem->isVoidTy()) {
+                    elemType = deducedElem;
+                }
+            }
             if (op == "+") {
-                return m_builder->CreateGEP(llvm::Type::getInt8Ty(*m_context), l, r, "ptradd");
+                return m_builder->CreateGEP(elemType, l, r, "ptradd");
             } else if (op == "-") {
                 llvm::Value* negR = m_builder->CreateNeg(r, "ptrneg");
-                return m_builder->CreateGEP(llvm::Type::getInt8Ty(*m_context), l, negR, "ptrsub");
+                return m_builder->CreateGEP(elemType, l, negR, "ptrsub");
             } else if (op == "=" || op == "<>") {
                 r = coerceType(r, l->getType());
             }
         }
         if (l->getType()->isIntegerTy() && r->getType()->isPointerTy()) {
+            llvm::Type* elemType = llvm::Type::getInt8Ty(*m_context);
+            TypeSpec ptrType = deduceExprType(bin->rhs.get());
+            if (ptrType.pointerDepth > 0) {
+                TypeSpec pointeeType = ptrType;
+                pointeeType.pointerDepth--;
+                llvm::Type* deducedElem = getLlvmType(pointeeType);
+                if (deducedElem && !deducedElem->isVoidTy()) {
+                    elemType = deducedElem;
+                }
+            }
             if (op == "+") {
-                return m_builder->CreateGEP(llvm::Type::getInt8Ty(*m_context), r, l, "ptradd");
+                return m_builder->CreateGEP(elemType, r, l, "ptradd");
             } else if (op == "=" || op == "<>") {
                 l = coerceType(l, r->getType());
             }
@@ -7803,6 +7849,7 @@ llvm::Function* LlvmEmitter::emitProcedure(const ProcedureNode& procNode, const 
     m_returnAssigned = false;
     m_currentProcIsUnsafe = procNode.isUnsafe;
     func->addFnAttr(llvm::Attribute::StackProtectStrong);
+    func->addFnAttr(llvm::Attribute::NoRedZone);
 
     if (procNode.isInline) {
         func->addFnAttr(llvm::Attribute::AlwaysInline);

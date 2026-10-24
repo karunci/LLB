@@ -1959,12 +1959,14 @@ std::unique_ptr<ExprASTNode> Parser::parsePrimaryExpr() {
         return std::make_unique<OffsetOfExprASTNode>(std::move(t), field);
     }
 
-    // AddressOf funcName
+    // AddressOf expr (variable, array element, or procedure identifier)
     if (m_currentToken.type == TokenType::KwAddressOf || checkKeyword("AddressOf")) {
         consume();
-        std::string target = m_currentToken.text;
-        expect(TokenType::Identifier, "Expected procedure or function identifier after 'AddressOf'");
-        return std::make_unique<AddressOfExprASTNode>(target);
+        auto expr = parseUnary();
+        if (auto var = dynamic_cast<VariableExprASTNode*>(expr.get())) {
+            return std::make_unique<AddressOfExprASTNode>(var->name);
+        }
+        return std::make_unique<AddressOfExprASTNode>(std::move(expr));
     }
 
     // New ClassName[(args...)]

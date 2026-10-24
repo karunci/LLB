@@ -150,4 +150,14 @@ Module Arch.Idt
         End Asm
     End Sub
 
+    ''
+    ' @brief Reload the existing IDT pointer on the current CPU core.
+    '        Mirrors PRK idt_load(). Used by AP cores during bring-up.
+    ''
+    Public Unsafe Sub ReloadIdt()
+        Dim ptrAddr As Pointer To IdtPtr
+        ptrAddr = @idtr
+        Asm "lidt (%0)" : : "r"(ptrAddr) : "memory"
+    End Sub
+
 End Module

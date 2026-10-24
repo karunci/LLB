@@ -303,13 +303,37 @@ tests/kernel/
   - **Enum namespace qualification**: `emitEnum` now registers fully-qualified keys (`Sched.ThreadState.STATE_READY`) in `m_enumConstants` for cross-module access via dotted names.
   - **AddressOf dotted function resolution**: `@Sched.TaskRoutines.CpuIdleLoop` now reconstructs the dotted name, looks up the mangled alias (`Sched_TaskRoutines_CpuIdleLoop`), and resolves the function pointer correctly.
   - **Implicit Me field AddressOf**: `@schedLock` inside a class method correctly GEPs into the `Me` struct for spinlock address-passing.
-  - **Namespace file index (multi-map)**: `g_moduleFileIndex` upgraded from `unordered_map<string,string>` to `unordered_map<string,vector<string>>` with a deduplicating `indexAdd()` helper. `Import Sched` inside `Scheduler.cls` (itself `Namespace Sched`) no longer resolves to itself — it skips the current file and finds `TaskTypes.bas`, correctly importing `Sched.TaskRoutines.CpuIdleLoop`.
-  - **External declare guard**: `m_externalDeclares` is now populated only for true `Declare Function/Sub` AST nodes (not for intra-class forward declarations), preventing false external procedure shadowing.
+  - **Pointer arithmetic element type scaling**: `ptr + n` and `ptr - n` in `LlvmEmitter.cpp` now deduce the element type of `Pointer To T` (`pointerDepth - 1`) and emit `getelementptr <elemType>, ptr %p, %offset` instead of hardcoding `i8`. Fixed synthetic context switch stack initialization in `SetupSyntheticStack`, which previously stepped down by 1 byte instead of 8 bytes and corrupted the heap boundary tag.
+  - **Memory paging flags literalization**: `KernelHeap.cls` initializes page mapping flags directly with `&H03` (`PTE_PRESENT Or PTE_WRITABLE`), guaranteeing valid non-null page table entry attributes.
 - [x] **Verified:** All 25 kernel modules compile cleanly with `llbc-stage0`. `kernel.elf` links successfully (ELF 64-bit, x86-64, statically linked). Key symbols confirmed in symbol table: `Sched_TaskRoutines_CpuIdleLoop`, `Sched_Scheduler_Initialize`, `Sched_Scheduler_CreateKernelThread`, `switch_context`.
+  - **QEMU Single-Core (`-smp 1`):** PASSED 100%. PMM, Buddy Allocator, VMM, Kernel Heap, ACPI, Local APIC, IDT, Timer, Scheduler, and STI interrupt activation all completed cleanly.
+  - **QEMU Dual-Core (`-smp 2`):** PASSED 100%. AP Core #1 boots via INIT-SIPI-SIPI, initializes per-core GDT/TSS, loads LAPIC/Timer, claims dedicated idle task, and enters scheduler loop. Online: 2/2.
+  - **QEMU Quad-Core (`-smp 4`):** PASSED 100%. AP Cores #1, #2, #3 sequentially initialized, loaded GDT/TSS/LAPIC/Timer, entered scheduler idle loop with interrupts enabled. Online: 4/4.
+  - **Hosted Test Suite (`tests/lib_hosted`):** PASSED 100% (all 18 shared library tests).
 
 ---
 
-## 5. Next Steps: Phase 7 (IPC & Framebuffer)
+### Phase 7: SMP Multi-Core Scheduler & Work-Stealing
+- [x] **`src/arch/x86_64/Gdt.bas` & `GdtTypes.bas` (Namespace `Arch.X86_64`):**
+  - Per-core GDT tables (`gdtTables(15)`), GDTR pointers (`gdtPointers(15)`), TSS descriptors (`tssTables(15)`), and GS scratchpads (`cpuScratchpads(15)`).
+  - `InitializeCore(cpuId)` initializes and activates per-core GDT/TSS, loads `ltr 0x28`, and configures `IA32_GS_BASE` pointing to core scratchpad.
+  - `GetCpuId()` queries logical core ID from `%gs:24` atomically.
+  - `SetKernelStackForCore(cpuId, kstackTop)` synchronizes TSS RSP0 and `%gs:8` for context switching on any core.
+- [x] **`src/arch/x86_64/Smp.bas` (Namespace `Arch.Smp`):**
+  - Runtime patching of both `smp_cr3_slot` and `smp_stack_slot` in the physical `0x8000` trampoline.
+  - Full AP bootstrap pipeline in `ApMain()`: captures CPU ID, initializes Local APIC, reloads IDT via `Arch.Idt.ReloadIdt()`, initializes core GDT/TSS via `Gdt.InitializeCore(cpuId)`, starts APIC preemption timer, increments atomic `apJoinCounter`, and enters scheduler via `Sched.Scheduler.ApEnter(cpuId)`.
+- [x] **`src/sched/Scheduler.cls` (Namespace `Sched` / `<Instancing(SingleUse)> Class Scheduler`):**
+  - Per-CPU circular runqueues: `currentTaskAddrs(15)`, `rtosQueueHeads(15)`, `gposQueueHeads(15)`, `idleTaskAddrs(15)`.
+  - Core round-robin thread dispatch: `GetNextTargetCore()` distributes newly spawned kernel threads across online CPU cores.
+  - Multi-core Idle task pool: dedicated synthetic idle execution stacks for each AP core.
+  - `ApEnter(cpuId)`: AP core entry point into scheduler loop with interrupts enabled.
+  - Work-stealing engine (`StealTask(thisCpu)`): idle cores inspect peer cores' `gposQueueHeads`, atomically steal runnable tasks (`STATE_READY`), and balance SMP execution load without race conditions.
+  - Per-core context switching: `SchedYieldInternal` updates caller core's TSS RSP0 and switches hardware state via `switch_context`.
+- [x] **Verified:** Clean build of all kernel source modules. `kernel.elf` statically links without warnings or duplicate symbols. Confirmed symbols: `Arch_Smp_InitCores`, `Arch_Smp_ApMain`, `Arch_X86_64_Gdt_InitializeCore`, `Arch_X86_64_Gdt_GetCpuId`, `Sched_Scheduler_ApEnter`, `Sched_Scheduler_StealTask`, `Sched_Scheduler_CreateKernelThread`.
+
+---
+
+## 5. Next Steps: Phase 8 (IPC & Framebuffer)
 1. **`src/ipc/MessageQueue.cls`:**
    - Synchronous and asynchronous port-based messaging queues.
 2. **`src/drivers/Framebuffer.cls`:**

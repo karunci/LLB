@@ -1,0 +1,8 @@
+{
+  "name": "user.test.app",
+  "version": "1.0.0",
+  "author": "karunci",
+  "description": "PROS Native Low-Level Basic Userspace Test Application",
+  "subsystem": "console",
+  "capabilities": ["CAP_SYNAPSE_READ", "CAP_SYNAPSE_WRITE"]
+}

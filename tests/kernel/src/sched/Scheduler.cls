@@ -9,10 +9,12 @@ Import Sched
 Import Arch.X86_64.Gdt
 Import Arch.X86_64.PortIO
 Import Arch.Acpi
+Import Arch.Smp
 Use Drivers.SerialUart As Serial
 Use Mem.KernelHeap As KHeap
 Use Mem.BuddyAllocator As Buddy
 Use Mem.VirtualMemoryManager As VMM
+Use Exec.BaxLoader As Bax
 
 Namespace Sched
 
@@ -276,6 +278,9 @@ Public Class Scheduler
 
         Serial.PrintF "[SCHED] AP Core #%d online: idle task ready. Enabling interrupts...\r\n", cpuId
 
+        ' Atomically notify BSP that idle task is online and serial output is done
+        SignalApJoined
+
         ' Enable hardware interrupts on AP and start cooperative yield loop
         Arch.X86_64.PortIO.Sti
         Do
@@ -462,6 +467,40 @@ Public Class Scheduler
         Serial.PrintF "[SCHED] Spawned User Thread '%s' (PID: %u, Entry: 0x%x, RSP: 0x%x) on Core #%d\r\n", _
                       name, CType(UInt32, assignedPid), entryPoint, userRsp, targetCore
         CreateUserThread = assignedPid
+    End Function
+
+    ''
+    ' @brief Spawn a native NEO/PE-BAX executable process from in-memory binary image.
+    ' @param name Human-readable process identifier.
+    ' @param baxDataAddr Physical/virtual address of raw .bax binary image.
+    ' @param baxSize Size of the .bax binary in bytes.
+    ' @param priority Initial execution priority.
+    ' @return Assigned PID on success, or 0 on failure.
+    ''
+    Public Unsafe Function CreateBaxProcess(ByVal name As Pointer To Byte, ByVal baxDataAddr As UInt64, ByVal baxSize As UInt64, ByVal priority As UInt32) As UInt64
+        If baxDataAddr = 0 Or baxSize = 0 Then
+            CreateBaxProcess = 0
+            Exit Function
+        End If
+
+        ' Create dedicated User PML4 address space with cloned kernel supervisor half
+        Dim userPml4 As UInt64 = VMM.CreateUserPml4()
+        If userPml4 = 0 Then
+            Serial.PrintF "[SCHED] Error: Failed to create User PML4 for BAX process!\r\n"
+            CreateBaxProcess = 0
+            Exit Function
+        End If
+
+        ' Load, verify, and map NEO/PE-BAX segments and resources into user address space
+        Dim entryPoint As UInt64 = Bax.LoadBinary(userPml4, baxDataAddr, baxSize)
+        If entryPoint = 0 Then
+            Serial.PrintF "[SCHED] Error: BaxLoader failed to load binary!\r\n"
+            CreateBaxProcess = 0
+            Exit Function
+        End If
+
+        ' Spawn user thread using verified entrypoint and mapped User PML4
+        CreateBaxProcess = Me.CreateUserThread(name, entryPoint, userPml4, priority)
     End Function
 
     ''

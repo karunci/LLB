@@ -5594,7 +5594,11 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
         if (enumIt != m_enumConstants.end()) {
             auto tIt = m_variableTypes.find(var->name);
             if (tIt == m_variableTypes.end()) tIt = m_variableTypes.find(toLower(var->name));
-            llvm::Type* cTy = (tIt != m_variableTypes.end()) ? getLlvmType(tIt->second) : llvm::Type::getInt32Ty(*m_context);
+            llvm::Type* cTy = (tIt != m_variableTypes.end()) ? getLlvmType(tIt->second) : (
+                (enumIt->second > 0x7FFFFFFFLL || enumIt->second < -0x80000000LL || static_cast<uint64_t>(enumIt->second) > 0xFFFFFFFFULL)
+                    ? llvm::Type::getInt64Ty(*m_context)
+                    : llvm::Type::getInt32Ty(*m_context)
+            );
             if (cTy->isIntegerTy()) {
                 return llvm::ConstantInt::get(cTy, enumIt->second);
             }

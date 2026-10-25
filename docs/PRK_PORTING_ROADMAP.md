@@ -456,3 +456,65 @@ tests/kernel/
   - Integrated CPU Hardware Info Card: CPU Vendor (`GetVendor`), CPU Model Brand (`GetBrand`), Features (`GetFeatures`), dynamic APIC interface detection (`x2APIC` vs `MMIO`), and LAPIC/IO-APIC base addresses.
   - Integrated RAM Memory Info Card: Total managed RAM, Used/Free metrics with exact percentages, dynamic visual memory gauge bar, and Buddy Allocator/Heap bounds.
   - Userland Runtime Card: displaying Ring 3 `user.test.app` execution status and syscall dispatch capabilities.
+
+---
+
+### Phase 10: Native BAX (Basic Application eXecutable) Format & In-Memory USTAR Ramdisk Loader
+- [x] **BAX Executable Specification & Design ([`docs/BAX_EXECUTABLE_SPECIFICATION.md`](file:///T:/projects/LLB/llbc/docs/BAX_EXECUTABLE_SPECIFICATION.md)):**
+  - System Identity: **PROS (Personal Research Operating System)** / **PRK-LLB (Personal Research Kernel in Low-Level BASIC)**.
+  - Magic Header: 8-byte ASCII signature `"NEO/BAX\0"` (`0x005841422F4F454E`).
+  - Architecture: 64-byte `BaxHeader`, 48-byte `BaxSegment` array, and 48-byte `BaxResourceEntry` directory array.
+  - Subsystems: `SUBSYSTEM_CONSOLE` (1), `SUBSYSTEM_GUI` (2), `SUBSYSTEM_NEURAL_NODE` (3).
+  - Memory-Mapped Embedded Resources: Zero-syscall asset access mapping resource directory array and embedded blobs (JSON manifest, icons, neural models) directly at user virtual address `0x50000000`.
+- [x] **BAX Packager & Archive Tooling (`tools/bax_pack.py`):**
+  - Standalone packager converting standard ELF64 executables into `.bax` binaries.
+  - Extracts ELF64 loadable program headers (`PT_LOAD`), maps segment permissions (`R`, `W`, `X`), sets entry points and virtual bases.
+  - Automatically serializes JSON/TOML manifests and icons into embedded resource directories and data blobs.
+  - Generates bootable in-memory USTAR ramdisk archives (`initrd.tar`) containing packed `.bax` binaries.
+- [x] **USTAR Tar In-Memory Ramdisk Parser (`tests/kernel/src/fs/TarArchive.cls`):**
+  - Namespace `Fs`, `<Instancing(SingleUse)> Class TarArchive`.
+  - Parses standard 512-byte POSIX USTAR archive headers from in-memory ramdisks passed via Multiboot modules (`-initrd`).
+  - Implements `FindFile(archivePhys, fileName, outSize)`: octal-to-integer decoding, filename prefix normalization (`./` and `/`), and block alignment traversal.
+- [x] **BAX Executable Kernel Loader (`tests/kernel/src/exec/BaxLoader.cls` & `BaxTypes.bas`):**
+  - Namespace `Exec`, `<Instancing(SingleUse)> Class BaxLoader`.
+  - Enforces `"NEO/BAX\0"` magic verification and `TargetArch == 1` (`x86_64`).
+  - Security Auditing: Validates all virtual address mappings against canonical lower-half user space bounds (`< 0x00007FFFFFFFFFFF`) to prevent user code mapping over supervisor/kernel memory.
+  - Allocates physical frames via `PMM.AllocPage()`, zero-initializes frames (guaranteeing clean BSS), and maps segments into task's private User PML4 table.
+  - Maps embedded resource directory table and blobs to `0x50000000` with user-readable permissions.
+- [x] **Physical Memory Manager Early Init & Safe Initrd Relocation (`tests/kernel/src/mem/PhysicalMemoryManager.cls`):**
+  - Detects Multiboot 1 and Multiboot 2 module tags (`-initrd`).
+  - Automatically relocates early loaded ramdisks from low-memory conflict areas to safe physical RAM (`0x6000000` / 96MB) before kernel heap or test suites execute, protecting the initrd from being overwritten by BSS allocations.
+  - Reserves relocated initrd memory frames from being freed to the PMM allocator pool.
+- [x] **Process Creation & Dispatch Modernization (`tests/kernel/src/sched/Scheduler.cls`):**
+  - Implemented `CreateBaxProcess(name, baxDataAddr, baxSize, priority)`: delegates binary parsing and PML4 mapping to `BaxLoader`, allocates user stack with TSC entropy ASLR, and enqueues task into SMP runqueues.
+- [x] **LLBC Compiler Core Fixes (`src/codegen/LlvmEmitter.cpp`):**
+  - Fixed 64-bit constant integer resolution in `LlvmEmitter`: constants exceeding 32-bit integer limits without local type hints now automatically deduce `i64` instead of truncating to `i32` (`m_enumConstants`), ensuring 64-bit header magic comparisons (`BAX_MAGIC_VAL = &H005841422F4F454E`) evaluate correctly.
+- [x] **Verification & Live QEMU Confirmation:**
+  - Full project compiled and verified in QEMU SMP 4 cores with `-initrd tests/user_app/build/initrd.tar`:
+    ```
+    [MULTIBOOT] Found Initrd Module at 0x121000 (Relocated to safe buffer 0x6000000, 10240 bytes)
+    ...
+    [PRK] Scanning Initrd USTAR Ramdisk at 0x6000000 (10240 bytes)...
+    [PRK] Located 'user_app.bax' in ramdisk (2813 bytes at 0x6000600)
+    [BAX] Memory-Mapped 1 Resource(s) at virtual 0x50000000
+    [BAX] Binary loaded successfully. Subsystem: 1, Entry: 0x40000000, ImageSize: 8200 bytes
+    [SCHED] Spawned User Thread 'user.test.app' (PID: 1, Entry: 0x40000000, RSP: 0x6FF83FE8) on Core #0
+    [BRT0] =======================================================
+    [PRK] Spawned Standalone Ring 3 BAX Process (PID: 1)
+    [BRT0] Basic Runtime Online! Entering user_main in Ring 3 (CPL=3)
+    [USER-APP] Querying process identity: Active PID = 1
+    [USER-APP] System topology queried: Active SMP Cores = 4
+    [NODE] Registered Node #1002 (Kind: 1, Owner PID: 1)
+    [USER-APP] Registered Neural Node via SYS_NODE_REGISTER: Node #1002
+    [NODE] Established Synapse Channel #5001: Node #1002 -> Node #1000 (Caps: 0x3)
+    [USER-APP] Connected Synapse Channel via SYS_SYNAPSE_CONNECT: Channel #5001
+    [USER-APP] Axonal Data Plane packet transmission verified (Seq: 101)
+    [USER-APP] Calling SYS_PROCESS_YIELD...
+    [USER-APP] Returned from SYS_PROCESS_YIELD! Task execution intact.
+    [USER-APP] Memory-Mapped BAX Manifest verified (Size: 237 bytes, Mapped: 0x50000000)
+    [BRT0] user_main completed successfully. Returning exit code 0.
+    [BRT0] =======================================================
+    [SCHED] PID 1 exited with code 0. Marking TERMINATED.
+    [SCHED] Reaped terminated task (PID: 1)
+    ```
+

@@ -34,6 +34,16 @@ Namespace Mem
         Public EntryType As UInt32
     End Structure
 
+    <Packed>
+    Public Structure Multiboot1Module
+        Public ModStart  As UInt32
+        Public ModEnd    As UInt32
+        Public StringPtr As UInt32
+        Public Reserved  As UInt32
+    End Structure
+
+    #Assert SizeOf(Multiboot1Module) = 16
+
     ' Multiboot 2 Tag Header
     <Packed>
     Public Structure MultibootTag
@@ -59,6 +69,10 @@ Namespace Mem
         Private freeMemoryBytes As UInt64
         Private totalMemoryBytes As UInt64
 
+        ' Initrd module physical bounds
+        Private initrdStartPhys As UInt64
+        Private initrdEndPhys As UInt64
+
         ' SMP-safe spinlock
         Private pmmLock As Sync.Spinlock
 
@@ -67,6 +81,8 @@ Namespace Mem
             freeListHeadPhys = 0
             freeMemoryBytes = 0
             totalMemoryBytes = 0
+            initrdStartPhys = 0
+            initrdEndPhys = 0
         End Sub
 
         ' Return total free physical memory bytes
@@ -77,6 +93,15 @@ Namespace Mem
         ' Return total discovered RAM bytes
         Public Function GetTotalBytes() As UInt64
             GetTotalBytes = totalMemoryBytes
+        End Function
+
+        ' Return physical bounds of discovered initrd module (if any)
+        Public Function GetInitrdStart() As UInt64
+            GetInitrdStart = initrdStartPhys
+        End Function
+
+        Public Function GetInitrdEnd() As UInt64
+            GetInitrdEnd = initrdEndPhys
         End Function
 
         ' Free a 4KB physical page frame by pushing it to the free-list stack
@@ -145,6 +170,28 @@ Namespace Mem
 
                 Serial.PrintF "DEBUG - [MB1] Flags: 0x%x, MmapAddr: 0x%x, MmapLen: 0x%x\n", mb1.Flags, mb1.MmapAddr, mb1.MmapLength
 
+                ' Check if Module bit (bit 3 = 0x08) is set in Flags
+                If (mb1.Flags And &H08) <> 0 And mb1.ModsCount > 0 Then
+                    Dim modPtr As Pointer To Multiboot1Module = CPtr(Pointer To Multiboot1Module, CType(UInt64, mb1.ModsAddr))
+                    Dim origStart As UInt64 = CType(UInt64, modPtr.ModStart)
+                    Dim origEnd As UInt64 = CType(UInt64, modPtr.ModEnd)
+                    Dim modLen As UInt64 = origEnd - origStart
+
+                    ' Relocate initrd archive to safe buffer at 96MB (&H6000000)
+                    Dim safeReloc As UInt64 = &H6000000
+                    Dim srcP As Pointer To Byte = CPtr(Pointer To Byte, origStart)
+                    Dim dstP As Pointer To Byte = CPtr(Pointer To Byte, safeReloc)
+                    Dim bi As UInt64
+                    For bi = 0 To modLen - 1
+                        dstP(bi) = srcP(bi)
+                    Next bi
+
+                    initrdStartPhys = safeReloc
+                    initrdEndPhys = safeReloc + modLen
+                    Serial.PrintF "[MULTIBOOT] Found Initrd Module at 0x%lx (Relocated to safe buffer 0x%lx, %u bytes)\r\n", _
+                                  origStart, initrdStartPhys, CType(UInt32, modLen)
+                End If
+
                 ' Check if MMAP bit (bit 6 = 0x40) is set in Flags
                 If (mb1.Flags And &H40) <> 0 Then
                     Dim mmapAddr As UInt64 = CType(UInt64, mb1.MmapAddr)
@@ -167,7 +214,10 @@ Namespace Mem
                             Dim addr As UInt64 = startAddr
                             While addr < endAddr
                                 If addr >= &H1000000 And addr < &H100000000 Then
-                                    Me.FreePage addr
+                                    ' Protect loaded initrd archive from being freed to PMM pool
+                                    If Not (initrdStartPhys <> 0 And addr >= initrdStartPhys And addr < initrdEndPhys) Then
+                                        Me.FreePage addr
+                                    End If
                                 End If
                                 addr = addr + 4096
                             Wend
@@ -203,7 +253,14 @@ Namespace Mem
                     Exit While
                 End If
 
-                If tagType = 6 Then
+                If tagType = 3 Then
+                    Dim mStartPtr As Pointer To UInt32 = CPtr(Pointer To UInt32, currOffset + 8)
+                    Dim mEndPtr As Pointer To UInt32 = CPtr(Pointer To UInt32, currOffset + 12)
+                    initrdStartPhys = CType(UInt64, mStartPtr(0))
+                    initrdEndPhys = CType(UInt64, mEndPtr(0))
+                    Serial.PrintF "[MULTIBOOT2] Found Initrd Module at 0x%lx - 0x%lx (%u bytes)\r\n", _
+                                  initrdStartPhys, initrdEndPhys, CType(UInt32, initrdEndPhys - initrdStartPhys)
+                ElseIf tagType = 6 Then
                     Dim entrySizePtr As Pointer To UInt32
                     entrySizePtr = CPtr(Pointer To UInt32, currOffset + 8)
                     Dim entrySize As UInt32 = entrySizePtr(0)
@@ -225,7 +282,9 @@ Namespace Mem
                                 addr = startAddr
                                 While addr < endAddr
                                     If addr >= &H1000000 And addr < &H100000000 Then
-                                        Me.FreePage addr
+                                        If Not (initrdStartPhys <> 0 And addr >= initrdStartPhys And addr < initrdEndPhys) Then
+                                            Me.FreePage addr
+                                        End If
                                     End If
                                     addr = addr + 4096
                                 Wend

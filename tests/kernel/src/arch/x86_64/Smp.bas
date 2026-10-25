@@ -208,14 +208,18 @@ Module Arch.Smp
         ' 6. Initialize Local APIC periodic preemption timer on this AP
         Arch.X86_64.Apic.InitializeTimer 3, &H200000
 
-        ' 6. Signal BSP that this AP is fully online and initialized
-        Dim joinCounterPtr As Pointer To UInt32 = AddressOf apJoinCounter
-        Asm "lock; addl $1, (%0)" : : "r"(joinCounterPtr) : "memory"
-
         Serial.PrintF "[SMP] AP Core #%d online: GDT/TSS/LAPIC/Timer ready. Entering scheduler...\r\n", cpuId
 
-        ' 7. Enter AP scheduler loop (never returns)
+        ' 6. Enter AP scheduler loop (which will signal BSP after idle task ready)
         SchedEngine.ApEnter cpuId
+    End Sub
+
+    ''
+    ' @brief Atomically signal BSP that this AP core has completed idle task setup and logging.
+    ''
+    Public Unsafe Sub SignalApJoined()
+        Dim joinCounterPtr As Pointer To UInt32 = AddressOf apJoinCounter
+        Asm "lock; addl $1, (%0)" : : "r"(joinCounterPtr) : "memory"
     End Sub
 
 End Module

@@ -32,6 +32,7 @@ Module KernelMain
     Use Drivers.Framebuffer As FB
     Use Core.Nodes.SynapseChannel
     Use Core.Nodes.NodeRegistry As NodeReg
+    Use Fs.TarArchive As Tar
 
     ' LibLLB_Metal Static Library Declarations
     Public Declare Function ToHex Lib "libllb_metal" (ByVal value As UInt64, ByVal outBuf As Pointer To Byte, ByVal prefix As Boolean) As UInt32
@@ -43,6 +44,11 @@ Module KernelMain
         Serial.PrintF "\r\n[PRK] Booting Low-Level Basic Kernel in QEMU!\r\n"
         Serial.PrintF "[PRK] Multiboot Verified. Long mode active.\r\n"
         Serial.PrintF "[UART] COM1 Driver Online!\n"
+
+        ' Initialize Physical Memory Manager (PMM) and relocate initrd module immediately
+        Serial.PrintF "[PRK] Initializing Physical Memory Manager (PMM)...\r\n"
+        PMM.Initialize
+        PMM.ParseMemoryMap magic, CType(UInt64, mbAddress)
 
         ' Initialize GDT & TSS segment descriptors
         Serial.PrintF "[PRK] Initializing 64-bit GDT & TSS...\r\n"
@@ -84,11 +90,6 @@ Module KernelMain
         Term.SetColor Term.COLOR_LIGHT_CYAN
         Term.PrintF "Multiboot Magic: 0x%x\n", magic
         Term.PrintF "Multiboot Info Address: 0x%x\n", mbAddress
-
-        ' Initialize Physical Memory Manager (PMM)
-        Serial.PrintF "[PRK] Initializing Physical Memory Manager (PMM)...\r\n"
-        PMM.Initialize
-        PMM.ParseMemoryMap magic, CType(UInt64, mbAddress)
 
         Dim totalBytes As UInt64 = PMM.GetTotalBytes()
         Dim freeBytes As UInt64 = PMM.GetFreeBytes()
@@ -373,46 +374,37 @@ Module KernelMain
         ' Initialize Native Microkernel Syscall MSRs
         Sys.Syscall.Initialize
 
-        ' Create dedicated User Address Space (CR3) with cloned kernel higher-half
-        Dim userCr3 As UInt64 = VMM.CreateUserPml4()
-        Serial.PrintF "[PRK] Created User Address Space (CR3: 0x%lx)\r\n", userCr3
+        ' Discover in-memory USTAR initrd ramdisk
+        Dim initrdStart As UInt64 = PMM.GetInitrdStart()
+        Dim initrdEnd As UInt64 = PMM.GetInitrdEnd()
+        Dim baxSize As UInt64 = 0
+        Dim baxDataAddr As UInt64 = 0
 
-        ' Resolve embedded standalone UserApp binary payload
-        Dim blobStart As UInt64 = 0
-        Dim blobEnd As UInt64 = 0
-        Asm "movabs $user_app_blob_start, %0" : "=r"(blobStart) : : "memory"
-        Asm "movabs $user_app_blob_end, %0" : "=r"(blobEnd) : : "memory"
-        Dim blobSize As UInt64 = blobEnd - blobStart
-        Serial.PrintF "[PRK] Found embedded UserApp payload (%u bytes at 0x%lx)\r\n", CType(UInt32, blobSize), blobStart
-
-        ' Map user payload at 0x40000000 with PTE_PRESENT | PTE_WRITABLE | PTE_USER
-        Dim pagesNeeded As UInt32 = CType(UInt32, (blobSize + 4095) / 4096)
-        Dim p As UInt32
-        For p = 0 To pagesNeeded - 1
-            Dim pagePhys As UInt64 = Buddy.AllocPages(0)
-            Dim pageVirt As UInt64 = &H40000000 + CType(UInt64, p * 4096)
-            VMM.MapPage userCr3, pageVirt, pagePhys, &H07
-
-            Dim srcSlice As Pointer To Byte = CPtr(Pointer To Byte, blobStart + CType(UInt64, p * 4096))
-            Dim dstSlice As Pointer To Byte = CPtr(Pointer To Byte, pagePhys)
-            Dim copyLen As UInt64 = 4096
-            If (CType(UInt64, p * 4096) + copyLen) > blobSize Then
-                copyLen = blobSize - CType(UInt64, p * 4096)
+        If initrdStart <> 0 And initrdEnd > initrdStart Then
+            Serial.PrintF "[PRK] Scanning Initrd USTAR Ramdisk at 0x%lx (%u bytes)...\r\n", _
+                          initrdStart, CType(UInt32, initrdEnd - initrdStart)
+            baxDataAddr = Tar.FindFile(initrdStart, "user_app.bax", baxSize)
+            If baxDataAddr <> 0 Then
+                Serial.PrintF "[PRK] Located 'user_app.bax' in ramdisk (%u bytes at 0x%lx)\r\n", _
+                              CType(UInt32, baxSize), baxDataAddr
+            Else
+                Serial.PrintF "[PRK] Warning: 'user_app.bax' not found in initrd ramdisk!\r\n"
             End If
-            Dim b As UInt64
-            For b = 0 To copyLen - 1
-                dstSlice(b) = srcSlice(b)
-            Next b
-        Next p
+        Else
+            Serial.PrintF "[PRK] Warning: No Multiboot initrd module provided.\r\n"
+        End If
 
-        ' Spawn standalone Ring 3 User Thread
-        Dim userPid As UInt64 = SchedEngine.CreateUserThread("user.test.app", &H40000000, userCr3, 2)
-        Serial.PrintF "[PRK] Spawned Standalone Ring 3 User Thread (PID: %u, Entry: 0x40000000)\r\n", CType(UInt32, userPid)
+        ' Spawn standalone Ring 3 BAX Application
+        Dim userPid As UInt64 = 0
+        If baxDataAddr <> 0 Then
+            userPid = SchedEngine.CreateBaxProcess("user.test.app", baxDataAddr, baxSize, 2)
+            Serial.PrintF "[PRK] Spawned Standalone Ring 3 BAX Process (PID: %u)\r\n", CType(UInt32, userPid)
+        End If
+
+        Serial.PrintF "[PRK] Kernel boot and userland dispatch completed successfully.\r\n"
 
         ' Preemptively yield to let User Thread execute in Ring 3
         SchedEngine.Yield
-
-        Serial.PrintF "[PRK] Kernel boot and userland dispatch completed successfully.\r\n"
 
         Do
             SchedEngine.Yield

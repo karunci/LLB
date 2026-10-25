@@ -109,6 +109,45 @@ Module UserApplication
     End Sub
 
     ''
+    ' @brief Emit a complete line consisting of prefix, formatted integer, and suffix in ONE atomic syscall.
+    ''
+    Public Unsafe Sub PrintMessageWithUInt(ByVal prefix As Pointer To Byte, ByVal val As UInt64, ByVal suffix As Pointer To Byte)
+        Dim lineBuf(128) As Byte
+        Dim outIdx As UInt32 = 0
+
+        ' Copy prefix
+        Dim pIdx As UInt32 = 0
+        While prefix(pIdx) <> 0 And outIdx < 96
+            lineBuf(outIdx) = prefix(pIdx)
+            outIdx = outIdx + 1
+            pIdx = pIdx + 1
+        Wend
+
+        ' Format and append unsigned integer
+        Dim numBuf(24) As Byte
+        FormatUInt val, @numBuf(0)
+        Dim nIdx As UInt32 = 0
+        While numBuf(nIdx) <> 0 And outIdx < 112
+            lineBuf(outIdx) = numBuf(nIdx)
+            outIdx = outIdx + 1
+            nIdx = nIdx + 1
+        Wend
+
+        ' Copy suffix if present
+        If suffix <> 0 Then
+            Dim sIdx As UInt32 = 0
+            While suffix(sIdx) <> 0 And outIdx < 126
+                lineBuf(outIdx) = suffix(sIdx)
+                outIdx = outIdx + 1
+                sIdx = sIdx + 1
+            Wend
+        End If
+
+        lineBuf(outIdx) = 0
+        Syscall2 SYS_CONSOLE_WRITE, CType(UInt64, @lineBuf(0)), outIdx
+    End Sub
+
+    ''
     ' @brief Main application entry point invoked by Basic Runtime (BRT0).
     ' @param argc Argument count.
     ' @param argv Argument string vector.
@@ -120,18 +159,11 @@ Module UserApplication
 
         ' 1. Verify PID via native SYS_PROCESS_GETPID syscall
         Dim pid As UInt64 = Syscall0(SYS_PROCESS_GETPID)
-        Dim numBuf(31) As Byte
-        FormatUInt pid, @numBuf(0)
-        PrintString "[USER-APP] Querying process identity: Active PID = "
-        PrintString @numBuf(0)
-        PrintString "\r\n"
+        PrintMessageWithUInt "[USER-APP] Querying process identity: Active PID = ", pid, "\r\n"
 
         ' 2. Verify active SMP Core count via native SYS_SMP_CORE_COUNT syscall
         Dim cores As UInt64 = Syscall0(SYS_SMP_CORE_COUNT)
-        FormatUInt cores, @numBuf(0)
-        PrintString "[USER-APP] System topology queried: Active SMP Cores = "
-        PrintString @numBuf(0)
-        PrintString "\r\n"
+        PrintMessageWithUInt "[USER-APP] System topology queried: Active SMP Cores = ", cores, "\r\n"
 
         ' 3. Register a Userland Compute Node via native SYS_NODE_REGISTER syscall
         Dim nodeName(31) As Byte
@@ -145,17 +177,11 @@ Module UserApplication
         nodeName(7) = 112 ' 'p'
         nodeName(8) = 0
         Dim userNodeId As UInt64 = Syscall3(SYS_NODE_REGISTER, 1, CType(UInt64, @nodeName(0)), 3)
-        FormatUInt userNodeId, @numBuf(0)
-        PrintString "[USER-APP] Registered Neural Node via SYS_NODE_REGISTER: Node #"
-        PrintString @numBuf(0)
-        PrintString "\r\n"
+        PrintMessageWithUInt "[USER-APP] Registered Neural Node via SYS_NODE_REGISTER: Node #", userNodeId, "\r\n"
 
         ' 4. Connect Synapse Channel to Kernel Node #1000
         Dim synId As UInt64 = Syscall3(SYS_SYNAPSE_CONNECT, userNodeId, 1000, 3)
-        FormatUInt synId, @numBuf(0)
-        PrintString "[USER-APP] Connected Synapse Channel via SYS_SYNAPSE_CONNECT: Channel #"
-        PrintString @numBuf(0)
-        PrintString "\r\n"
+        PrintMessageWithUInt "[USER-APP] Connected Synapse Channel via SYS_SYNAPSE_CONNECT: Channel #", synId, "\r\n"
 
         ' 5. Push AxonPacket across fast-path data plane via SYS_SYNAPSE_PUSH
         Dim pkt As AxonPacket
@@ -179,6 +205,13 @@ Module UserApplication
         PrintString "[USER-APP] Calling SYS_PROCESS_YIELD...\r\n"
         Syscall0 SYS_PROCESS_YIELD
         PrintString "[USER-APP] Returned from SYS_PROCESS_YIELD! Task execution intact.\r\n"
+
+        ' 7. Verify memory-mapped NEO/PE-BAX embedded resource access at 0x50000000
+        Dim resTablePtr As Pointer To UInt32 = CPtr(Pointer To UInt32, &H50000000)
+        If resTablePtr(0) = 1 Then ' ASSET_MANIFEST
+            Dim manifestByteLenPtr As Pointer To UInt64 = CPtr(Pointer To UInt64, &H50000020)
+            PrintMessageWithUInt "[USER-APP] Memory-Mapped BAX Manifest verified (Size: ", manifestByteLenPtr(0), " bytes, Mapped: 0x50000000)\r\n"
+        End If
 
         PrintString "[BRT0] user_main completed successfully. Returning exit code 0.\r\n"
         PrintString "[BRT0] =======================================================\r\n"

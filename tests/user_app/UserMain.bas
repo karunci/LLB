@@ -245,6 +245,25 @@ Module UserApplication
             PrintMessageWithUInt "[USER-APP] Subscribed Synapse to 'hw.input.raw' -> Channel #", inputSynId, "\r\n"
         End If
 
+        ' 8c. Discover Unified Input Service Node ('srv.input')
+        Dim srvInputName(15) As Byte
+        srvInputName(0) = 115 ' 's'
+        srvInputName(1) = 114 ' 'r'
+        srvInputName(2) = 118 ' 'v'
+        srvInputName(3) = 46  ' '.'
+        srvInputName(4) = 105 ' 'i'
+        srvInputName(5) = 110 ' 'n'
+        srvInputName(6) = 112 ' 'p'
+        srvInputName(7) = 117 ' 'u'
+        srvInputName(8) = 116 ' 't'
+        srvInputName(9) = 0
+        Dim srvInputNodeId As UInt64 = Syscall1(SYS_NODE_LOOKUP, CType(UInt64, @srvInputName(0)))
+        PrintMessageWithUInt "[USER-APP] Discovered Unified Input Service Node: 'srv.input' -> ID #", srvInputNodeId, "\r\n"
+        If srvInputNodeId > 0 Then
+            Dim srvSynId As UInt64 = Syscall3(SYS_SYNAPSE_CONNECT, userNodeId, srvInputNodeId, 3)
+            PrintMessageWithUInt "[USER-APP] Connected Synapse to 'srv.input' -> Channel #", srvSynId, "\r\n"
+        End If
+
         ' 9. Verify Zero-Copy Shared Memory (SYS_SHMEM_CREATE, Write Verification, SYS_SHMEM_DETACH)
         Dim shmTargetVaddr As UInt64 = &H60000000
         Dim shmid As UInt64 = Syscall2(SYS_SHMEM_CREATE, 8192, shmTargetVaddr)

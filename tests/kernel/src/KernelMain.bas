@@ -415,10 +415,21 @@ Module KernelMain
         Dim initrdEnd As UInt64 = PMM.GetInitrdEnd()
         Dim baxSize As UInt64 = 0
         Dim baxDataAddr As UInt64 = 0
+        Dim inputBaxSize As UInt64 = 0
+        Dim inputBaxAddr As UInt64 = 0
 
         If initrdStart <> 0 And initrdEnd > initrdStart Then
             Serial.PrintF "[PRK] Scanning Initrd USTAR Ramdisk at 0x%lx (%u bytes)...\r\n", _
                           initrdStart, CType(UInt32, initrdEnd - initrdStart)
+
+            ' 1. Probe for Input Service daemon ('input_srv.bax')
+            inputBaxAddr = Tar.FindFile(initrdStart, "input_srv.bax", inputBaxSize)
+            If inputBaxAddr <> 0 Then
+                Serial.PrintF "[PRK] Located 'input_srv.bax' in ramdisk (%u bytes at 0x%lx)\r\n", _
+                              CType(UInt32, inputBaxSize), inputBaxAddr
+            End If
+
+            ' 2. Probe for User Application ('user_app.bax')
             baxDataAddr = Tar.FindFile(initrdStart, "user_app.bax", baxSize)
             If baxDataAddr <> 0 Then
                 Serial.PrintF "[PRK] Located 'user_app.bax' in ramdisk (%u bytes at 0x%lx)\r\n", _
@@ -430,7 +441,14 @@ Module KernelMain
             Serial.PrintF "[PRK] Warning: No Multiboot initrd module provided.\r\n"
         End If
 
-        ' Spawn standalone Ring 3 BAX Application
+        ' Spawn Unified Input Service Daemon (PID 1)
+        Dim inputPid As UInt64 = 0
+        If inputBaxAddr <> 0 Then
+            inputPid = SchedEngine.CreateBaxProcess("srv.input", inputBaxAddr, inputBaxSize, 1)
+            Serial.PrintF "[PRK] Spawned Unified Input Service Daemon (PID: %u)\r\n", CType(UInt32, inputPid)
+        End If
+
+        ' Spawn Standalone Ring 3 BAX Application (PID 2)
         Dim userPid As UInt64 = 0
         If baxDataAddr <> 0 Then
             userPid = SchedEngine.CreateBaxProcess("user.test.app", baxDataAddr, baxSize, 2)

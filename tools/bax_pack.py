@@ -286,6 +286,7 @@ if __name__ == "__main__":
     parser.add_argument("--manifest", help="Optional JSON/TOML manifest file", default=None)
     parser.add_argument("--icon", help="Optional PNG/BMP icon file", default=None)
     parser.add_argument("--tar", help="Optional output initrd.tar to package", default=None)
+    parser.add_argument("--extra", action="append", help="Extra file to include in initrd tar (format: name=path or path)", default=[])
     args = parser.parse_args()
 
     out_bax = args.output or os.path.splitext(args.elf)[0] + ".bax"
@@ -294,5 +295,11 @@ if __name__ == "__main__":
     pack_bax(args.elf, out_bax, subsystem=subsys_map[args.subsystem], manifest_path=args.manifest, icon_path=args.icon)
 
     if args.tar:
-        bax_name = os.path.basename(out_bax)
-        create_initrd_tar({bax_name: out_bax}, args.tar)
+        files = {os.path.basename(out_bax): out_bax}
+        for extra in args.extra:
+            if "=" in extra:
+                arcname, filepath = extra.split("=", 1)
+            else:
+                arcname, filepath = os.path.basename(extra), extra
+            files[arcname] = filepath
+        create_initrd_tar(files, args.tar)

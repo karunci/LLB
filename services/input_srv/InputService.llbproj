@@ -1,0 +1,25 @@
+' Project Name: PROS Unified Input Service
+' Filename: services/input_srv/InputService.llbproj
+' Summary: Standalone Ring 3 input service driver daemon.
+
+[Project]
+Name    = "InputService"
+Type    = "Executable"
+Version = "1.0.0"
+
+[Target]
+Arch = "x86_64-unknown-none-elf"
+
+[Output]
+OutDir  = "build"
+OutFile = "input_srv.elf"
+
+[Entry]
+EntryPoint = "_start"
+
+[Linker]
+LinkerScript = "user_linker.ld"
+
+[Sources]
+Assembly = "brt0.S"
+Module   = "InputMain.bas"

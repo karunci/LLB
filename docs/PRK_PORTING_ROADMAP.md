@@ -552,9 +552,23 @@ tests/kernel/
   - Registered IDT Gate 44 in `tests/kernel/src/arch/x86_64/Idt.bas`.
   - Added `IoApic.EnableMouse()` routing `IRQ_MOUSE` (12) to Vector 44 on CPU 0 in `tests/kernel/src/arch/x86_64/IoApic.bas`.
   - Clean procedural callback decoupling via `Arch.Idt.RegisterHandler 44, @OnMouseInterrupt`.
-- [x] **Dual-Plane Node Architecture Registration:**
-  - Registered `hw.input.raw` as Node `#1002` (Kind: `NODE_DEVICE`).
-- [x] **Userspace Live Verification (`tests/user_app/UserMain.bas`):**
-  - Ring 3 userspace application queries `SYS_NODE_LOOKUP("hw.input.raw")`, discovers Node `#1002`, and establishes Synapse Channel `#5002` with read/write capability to stream hardware input events.
-  - Verified live in QEMU SMP 4 cores with WHPX hardware acceleration.
+---
+
+## Phase 13: Userspace Unified Input Service Driver (`input_srv.bax`) (Completed)
+
+- [x] **Service Architecture & Node Registration (`services/input_srv/InputMain.bas`):**
+  - Standalone Ring 3 driver daemon packaged as `input_srv.bax` with embedded manifest metadata.
+  - Registers Node `srv.input` (Node `#1004`, Kind: `NODE_ROUTER`, Caps: `0x7`).
+  - Discovers hardware input node `hw.input.raw` via `SYS_NODE_LOOKUP` and establishes Synapse Channel `#5002`.
+- [x] **Zero-Copy Shared Memory Event Gradient:**
+  - Creates 8 KB shared event ring buffer (`SharedInputQueue` / `INPUT_QUEUE_MAGIC`) mapped at `0x60000000`.
+  - Normalizes raw scancodes and mouse packets into structured high-level `InputEvent` records ready for compositor and window manager consumption.
+- [x] **Multi-Binary USTAR Ramdisk Packaging (`tools/bax_pack.py`):**
+  - Extended packager with `--extra` support to bundle multiple `.bax` executables and manifests into a unified `initrd.tar` (20,480 bytes).
+- [x] **Concurrent SMP Multitasking Verification:**
+  - Verified live in QEMU SMP 4 cores with WHPX hardware acceleration:
+    - Microkernel locates both `input_srv.bax` and `user_app.bax` in the USTAR ramdisk.
+    - Spawns `srv.input` as PID 1 on Core #0 and `user.test.app` as PID 2 on Core #1.
+    - Both tasks execute concurrently in Ring 3: `srv.input` allocates shared memory gradient, `user.test.app` dynamically discovers both `hw.input.raw` and `srv.input` via `SYS_NODE_LOOKUP`, and connects Synapse channels.
+    - Both tasks exit cleanly and are reaped by the microkernel scheduler.
 

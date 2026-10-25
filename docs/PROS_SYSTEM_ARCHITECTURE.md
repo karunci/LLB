@@ -304,3 +304,51 @@ lib/pros/
 
 All userland projects (`.llbproj`) link against `lib/pros` to utilize clean, type-safe Low-Level Basic procedures instead of raw inline assembly syscalls.
 
+---
+
+## 8. Dynamic Linking & Shared Library Architecture (`libpros.bdl` & `ld.bax`)
+
+### A. Motivation & Footprint Optimization
+In early bootstrap phases, services and test applications link against `lib/pros` statically. As the operating system scales to hundreds of system services, shell utilities, and graphical user applications, static duplication of runtime routines inflates binary size and wastes physical memory.
+
+To eliminate this overhead, PROS introduces native dynamic linking via **Basic Dynamic Libraries (`.bdl`)** and the userspace dynamic loader **`ld.bax`**.
+
+```
+                  ┌─────────────────────────────────────────┐
+                  │          Microkernel BaxLoader          │
+                  └────────────────────┬────────────────────┘
+                                       │ Maps App & Dynamic Linker
+                                       ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                          Process Address Space (User PML4)                      │
+│                                                                                 │
+│   0x40000000: [ Application Binary (.bax) ]                                     │
+│               - Contains Import Directory Table (List of needed libraries)     │
+│               - Jump stubs point to Import Address Table (IAT)                  │
+│                                                                                 │
+│   0x70000000: [ Shared System Library: libpros.bdl ]                           │
+│               - Text/code pages are mapped READ-ONLY from shared physical PMM   │
+│               - 100 processes running libpros consume ZERO duplicate RAM!       │
+│                                                                                 │
+│   0x7F000000: [ Dynamic Linker Runtime: ld.bax ]                               │
+│               - Resolves symbol addresses into application's IAT                │
+│               - Jumps to application's actual user_main()                       │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### B. Format Specification: `.bdl` (Basic Dynamic Library)
+- Uses the standard `BaxHeader` structure with `Header.Flags = BAX_FLAG_SHARED_LIB` (`0x0002`).
+- **Export Directory Table:** Contains exported symbol names/hashes and relative virtual offsets (RVA).
+- **Import Directory Table:** Embedded within `.bax` binaries, declaring required libraries (`libpros.bdl`) and imported function names.
+
+### C. Zero-Copy Shared Text Pages
+- Because PROS features `SharedMemoryManager` and PMM page table manipulation, the code (`.text`) and read-only data (`.rodata`) segments of `libpros.bdl` are allocated in physical RAM exactly **once**.
+- When any process launches, the kernel or dynamic loader maps these existing physical frames into the process's User PML4 at `0x70000000` with read-only/executable permissions (`PTE_PRESENT | PTE_USER`).
+- **Impact:** Individual `.bax` binary sizes shrink from ~8–12 KB to ~500 bytes – 1 KB, and system-wide RAM consumption for standard libraries is reduced to a single shared physical instance.
+
+### D. Implementation Timeline
+- **Phase 14 (Current):** Modular static `lib/pros` library establishing clean namespace APIs (`Pros.Sys`, `Pros.IO`, `Pros.Nodes`, `Pros.Memory`, `Pros.Gui`).
+- **Phase 15:** Virtual File System (VFS) and storage subsystem.
+- **Phase 16:** Implementation of `ld.bax` dynamic loader runtime and compilation of `libpros.bdl`. All userland applications transition from static linking to dynamic linking without changing any API calls.
+
+

@@ -16,23 +16,28 @@ OUTPUT_ISO="${KERNEL_DIR}/build/kernel.iso"
 
 INITRD_TAR="${PROJECT_ROOT}/tests/user_app/build/initrd.tar"
 
-if [ ! -f "${KERNEL_ELF}" ]; then
-    echo "[!] kernel.elf not found at ${KERNEL_ELF}. Compiling..."
-    cd "${PROJECT_ROOT}"
-    ./build/llbc-stage0 tests/kernel/Kernel.llbproj
-fi
+echo "[+] Building and packaging Userland Services and Applications..."
+cd "${PROJECT_ROOT}"
+./build/llbc-stage0 lib/pros/Pros.llbproj
+./build/llbc-stage0 services/disp_srv/DispService.llbproj
+./build/llbc-stage0 services/input_srv/InputService.llbproj
+./build/llbc-stage0 services/compositor/Compositor.llbproj
+./build/llbc-stage0 tests/user_app/UserApp.llbproj
 
-if [ ! -f "${INITRD_TAR}" ]; then
-    echo "[!] initrd.tar not found at ${INITRD_TAR}. Packaging..."
-    cd "${PROJECT_ROOT}"
-    ./build/llbc-stage0 services/disp_srv/DispService.llbproj
-    ./build/llbc-stage0 services/input_srv/InputService.llbproj
-    ./build/llbc-stage0 tests/user_app/UserApp.llbproj
-    python3 tools/bax_pack.py services/disp_srv/build/disp_srv.elf -o services/disp_srv/build/disp_srv.bax --manifest services/disp_srv/manifest.json
-    python3 tools/bax_pack.py services/input_srv/build/input_srv.elf -o services/input_srv/build/input_srv.bax --manifest services/input_srv/manifest.json
-    python3 tools/bax_pack.py tests/user_app/build/user_app.elf -o tests/user_app/build/user_app.bax --manifest tests/user_app/manifest.json
-    tar -cf tests/user_app/build/initrd.tar -C tests/user_app/build user_app.bax -C ../../../services/disp_srv/build disp_srv.bax -C ../../../services/input_srv/build input_srv.bax
-fi
+python3 tools/bax_pack.py services/disp_srv/build/disp_srv.elf -o services/disp_srv/build/disp_srv.bax --manifest services/disp_srv/manifest.json
+python3 tools/bax_pack.py services/input_srv/build/input_srv.elf -o services/input_srv/build/input_srv.bax --manifest services/input_srv/manifest.json
+python3 tools/bax_pack.py services/compositor/build/compositor.elf -o services/compositor/build/compositor.bax --manifest services/compositor/manifest.json
+python3 tools/bax_pack.py tests/user_app/build/user_app.elf -o tests/user_app/build/user_app.bax --manifest tests/user_app/manifest.json
+
+mkdir -p tests/user_app/build
+tar -cf "${INITRD_TAR}" \
+    -C tests/user_app/build user_app.bax \
+    -C "${PROJECT_ROOT}/services/disp_srv/build" disp_srv.bax \
+    -C "${PROJECT_ROOT}/services/input_srv/build" input_srv.bax \
+    -C "${PROJECT_ROOT}/services/compositor/build" compositor.bax
+
+echo "[+] Building Kernel ELF..."
+./build/llbc-stage0 tests/kernel/Kernel.llbproj
 
 echo "[+] Preparing GRUB ISO staging tree at ${ISO_DIR}..."
 rm -rf "${ISO_DIR}"

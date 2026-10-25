@@ -432,6 +432,8 @@ Module KernelMain
         Dim dispBaxAddr As UInt64 = 0
         Dim inputBaxSize As UInt64 = 0
         Dim inputBaxAddr As UInt64 = 0
+        Dim compBaxSize As UInt64 = 0
+        Dim compBaxAddr As UInt64 = 0
         Dim baxSize As UInt64 = 0
         Dim baxDataAddr As UInt64 = 0
 
@@ -453,7 +455,14 @@ Module KernelMain
                               CType(UInt32, inputBaxSize), inputBaxAddr
             End If
 
-            ' 3. Probe for User Application ('user_app.bax')
+            ' 3. Probe for Compositor Service daemon ('compositor.bax')
+            compBaxAddr = Tar.FindFile(initrdStart, "compositor.bax", compBaxSize)
+            If compBaxAddr <> 0 Then
+                Serial.PrintF "[PRK] Located 'compositor.bax' in ramdisk (%u bytes at 0x%lx)\r\n", _
+                              CType(UInt32, compBaxSize), compBaxAddr
+            End If
+
+            ' 4. Probe for User Application ('user_app.bax')
             baxDataAddr = Tar.FindFile(initrdStart, "user_app.bax", baxSize)
             If baxDataAddr <> 0 Then
                 Serial.PrintF "[PRK] Located 'user_app.bax' in ramdisk (%u bytes at 0x%lx)\r\n", _
@@ -477,6 +486,13 @@ Module KernelMain
         If inputBaxAddr <> 0 Then
             inputPid = SchedEngine.CreateBaxProcess("srv.input", inputBaxAddr, inputBaxSize, 1)
             Serial.PrintF "[PRK] Spawned Unified Input Service Daemon (PID: %u)\r\n", CType(UInt32, inputPid)
+        End If
+
+        ' Spawn Compositor Service Daemon
+        Dim compPid As UInt64 = 0
+        If compBaxAddr <> 0 Then
+            compPid = SchedEngine.CreateBaxProcess("srv.compositor", compBaxAddr, compBaxSize, 1)
+            Serial.PrintF "[PRK] Spawned Compositor Service Daemon (PID: %u)\r\n", CType(UInt32, compPid)
         End If
 
         ' Spawn Standalone Ring 3 BAX Application

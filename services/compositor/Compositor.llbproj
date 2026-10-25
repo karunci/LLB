@@ -1,0 +1,28 @@
+' Project Name: PROS Display Compositor Service
+' Filename: services/compositor/Compositor.llbproj
+' Summary: Standalone Ring 3 display compositor and window manager daemon.
+
+[Project]
+Name    = "CompositorService"
+Type    = "Executable"
+Version = "1.0.0"
+
+[Target]
+Arch = "x86_64-unknown-none-elf"
+
+[Output]
+OutDir  = "build"
+OutFile = "compositor.elf"
+
+[Entry]
+EntryPoint = "_start"
+
+[Linker]
+LinkerScript = "user_linker.ld"
+Libraries    = [
+    "../../lib/pros/build/libpros.a"
+]
+
+[Sources]
+Assembly = "brt0.S"
+Module   = "CompositorMain.bas"

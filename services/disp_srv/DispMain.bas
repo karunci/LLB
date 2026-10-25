@@ -193,95 +193,14 @@ Module DispServiceMain
             ConsoleWriteLine "[DISP_SRV] WARN: Could not query display information"
         End If
 
-        ' 4. Map Linear Framebuffer Aperture to User Space at 0x78000000
-        Dim fbPtr As Pointer To UInt32 = MapFramebuffer(&H78000000)
-        Dim surf As Surface
-        Dim bx As Int32 = 0
-        Dim by As Int32 = 0
-        Dim hasBadge As Boolean = False
-
-        If fbPtr <> 0 Then
-            ConsoleWriteLine "[DISP_SRV] Linear Framebuffer Aperture mapped at 0x78000000"
-
-            surf.Width = disp.Width
-            surf.Height = disp.Height
-            surf.Pitch = disp.Pitch
-            surf.Bpp = disp.Bpp
-            surf.Pixels = fbPtr
-
-            If disp.Width > 220 And disp.Height > 60 Then
-                bx = CType(Int32, disp.Width) - 210
-                by = CType(Int32, disp.Height) - 34
-                FillRect surf, bx, by, 200, 26, &HFF2E3440
-                FillRect surf, bx, by, 200, 1, &HFF434C5E
-                FillRect surf, bx + 4, by + 4, 8, 18, &HFF00C853
-                hasBadge = True
-                ConsoleWriteLine "[DISP_SRV] Framebuffer surface rendered badge successfully."
-            End If
-        Else
-            ConsoleWriteLine "[DISP_SRV] ERR: Failed to map linear framebuffer aperture!"
-        End If
-
-        ' 6. Allocate Compositor Command Queue (64 KB at 0x68000000)
+        ' 4. Allocate Compositor Command Queue (64 KB at 0x68000000)
         Dim shmId As UInt64 = ShmemCreate(65536, &H68000000)
         ConsolePrintWithUInt "[DISP_SRV] Compositor Command Queue allocated -> ShmID #", shmId, "\r\n"
 
-        ' 7. Daemon event loop with live active badge animation and FPS counter
+        ' 5. Daemon event loop: service hardware display requests and yield CPU
         ConsoleWriteLine "[DISP_SRV] Display Driver Service online. Entering active daemon loop..."
-        Dim animPos As Int32 = 0
-        Dim animDir As Int32 = 3
-        Dim frameCount As UInt32 = 0
-        Dim trackX As Int32 = bx + 16
-        Dim trackY As Int32 = by + 5
-        Dim trackW As Int32 = 120
-        Dim trackH As Int32 = 16
-        Dim pulseW As Int32 = 28
-        Dim fpsX As Int32 = bx + 144
-        Dim fpsY As Int32 = by + 10
-        Dim fpsVal As UInt32 = 30
 
         Do
-            If hasBadge Then
-                ' 1. Cycle status LED color (breathing green -> cyan -> mint -> emerald)
-                Dim ledColor As UInt32 = &HFF00C853
-                Dim colorPhase As UInt32 = (frameCount / 6) Mod 4
-                If colorPhase = 0 Then
-                    ledColor = &HFF00E676
-                ElseIf colorPhase = 1 Then
-                    ledColor = &HFF00E5FF
-                ElseIf colorPhase = 2 Then
-                    ledColor = &HFF69F0AE
-                Else
-                    ledColor = &HFF00C853
-                End If
-                FillRect surf, bx + 4, by + 4, 8, 18, ledColor
-
-                ' 2. Redraw recessed dark channel for scanner pulse
-                FillRect surf, trackX, trackY, trackW, trackH, &HFF1B2028
-
-                ' 3. Draw animated cyber scanner pulse with multi-layer glow
-                Dim curX As Int32 = trackX + animPos
-                FillRect surf, curX, trackY + 1, pulseW, trackH - 2, &HFF00897B
-                FillRect surf, curX + 4, trackY + 3, pulseW - 8, trackH - 6, &HFF00E676
-                FillRect surf, curX + 9, trackY + 5, pulseW - 18, trackH - 10, &HFFFFFFFF
-
-                ' 4. Advance animation position (ping-pong bounce)
-                animPos = animPos + animDir
-                If animPos + pulseW >= trackW Then
-                    animPos = trackW - pulseW
-                    animDir = -3
-                ElseIf animPos <= 0 Then
-                    animPos = 0
-                    animDir = 3
-                End If
-
-                ' 5. Draw crisp cyber FPS telemetry display
-                DrawFps surf, fpsX, fpsY, fpsVal, &HFF00E5FF
-
-                frameCount = frameCount + 1
-            End If
-
-            ProcessSleep 33
             ProcessYield
         Loop
 

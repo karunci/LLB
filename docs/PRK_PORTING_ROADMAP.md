@@ -594,11 +594,20 @@ tests/kernel/
 
 ---
 
-## Phase 15: Display Compositor Daemon (`compositor.bax`) (Planned)
+## Phase 15: Display Compositor Daemon (`compositor.bax`) (Completed)
 
-- [ ] **Compositor Architecture (`services/compositor/`):**
-  - Package as `compositor.bax` with manifest `sys.service.compositor`.
-  - Connects to `srv.display` for rendering backend and `srv.input` for mouse/keyboard events.
-  - Composites window surfaces from client shared memory and blits real-time cursor plane.
+- [x] **Compositor Architecture (`services/compositor/`):**
+  - Standalone Ring 3 Display Compositor and Window Engine packaged as `compositor.bax` with manifest `sys.service.compositor` (`srv.compositor`).
+  - Seamless boot splash transition: keeps microkernel hardware topology Nord dashboard intact during early boot, smoothly clearing screen to `#191D24` desktop canvas once compositor is online.
+  - Multi-window scene presentation: top global menu bar (`#2E3440`), window frame (`#232731`) with Nord accents, title bar, control buttons, and dynamic text metrics.
+  - Interactive Software Cursor Engine: 12x8 high-contrast mouse cursor with background save-and-restore rendering (`cursorSavedBg`) for flicker-free movement.
+  - Live 30 FPS Telemetry Badge: migrated from `disp_srv` into `compositor.bax`, featuring breathing status LED, scanning cyber glow bar, 5x7 ASCII bitmap font glyph engine, and real-time frame counter.
+  - Double-buffered presentation loop running at ~30 FPS on Core #2 while other cores concurrently execute display hardware services, input dispatch, and user applications.
+- [x] **Toolchain & ISO Build Pipeline (`tests/kernel/scripts/build_iso.sh`):**
+  - Automated compilation of `libpros.a`, `disp_srv.bax`, `input_srv.bax`, `compositor.bax`, and `user_app.bax`.
+  - Packages all 4 BAX containers into `initrd.tar` and regenerates hybrid BIOS/UEFI `kernel.iso`.
+- [x] **Verification & Live QEMU Confirmation:**
+  - Verified clean boot of both `kernel.elf` and `kernel.iso` in local QEMU across all 4 SMP cores without panics.
+
 
 

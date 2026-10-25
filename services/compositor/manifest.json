@@ -1,0 +1,20 @@
+{
+  "app_id": "sys.service.compositor",
+  "name": "PROS Display Compositor",
+  "version": "1.0.0",
+  "vendor": "PROS Architecture Group",
+  "subsystem": "Service",
+  "permissions": [
+    "synapse.connect",
+    "synapse.register",
+    "shmem.create",
+    "shmem.attach",
+    "node.lookup",
+    "display.map"
+  ],
+  "node": {
+    "name": "srv.compositor",
+    "kind": "device",
+    "capabilities": 7
+  }
+}

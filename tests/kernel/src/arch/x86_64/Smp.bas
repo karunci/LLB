@@ -24,9 +24,10 @@ Module Arch.Smp
     Public Const MAX_CPUS As UInt32 = 16
 
     ' Volatile atomic counters for BSP<->AP handshake (placed in BSS, zeroed at boot)
-    Public apJoinCounter As UInt32 = 1   ' BSP starts at 1; each AP increments on join
-    Public apHandshake   As UInt32 = 0   ' AP sets to 1 when it has captured its cpu_id
-    Public apCurrentId   As UInt32 = 0   ' BSP writes logical id; AP reads before ack
+    Public apJoinCounter     As UInt32 = 1   ' BSP starts at 1; each AP increments on join
+    Public apHandshake       As UInt32 = 0   ' AP sets to 1 when it has captured its cpu_id
+    Public apCurrentId       As UInt32 = 0   ' BSP writes logical id; AP reads before ack
+    Public smpDispatchActive As UInt32 = 0   ' Barrier: 0 = wait, 1 = dispatch active
 
     ''
     ' @brief Spin with a simple delay loop (approximate microsecond-scale wait).
@@ -220,6 +221,27 @@ Module Arch.Smp
     Public Unsafe Sub SignalApJoined()
         Dim joinCounterPtr As Pointer To UInt32 = AddressOf apJoinCounter
         Asm "lock; addl $1, (%0)" : : "r"(joinCounterPtr) : "memory"
+    End Sub
+
+    ''
+    ' @brief Check if BSP has activated SMP task dispatch.
+    ''
+    Public Unsafe Function IsDispatchActive() As Boolean
+        Dim flagPtr As Volatile Pointer To UInt32 = AddressOf smpDispatchActive
+        If flagPtr(0) <> 0 Then
+            IsDispatchActive = True
+        Else
+            IsDispatchActive = False
+        End If
+    End Function
+
+    ''
+    ' @brief Release the SMP task dispatch barrier across all AP cores.
+    ''
+    Public Unsafe Sub ActivateDispatch()
+        Dim flagPtr As Volatile Pointer To UInt32 = AddressOf smpDispatchActive
+        flagPtr(0) = 1
+        Asm "mfence" : : : "memory"
     End Sub
 
 End Module

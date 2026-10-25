@@ -11,8 +11,19 @@ Use Core.Nodes.SynapseChannel
 Use Core.Nodes.NodeRegistry As Registry
 Use Sched.Scheduler As SchedEngine
 Use Mem.SharedMemoryManager As Shmem
+Use Drivers.Framebuffer As FbDriver
+Use Mem.VirtualMemoryManager As VmmEngine
 
 Namespace Sys
+
+    <Packed>
+    Public Structure DisplayInfo
+        Public Width    As UInt32
+        Public Height   As UInt32
+        Public Pitch    As UInt32
+        Public Bpp      As UInt32
+        Public PhysAddr As UInt64
+    End Structure
 
     Public Module Syscall
 
@@ -39,6 +50,10 @@ Namespace Sys
         Public Const SYS_SHMEM_CREATE    As UInt64 = 60
         Public Const SYS_SHMEM_ATTACH    As UInt64 = 61
         Public Const SYS_SHMEM_DETACH    As UInt64 = 62
+
+        ' Hardware Display Aperture Extensions
+        Public Const SYS_FB_GET_INFO     As UInt64 = 70
+        Public Const SYS_FB_MAP          As UInt64 = 71
 
         ' Hardware MSR Register Constants
         Private Const IA32_EFER          As UInt32 = &HC0000080
@@ -248,6 +263,38 @@ Namespace Sys
                     ' arg1 = shmid (Int64)
                     Dim detRes As Int64 = Shmem.DetachShmem(CType(Int64, arg1))
                     Dispatch = CType(UInt64, detRes)
+
+                Case SYS_FB_GET_INFO
+                    ' arg1 = userPtr (Pointer To DisplayInfo, 24 bytes)
+                    If ValidateUserBuffer(arg1, SizeOf(DisplayInfo)) Then
+                        Dim dispPtr As Pointer To DisplayInfo = CPtr(Pointer To DisplayInfo, arg1)
+                        dispPtr.Width = FbDriver.GetDisplayWidth()
+                        dispPtr.Height = FbDriver.GetDisplayHeight()
+                        dispPtr.Pitch = FbDriver.GetDisplayPitch()
+                        dispPtr.Bpp = FbDriver.GetDisplayBpp()
+                        dispPtr.PhysAddr = FbDriver.GetFramebufferPhys()
+                        Dispatch = 1
+                    Else
+                        Dispatch = 0
+                    End If
+
+                Case SYS_FB_MAP
+                    ' arg1 = targetVaddr (UInt64)
+                    Dim lfbPhys As UInt64 = FbDriver.GetFramebufferPhys()
+                    Dim lfbPitch As UInt64 = CType(UInt64, FbDriver.GetDisplayPitch())
+                    Dim lfbHeight As UInt64 = CType(UInt64, FbDriver.GetDisplayHeight())
+                    Dim lfbSize As UInt64 = lfbPitch * lfbHeight
+                    If lfbPhys <> 0 And lfbSize > 0 And ValidateUserBuffer(arg1, lfbSize) Then
+                        Dim callerCr3 As UInt64 = SchedEngine.GetCurrentCr3()
+                        Dim pageCount As UInt64 = (lfbSize + 4095) / 4096
+                        Dim pIdx As UInt64
+                        For pIdx = 0 To pageCount - 1
+                            VmmEngine.MapPage callerCr3, arg1 + (pIdx * 4096), lfbPhys + (pIdx * 4096), &H07 ' Present | Writable | User
+                        Next pIdx
+                        Dispatch = 1
+                    Else
+                        Dispatch = 0
+                    End If
 
                 Case Else
                     Serial.PrintF "[SYSCALL] Unknown native syscall #%u invoked\r\n", CType(UInt32, sysNum)

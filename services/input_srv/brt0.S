@@ -59,3 +59,16 @@ memcpy:
     rep movsb
     movq %r8, %rax
     ret
+
+.global strlen
+.type strlen, @function
+strlen:
+    xorq %rax, %rax
+1:
+    cmpb $0, (%rdi, %rax)
+    je 2f
+    incq %rax
+    jmp 1b
+2:
+    ret
+

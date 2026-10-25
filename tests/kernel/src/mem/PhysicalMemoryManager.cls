@@ -115,8 +115,9 @@ Namespace Mem
                 Exit Sub
             End If
 
-            ' Protect beyond 4GB for early identity paging
-            If physAddr >= &H100000000 Then
+            ' Protect beyond 2GB (0x80000000) for early identity paging;
+            ' 0x80000000 - 0xC0000000 is reserved for Kernel Heap dynamic mappings.
+            If physAddr >= &H80000000 Then
                 Exit Sub
             End If
 
@@ -213,7 +214,7 @@ Namespace Mem
 
                             Dim addr As UInt64 = startAddr
                             While addr < endAddr
-                                If addr >= &H1000000 And addr < &H100000000 Then
+                                If addr >= &H1000000 And addr < &H80000000 Then
                                     ' Protect loaded initrd archive from being freed to PMM pool
                                     If Not (initrdStartPhys <> 0 And addr >= initrdStartPhys And addr < initrdEndPhys) Then
                                         Me.FreePage addr
@@ -281,7 +282,7 @@ Namespace Mem
 
                                 addr = startAddr
                                 While addr < endAddr
-                                    If addr >= &H1000000 And addr < &H100000000 Then
+                                    If addr >= &H1000000 And addr < &H80000000 Then
                                         If Not (initrdStartPhys <> 0 And addr >= initrdStartPhys And addr < initrdEndPhys) Then
                                             Me.FreePage addr
                                         End If

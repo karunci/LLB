@@ -518,15 +518,19 @@ static std::string compileSourceFile(
                                 defExprs.push_back(p.defaultValue.get());
                             }
 
-                            std::string targetPrefix = "";
-                            if (curMod->name.find('.') != std::string::npos) {
-                                targetPrefix = curMod->name;
-                                for (auto& ch : targetPrefix) {
-                                    if (ch == '.') ch = '_';
+                            std::string symbolMangled;
+                            if (proc->isDeclare && !proc->aliasName.empty()) {
+                                symbolMangled = proc->aliasName;
+                            } else {
+                                std::string targetPrefix = "";
+                                if (curMod->name.find('.') != std::string::npos) {
+                                    targetPrefix = curMod->name;
+                                    for (auto& ch : targetPrefix) {
+                                        if (ch == '.') ch = '_';
+                                    }
                                 }
+                                symbolMangled = !targetPrefix.empty() ? (targetPrefix + "_" + proc->name) : proc->name;
                             }
-
-                            std::string symbolMangled = !targetPrefix.empty() ? (targetPrefix + "_" + proc->name) : proc->name;
                             std::string alias = (!imp.aliasName.empty() && !imp.symbolName.empty()) ? imp.aliasName : symbolMangled;
                             irEmitter.registerExternalProcedure(proc->name, retType, pTypes, alias, defExprs, paramByRefs, hasParamArray);
 

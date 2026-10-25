@@ -278,3 +278,68 @@ Public Declare Function Min Lib "libllb_metal" (ByVal a As Int64, ByVal b As Int
 Public Declare Function Std_Memory_Search Lib "libllb_metal" (ByVal ptr As Pointer To Byte, ByVal val As Byte, ByVal count As UInt64) As Pointer To Byte
 Public Declare Function SprintF Lib "libllb_metal" (ByVal outBuf As Pointer To Byte, ByVal maxLen As UInt64, ByVal fmt As Pointer To Byte, ParamArray args() As Pointer To Int64) As UInt32
 ```
+
+---
+
+## 4. Standardized Language Binding Conventions
+
+To maintain architectural clarity and prevent ambiguity across systems programming, PROS and Low-Level Basic enforce strict semantic separation between modules, classes, and precompiled libraries:
+
+```vb
+' =========================================================================
+' 1. IMPORT for Modules (.bas)
+'    Brings namespace routines, constants, and structures into the compilation unit.
+' =========================================================================
+Import "src/Syscall.bas"
+Import Pros.Sys.Syscall
+
+' =========================================================================
+' 2. USE for Classes (.cls)
+'    Imports object types, virtual method tables, and class definitions.
+' =========================================================================
+Use Mem.PhysicalMemoryManager As PMM
+Use Arch.Acpi As ACPI
+
+' =========================================================================
+' 3. DECLARE for Libraries (.a, .bdl, .so)
+'    Binds to external precompiled static or dynamic library symbols.
+' =========================================================================
+Public Declare Sub ProcessYield Lib "libpros" Alias "Pros_Process_Yield" ()
+Public Declare Function GetPid Lib "libpros" Alias "Pros_Process_GetPid" () As UInt64
+
+' =========================================================================
+' 4. ALIAS for Long Names
+'    Always shorten long, namespaced, or mangled names into clean, readable identifiers.
+' =========================================================================
+Use Arch.X86_64.PhysicalMemoryManager As PMM
+Public Declare Function FillRect Lib "libpros" Alias "Pros_Gui_Graphics_FillRect" (ByRef surf As Surface, ByVal rx As Int32, ByVal ry As Int32, ByVal rw As Int32, ByVal rh As Int32, ByVal color As UInt32) As Void
+```
+
+---
+
+## 5. PROS System Runtime Library (`LibPROS`)
+
+| Library | Directory | Target Type | Binary Output | Environment / Linkage |
+|:---|:---|:---:|:---:|:---|
+| **`LibPROS`** | `lib/pros/` | `StaticLibrary` (Phase 14) / `SharedLibrary` (Phase 16) | `libpros.a` / `libpros.bdl` | **PROS Ring 3 Userland** (Drivers, Services, Compositor, Apps). |
+
+### Header Interface (`include/pros.bas`)
+Applications and drivers include the standard header declarations and link against `libpros.a`:
+
+```vb
+' Linker configuration in MyService.llbproj:
+' [Linker]
+' Libraries = [ "../../lib/pros/build/libpros.a" ]
+
+Import "include/pros.bas"
+
+Module AppMain
+    Public Unsafe Function user_main() As UInt64
+        Dim pid As UInt64 = GetPid()
+        ConsoleWrite "[APP] Active PID: "
+        ProcessYield
+        user_main = 0
+    End Function
+End Module
+```
+

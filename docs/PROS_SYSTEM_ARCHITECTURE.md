@@ -26,7 +26,8 @@ In alignment with the **Dual-Plane Neural Node Architecture** (*"Everything is a
 | **System Service** | Windows Service | Daemon (`systemd` unit) | **Plexus Service** (`*.bax`) | Long-running background subsystem node (e.g., storage, networking). |
 | **Service Supervisor** | SCM (`services.exe`) | `systemd`, `launchd` | **`plexus_mgr.bax`** | Oversees service lifecycles, health heartbeat synapses, and restarts. |
 | **Device Arbiter** | Plug & Play (`pnp_mgr`)| `udev`, `devd` | **`dev_mgr.bax`** | Probes hardware buses (PCI/ACPI) and matches userland driver BAXs. |
-| **Display Server** | DWM (`dwm.exe`) | Wayland Compositor | **`compositor.bax`** | Owns LFB video aperture; composites window surfaces and cursor plane. |
+| **Display Server / Driver** | Basic Display / Graphics Driver | DRM / KMS / Framebuffer Driver | **`disp_srv.bax`** | Hardware display adapter driver; maps VRAM aperture, manages modes/double-buffers, presents Display APIs. |
+| **Display Compositor** | DWM (`dwm.exe`) | Wayland Compositor | **`compositor.bax`** | Window surface composition, cursor plane blitting, multi-backend support (Framebuffer via `disp_srv`, GL, Vulkan). |
 | **Window Manager** | Windows Shell / Explorer | Mutter / KWin / Sway | **`wm.bax`** | Window frames, titlebars, layouts, hit-testing, and focus dispatch. |
 | **Raw Input Driver** | Kernel Input Subsystem | `evdev` / Kernel HID | **`input_srv.bax`** | Reads raw scancodes/mouse bytes from kernel and emits high-level events. |
 
@@ -72,11 +73,21 @@ In alignment with the **Dual-Plane Neural Node Architecture** (*"Everything is a
  │                  ▼                                                  ▼                  │
  │  ┌───────────────────────────────┐                  ┌───────────────────────────────┐  │
  │  │        compositor.bax         │                  │      Client Applications      │  │
- │  │   (Display Engine & Cursor)   │ <══════════════> │   (user_app.bax, calc.bax)    │  │
- │  │ - Maps Physical Framebuffer   │  Shared Memory   │ - Allocates client backbuffer │  │
- │  │ - Composites Window Surfaces  │  (Zero-Copy)     │ - Draws UI widgets            │  │
- │  │ - Renders Hardware Cursor     │                  │ - Exchanges Synapse packets   │  │
+ │  │  (Display Engine & Cursor)    │ <══════════════> │   (user_app.bax, calc.bax)    │  │
+ │  │ - Multi-backend composition   │  Shared Memory   │ - Allocates client backbuffer │  │
+ │  │ - Renders Hardware Cursor     │  (Zero-Copy)     │ - Draws UI widgets            │  │
+ │  │ - Sends frame to disp_srv     │                  │ - Exchanges Synapse packets   │  │
  │  └───────────────┬───────────────┘                  └───────────────────────────────┘  │
+ │                  │ Display Server API / Framebuffer Blit                               │
+ │                  ▼                                                                     │
+ │  ┌───────────────────────────────┐                                                     │
+ │  │         disp_srv.bax          │                                                     │
+ │  │   (Display Driver Service)    │                                                     │
+ │  │ - Manages Display Adapters    │                                                     │
+ │  │   (BGA, Intel HD/UHD, GPU)    │                                                     │
+ │  │ - Maps Physical Framebuffer   │                                                     │
+ │  │ - Controls Video Modes & VRAM │                                                     │
+ │  └───────────────┬───────────────┘                                                     │
  └──────────────────┼─────────────────────────────────────────────────────────────────────┘
 ════════════════════╪══════════════════════════════════════════════════════════════════════
                     │ System Calls: SYS_SHMEM_* / SYS_SYNAPSE_* / SYS_NODE_*               

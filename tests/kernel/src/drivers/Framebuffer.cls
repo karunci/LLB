@@ -223,7 +223,12 @@ Namespace Drivers
             If IsBgaAvailable() Then
                 SetVideoMode 1024, 768, 32
             Else
-                physAddr = &HFD000000
+                Dim pciLfb As UInt64 = FindPciVgaLfb()
+                If pciLfb <> 0 Then
+                    physAddr = pciLfb
+                Else
+                    physAddr = &HFD000000
+                End If
                 width = 1024
                 height = 768
                 bpp = 32

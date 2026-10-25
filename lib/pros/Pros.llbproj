@@ -1,0 +1,36 @@
+' Project Name: LibPROS / Low-Level Basic
+' Filename: lib/pros/Pros.llbproj
+' Summary: PROS Operating System standard runtime library for Ring 3 applications and drivers.
+
+[Project]
+Name    = "LibPROS"
+Type    = "StaticLibrary"
+Version = "1.0.0"
+Author  = "karunci"
+License = "MPL-2.0"
+
+[Target]
+Architecture = "x86_64-unknown-none-elf"
+Platform     = "freestanding"
+
+[Output]
+OutputDirectory = "build"
+BinaryName      = "libpros.a"
+
+[CompilerOptions]
+OptimizationLevel      = "Os"
+EmitDebugInfo          = true
+Freestanding           = true
+DisableStandardLibrary = true
+
+[Sources]
+Files = [
+    "src/Syscall.bas",
+    "src/Process.bas",
+    "src/Console.bas",
+    "src/Node.bas",
+    "src/Shmem.bas",
+    "src/Input.bas",
+    "src/Gui.bas",
+    "src/Display.bas"
+]

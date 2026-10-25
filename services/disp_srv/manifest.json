@@ -1,0 +1,19 @@
+{
+  "app_id": "sys.service.display",
+  "name": "PROS Display Driver Service",
+  "version": "1.0.0",
+  "vendor": "PROS Architecture Group",
+  "subsystem": "Service",
+  "permissions": [
+    "synapse.connect",
+    "synapse.register",
+    "shmem.create",
+    "node.lookup",
+    "display.map"
+  ],
+  "node": {
+    "name": "srv.display",
+    "kind": "device",
+    "capabilities": 7
+  }
+}

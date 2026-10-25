@@ -12,7 +12,7 @@
  * MULTIBOOT 1 HEADER (For QEMU -kernel direct boot)
  * ============================================================================ */
 #define MULTIBOOT_HEADER_MAGIC      0x1BADB002
-#define MULTIBOOT_HEADER_FLAGS      0x00010003 /* ALIGN + MEMINFO + AOUT_KLUDGE */
+#define MULTIBOOT_HEADER_FLAGS      0x00010007 /* ALIGN + MEMINFO + VIDEO + AOUT_KLUDGE */
 
 .align 4
 multiboot1_header:
@@ -24,6 +24,10 @@ multiboot1_header:
     .long 0                 /* load_end_addr */
     .long 0                 /* bss_end_addr */
     .long _start            /* entry_addr */
+    .long 0                 /* mode_type: 0 = linear graphics */
+    .long 1024              /* width */
+    .long 768               /* height */
+    .long 32                /* depth */
 
 /* ============================================================================
  * MULTIBOOT 2 HEADER SPECIFICATION
@@ -43,16 +47,16 @@ header_start:
     .align 8
     .short 5     /* type = MULTIBOOT_HEADER_TAG_FRAMEBUFFER */
     .short 0     /* flags = 0 */
-    .long  24    /* size = 24 bytes */
-    .long  1280  /* preferred width */
-    .long  720   /* preferred height */
+    .long  20    /* size = 20 bytes (exact struct size per multiboot2 spec!) */
+    .long  1024  /* preferred width */
+    .long  768   /* preferred height */
     .long  32    /* preferred depth (bpp) */
     .long  0     /* padding to 8-byte boundary */
 
     /* Multiboot2 End Tag */
     .align 8
-    .word MULTIBOOT_HEADER_TAG_END
-    .word 0
+    .short MULTIBOOT_HEADER_TAG_END
+    .short 0
     .long 8
 header_end:
 
@@ -65,9 +69,13 @@ page_table_l4:
     .skip 4096
 page_table_l3:
     .skip 4096
-page_table_l2:
+page_table_l2_0:
     .skip 4096
-page_table_l2_apic:
+page_table_l2_1:
+    .skip 4096
+page_table_l2_2:
+    .skip 4096
+page_table_l2_3:
     .skip 4096
 
 .align 16
@@ -111,10 +119,10 @@ _start:
 
 /* Setup 4-level Page Tables */
 setup_page_tables:
-    /* Zero out all early boot page tables (16KB: page_table_l4, page_table_l3, page_table_l2, page_table_l2_apic) */
+    /* Zero out all early boot page tables (24KB: L4, L3, and 4x L2 tables) */
     mov $page_table_l4, %edi
     xor %eax, %eax
-    mov $4096, %ecx       /* 4096 dwords = 16384 bytes */
+    mov $6144, %ecx       /* 6144 dwords = 24576 bytes */
     cld
     rep stosl
 
@@ -125,16 +133,33 @@ setup_page_tables:
     mov %eax, (%ebx)
     movl $0, 4(%ebx)
 
-    /* Map L3[0] -> L2 */
-    mov $page_table_l2, %eax
+    /* Map L3[0] -> page_table_l2_0 (Identity map 0 - 1GB: Kernel code, BSS, stack, buddy pool) */
+    mov $page_table_l2_0, %eax
     or $0x3, %eax
-    mov $page_table_l3, %ebx
-    mov %eax, (%ebx)
-    movl $0, 4(%ebx)
+    mov %eax, page_table_l3 + 0
+    movl $0,  page_table_l3 + 4
 
-    /* Map all 512 entries of L2 -> 2MB Huge Pages (Identity Map physical 0x0 - 0x40000000 = 1GB) */
-    mov $page_table_l2, %ebx
-    mov $512, %ecx        /* 512 entries */
+    /* Map L3[1] -> page_table_l2_1 (Identity map 1GB - 2GB: RAM up to 2GB and ACPI tables) */
+    mov $page_table_l2_1, %eax
+    or $0x3, %eax
+    mov %eax, page_table_l3 + 8
+    movl $0,  page_table_l3 + 12
+
+    /* L3[2] (2GB - 3GB: 0x80000000 - 0xC0000000) is left UNMAPPED (0)
+     * VMM dynamic 4KB page allocator manages this range for Kernel Heap (0x81000000).
+     */
+    movl $0,  page_table_l3 + 16
+    movl $0,  page_table_l3 + 20
+
+    /* Map L3[3] -> page_table_l2_3 (Identity map 3GB - 4GB: MMIO, VRAM, LAPIC, IOAPIC) */
+    mov $page_table_l2_3, %eax
+    or $0x3, %eax
+    mov %eax, page_table_l3 + 24
+    movl $0,  page_table_l3 + 28
+
+    /* Identity map 0 - 2GB across page_table_l2_0 and page_table_l2_1 (1024 entries * 2MB = 2048MB) */
+    mov $page_table_l2_0, %ebx
+    mov $1024, %ecx       /* 1024 entries = 2GB */
     mov $0x83, %eax       /* Physical 0x0 | Present (1) | Writable (2) | HugePage (0x80) */
 1:
     mov %eax, (%ebx)
@@ -144,26 +169,17 @@ setup_page_tables:
     sub $1, %ecx
     jnz 1b
 
-    /* Map L3[3] -> L2_APIC (Physical 3GB - 4GB region) */
-    mov $page_table_l2_apic, %eax
-    or $0x3, %eax
-    mov $page_table_l3, %ebx
-    mov %eax, 24(%ebx)
-    movl $0, 28(%ebx)
-
-    /* Identity map all 512 entries of L2_APIC (3GB to 4GB: 0xC0000000 - 0x100000000)
-     * This covers ACPI tables (RSDT/MADT/FADT around 0xFE232000), IOAPIC (0xFEC00000), and LAPIC (0xFEE00000).
-     */
-    mov $page_table_l2_apic, %ebx
-    mov $512, %ecx
-    mov $0xC0000083, %eax /* Physical 3GB | Present | Writable | HugePage */
-1:
+    /* Identity map 3GB - 4GB across page_table_l2_3 (512 entries * 2MB = 1024MB: 0xC0000000 - 0x100000000) */
+    mov $page_table_l2_3, %ebx
+    mov $512, %ecx        /* 512 entries = 1GB */
+    mov $0xC0000083, %eax /* Physical 0xC0000000 | Present (1) | Writable (2) | HugePage (0x80) */
+2:
     mov %eax, (%ebx)
     movl $0, 4(%ebx)
     add $0x200000, %eax
     add $8, %ebx
     sub $1, %ecx
-    jnz 1b
+    jnz 2b
     ret
 
 /* Enable PAE, SSE, and Long Mode in CR4/CR0/EFER */

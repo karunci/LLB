@@ -255,23 +255,41 @@ Module KernelMain
         FB.ClearScreen &H00181824
 
         ' ---------------------------------------------------------------------
-        ' Render High-Resolution Nord Dashboard & Hardware Monitor (1024x768)
+        ' Render Dynamic High-Resolution Nord Dashboard & Hardware Monitor
         ' ---------------------------------------------------------------------
 
-        ' Top Header Banner with Nord Accent Stripe (x: 20..1004, w: 984, h: 38)
-        FB.FillRect 20, 20, 984, 38, &H002E3440
+        Dim scrW As UInt32 = FB.GetDisplayWidth()
+        Dim scrH As UInt32 = FB.GetDisplayHeight()
+        Dim scrBpp As UInt32 = FB.GetDisplayBpp()
+        If scrW = 0 Then scrW = 1024
+        If scrH = 0 Then scrH = 768
+        If scrBpp = 0 Then scrBpp = 32
+
+        Dim fullCardW As UInt32 = scrW - 40
+        Dim colGap As UInt32 = 16
+        Dim halfCardW As UInt32 = (fullCardW - colGap) / 2
+        Dim rightColX As UInt32 = 20 + halfCardW + colGap
+
+        ' Top Header Banner with Nord Accent Stripe (x: 20, w: fullCardW, h: 38)
+        FB.FillRect 20, 20, fullCardW, 38, &H002E3440
         FB.FillRect 20, 20, 6, 38, &H0088C0D0
         Dim topBannerBuf(64) As Byte
         SprintF CPtr(Pointer To Byte, topBannerBuf), 64, "x86_64 Long Mode | SMP %u Cores", Arch.Acpi.GetCpuCount()
-        FB.DrawString 680, 31, CPtr(Pointer To Byte, topBannerBuf), &H0088C0D0, 1
+        Dim bannerTextX As UInt32 = 20 + fullCardW - (CType(UInt32, 31) * 8) - 20
+        If bannerTextX < 36 Then bannerTextX = 36
+        FB.DrawString bannerTextX, 31, CPtr(Pointer To Byte, topBannerBuf), &H0088C0D0, 1
 
-        ' --- LEFT COLUMN: SYSTEM TOPOLOGY & DUAL-PLANE NODES (w: 480) ---
+        ' --- LEFT COLUMN: SYSTEM TOPOLOGY & DUAL-PLANE NODES (w: halfCardW) ---
 
-        ' Left Card 1: System Status & Topology (x: 20, y: 70, w: 480, h: 140)
-        FB.FillRect 20, 70, 480, 140, &H00232731
+        ' Left Card 1: System Status & Topology (x: 20, y: 70, w: halfCardW, h: 140)
+        FB.FillRect 20, 70, halfCardW, 140, &H00232731
         FB.FillRect 20, 70, 4, 140, &H0081A1C1
         FB.DrawString 36, 80, "[ SYSTEM STATUS & ARCHITECTURE ]", &H0081A1C1, 1
-        FB.DrawString 36, 100, "Display  : 1024x768x32 BPP (Double Buffered RAM)", &H0088C0D0, 1
+
+        Dim dispInfoBuf(64) As Byte
+        SprintF CPtr(Pointer To Byte, dispInfoBuf), 64, "Display  : %ux%ux%u BPP (Double Buffered RAM)", scrW, scrH, scrBpp
+        FB.DrawString 36, 100, CPtr(Pointer To Byte, dispInfoBuf), &H0088C0D0, 1
+
         FB.DrawString 36, 120, "Topology : Everything is a Node via Synapses", &H00A3BE8C, 1
         FB.DrawString 36, 140, "Control  : Cap-Checked Routing & Node Registry", &H00D8DEE9, 1
         FB.DrawString 36, 160, "Data     : Axonal Fast-Path 128-Slot Ring Buffers", &H00EBCB8B, 1
@@ -280,8 +298,8 @@ Module KernelMain
         SprintF CPtr(Pointer To Byte, smpSchedBuf), 64, "SMP Sched: %u Cores Active / Preemptive Stealing", Arch.Acpi.GetCpuCount()
         FB.DrawString 36, 180, CPtr(Pointer To Byte, smpSchedBuf), &H00B48EAD, 1
 
-        ' Left Card 2: Dual-Plane Neural Node Registry (x: 20, y: 222, w: 480, h: 150)
-        FB.FillRect 20, 222, 480, 150, &H00232731
+        ' Left Card 2: Dual-Plane Neural Node Registry (x: 20, y: 222, w: halfCardW, h: 150)
+        FB.FillRect 20, 222, halfCardW, 150, &H00232731
         FB.FillRect 20, 222, 4, 150, &H00A3BE8C
         FB.DrawString 36, 232, "[ DUAL-PLANE NEURAL NODE REGISTRY ]", &H00A3BE8C, 1
         FB.DrawString 36, 252, "Synapse #5000: Node #1000 <---> Node #1001", &H00ECEFF4, 1
@@ -290,7 +308,7 @@ Module KernelMain
         FB.DrawString 36, 312, "Syscall Gate   : Ring 0/3 MSR LSTAR (BRT Online)", &H00EBCB8B, 1
         FB.DrawString 36, 332, "Security Model : Capability-Checked Synapse Channels", &H00D8DEE9, 1
 
-        ' --- RIGHT COLUMN: HARDWARE INFO (CPU & RAM MONITOR) (w: 488) ---
+        ' --- RIGHT COLUMN: HARDWARE INFO (CPU & RAM MONITOR) (w: halfCardW) ---
 
         Dim strBuf(128) As Byte
         Dim sPtr As Pointer To Byte = CPtr(Pointer To Byte, strBuf)
@@ -302,19 +320,19 @@ Module KernelMain
         HwInfo.GetBrand CPtr(Pointer To Byte, cpuBrand)
         HwInfo.GetFeatures CPtr(Pointer To Byte, cpuFeat), 64
 
-        ' Right Card 1: CPU Hardware Info (x: 516, y: 70, w: 488, h: 140)
-        FB.FillRect 516, 70, 488, 140, &H00232731
-        FB.FillRect 516, 70, 4, 140, &H00EBCB8B
-        FB.DrawString 532, 80, "[ CPU HARDWARE INFO ]", &H00EBCB8B, 1
+        ' Right Card 1: CPU Hardware Info (x: rightColX, y: 70, w: halfCardW, h: 140)
+        FB.FillRect rightColX, 70, halfCardW, 140, &H00232731
+        FB.FillRect rightColX, 70, 4, 140, &H00EBCB8B
+        FB.DrawString rightColX + 16, 80, "[ CPU HARDWARE INFO ]", &H00EBCB8B, 1
 
         SprintF sPtr, 128, "Vendor   : %s", CPtr(Pointer To Byte, cpuVendor)
-        FB.DrawString 532, 100, sPtr, &H00ECEFF4, 1
+        FB.DrawString rightColX + 16, 100, sPtr, &H00ECEFF4, 1
 
         If cpuBrand(0) <> 0 Then
             SprintF sPtr, 128, "Model    : %s", CPtr(Pointer To Byte, cpuBrand)
-            FB.DrawString 532, 120, sPtr, &H0088C0D0, 1
+            FB.DrawString rightColX + 16, 120, sPtr, &H0088C0D0, 1
         Else
-            FB.DrawString 532, 120, "Model    : Generic x86_64 Processor", &H0088C0D0, 1
+            FB.DrawString rightColX + 16, 120, "Model    : Generic x86_64 Processor", &H0088C0D0, 1
         End If
 
         Dim apicModeStr As Pointer To Byte
@@ -324,21 +342,21 @@ Module KernelMain
             apicModeStr = CPtr(Pointer To Byte, "MMIO")
         End If
         SprintF sPtr, 128, "Topology : %u Symmetrical Cores (%s)", Arch.Acpi.GetCpuCount(), apicModeStr
-        FB.DrawString 532, 140, sPtr, &H00D8DEE9, 1
+        FB.DrawString rightColX + 16, 140, sPtr, &H00D8DEE9, 1
 
         SprintF sPtr, 128, "Features : %s", CPtr(Pointer To Byte, cpuFeat)
-        FB.DrawString 532, 160, sPtr, &H00B48EAD, 1
+        FB.DrawString rightColX + 16, 160, sPtr, &H00B48EAD, 1
 
         SprintF sPtr, 128, "Platform : LAPIC 0x%x | IO-APIC 0x%x", Arch.Acpi.GetLapicBase(), Arch.Acpi.GetIoapicBase()
-        FB.DrawString 532, 180, sPtr, &H0081A1C1, 1
+        FB.DrawString rightColX + 16, 180, sPtr, &H0081A1C1, 1
 
-        ' Right Card 2: RAM Physical & Virtual Memory Info (x: 516, y: 222, w: 488, h: 150)
-        FB.FillRect 516, 222, 488, 150, &H00232731
-        FB.FillRect 516, 222, 4, 150, &H005E81AC
-        FB.DrawString 532, 232, "[ RAM MEMORY INFO (PMM / VMM) ]", &H0088C0D0, 1
+        ' Right Card 2: RAM Physical & Virtual Memory Info (x: rightColX, y: 222, w: halfCardW, h: 150)
+        FB.FillRect rightColX, 222, halfCardW, 150, &H00232731
+        FB.FillRect rightColX, 222, 4, 150, &H005E81AC
+        FB.DrawString rightColX + 16, 232, "[ RAM MEMORY INFO (PMM / VMM) ]", &H0088C0D0, 1
 
         SprintF sPtr, 128, "Total RAM: %u MB (%u KB Managed)", CType(UInt32, totalMB), CType(UInt32, totalBytes RShift 10)
-        FB.DrawString 532, 252, sPtr, &H00ECEFF4, 1
+        FB.DrawString rightColX + 16, 252, sPtr, &H00ECEFF4, 1
 
         Dim usedMB As UInt64 = 0
         If totalMB > freeMB Then usedMB = totalMB - freeMB
@@ -346,25 +364,26 @@ Module KernelMain
         If totalMB > 0 Then usedPct = CType(UInt32, (usedMB * 100) / totalMB)
 
         SprintF sPtr, 128, "Used RAM : %u MB (%u%%) | Free: %u MB (%u%%)", CType(UInt32, usedMB), usedPct, CType(UInt32, freeMB), 100 - usedPct
-        FB.DrawString 532, 272, sPtr, &H00A3BE8C, 1
+        FB.DrawString rightColX + 16, 272, sPtr, &H00A3BE8C, 1
 
         ' Visual Memory Gauge Bar (Nord Styling)
         Dim barWidth As UInt32 = 452
+        If halfCardW > 36 Then barWidth = halfCardW - 36
         Dim fillW As UInt32 = 8
         If totalMB > 0 Then
             fillW = CType(UInt32, (usedMB * CType(UInt64, barWidth)) / totalMB)
             If fillW < 8 Then fillW = 8
             If fillW > barWidth Then fillW = barWidth
         End If
-        FB.FillRect 532, 292, barWidth, 10, &H003B4252
-        FB.FillRect 532, 292, fillW, 10, &H00A3BE8C
+        FB.FillRect rightColX + 16, 292, barWidth, 10, &H003B4252
+        FB.FillRect rightColX + 16, 292, fillW, 10, &H00A3BE8C
 
-        FB.DrawString 532, 310, "Buddy Pool : 64 MB (16 MB - 80 MB, Order 0..10)", &H00D8DEE9, 1
-        FB.DrawString 532, 328, "Kernel Heap: 8 MB @ 0x81000000 (16-Byte Aligned)", &H00EBCB8B, 1
-        FB.DrawString 532, 346, "Page Table : 4-Level PML4 Isolated User Address Space", &H00B48EAD, 1
+        FB.DrawString rightColX + 16, 310, "Buddy Pool : 64 MB (16 MB - 80 MB, Order 0..10)", &H00D8DEE9, 1
+        FB.DrawString rightColX + 16, 328, "Kernel Heap: 8 MB @ 0x81000000 (16-Byte Aligned)", &H00EBCB8B, 1
+        FB.DrawString rightColX + 16, 346, "Page Table : 4-Level PML4 Isolated User Address Space", &H00B48EAD, 1
 
-        ' --- BOTTOM FULL-WIDTH CARD: USERLAND RUNTIME (BRT) (w: 984) ---
-        FB.FillRect 20, 384, 984, 66, &H00232731
+        ' --- BOTTOM FULL-WIDTH CARD: USERLAND RUNTIME (BRT) (w: fullCardW) ---
+        FB.FillRect 20, 384, fullCardW, 66, &H00232731
         FB.FillRect 20, 384, 4, 66, &H00B48EAD
         FB.DrawString 36, 394, "[ USERLAND RUNTIME (BRT0) & RING 3 EXECUTION ]", &H00B48EAD, 1
         FB.DrawString 36, 412, "App Payload : 'user.test.app' (8200 bytes, Entry: 0x40000000, Stack: ASLR)", &H00ECEFF4, 1
@@ -399,37 +418,42 @@ Module KernelMain
             End If
         End If
 
+        ' Initialize Native Microkernel Syscall MSRs
+        Sys.Syscall.Initialize
+
         ' Initialize Application Processor cores (SMP bring-up via INIT-SIPI-SIPI)
         Serial.PrintF "[PRK] Starting SMP AP bring-up...\r\n"
         Arch.Smp.InitCores
 
-        ' Enable hardware interrupts on CPU
-        Arch.X86_64.PortIO.Sti
-        Serial.PrintF "[PRK] CPU Hardware Interrupts enabled (STI).\r\n"
-
-        ' Initialize Native Microkernel Syscall MSRs
-        Sys.Syscall.Initialize
-
         ' Discover in-memory USTAR initrd ramdisk
         Dim initrdStart As UInt64 = PMM.GetInitrdStart()
         Dim initrdEnd As UInt64 = PMM.GetInitrdEnd()
-        Dim baxSize As UInt64 = 0
-        Dim baxDataAddr As UInt64 = 0
+        Dim dispBaxSize As UInt64 = 0
+        Dim dispBaxAddr As UInt64 = 0
         Dim inputBaxSize As UInt64 = 0
         Dim inputBaxAddr As UInt64 = 0
+        Dim baxSize As UInt64 = 0
+        Dim baxDataAddr As UInt64 = 0
 
         If initrdStart <> 0 And initrdEnd > initrdStart Then
             Serial.PrintF "[PRK] Scanning Initrd USTAR Ramdisk at 0x%lx (%u bytes)...\r\n", _
                           initrdStart, CType(UInt32, initrdEnd - initrdStart)
 
-            ' 1. Probe for Input Service daemon ('input_srv.bax')
+            ' 1. Probe for Display Driver Service daemon ('disp_srv.bax')
+            dispBaxAddr = Tar.FindFile(initrdStart, "disp_srv.bax", dispBaxSize)
+            If dispBaxAddr <> 0 Then
+                Serial.PrintF "[PRK] Located 'disp_srv.bax' in ramdisk (%u bytes at 0x%lx)\r\n", _
+                              CType(UInt32, dispBaxSize), dispBaxAddr
+            End If
+
+            ' 2. Probe for Input Service daemon ('input_srv.bax')
             inputBaxAddr = Tar.FindFile(initrdStart, "input_srv.bax", inputBaxSize)
             If inputBaxAddr <> 0 Then
                 Serial.PrintF "[PRK] Located 'input_srv.bax' in ramdisk (%u bytes at 0x%lx)\r\n", _
                               CType(UInt32, inputBaxSize), inputBaxAddr
             End If
 
-            ' 2. Probe for User Application ('user_app.bax')
+            ' 3. Probe for User Application ('user_app.bax')
             baxDataAddr = Tar.FindFile(initrdStart, "user_app.bax", baxSize)
             If baxDataAddr <> 0 Then
                 Serial.PrintF "[PRK] Located 'user_app.bax' in ramdisk (%u bytes at 0x%lx)\r\n", _
@@ -441,14 +465,21 @@ Module KernelMain
             Serial.PrintF "[PRK] Warning: No Multiboot initrd module provided.\r\n"
         End If
 
-        ' Spawn Unified Input Service Daemon (PID 1)
+        ' Spawn Display Driver Service Daemon
+        Dim dispPid As UInt64 = 0
+        If dispBaxAddr <> 0 Then
+            dispPid = SchedEngine.CreateBaxProcess("srv.display", dispBaxAddr, dispBaxSize, 1)
+            Serial.PrintF "[PRK] Spawned Display Driver Service Daemon (PID: %u)\r\n", CType(UInt32, dispPid)
+        End If
+
+        ' Spawn Unified Input Service Daemon
         Dim inputPid As UInt64 = 0
         If inputBaxAddr <> 0 Then
             inputPid = SchedEngine.CreateBaxProcess("srv.input", inputBaxAddr, inputBaxSize, 1)
             Serial.PrintF "[PRK] Spawned Unified Input Service Daemon (PID: %u)\r\n", CType(UInt32, inputPid)
         End If
 
-        ' Spawn Standalone Ring 3 BAX Application (PID 2)
+        ' Spawn Standalone Ring 3 BAX Application
         Dim userPid As UInt64 = 0
         If baxDataAddr <> 0 Then
             userPid = SchedEngine.CreateBaxProcess("user.test.app", baxDataAddr, baxSize, 2)
@@ -456,6 +487,13 @@ Module KernelMain
         End If
 
         Serial.PrintF "[PRK] Kernel boot and userland dispatch completed successfully.\r\n"
+
+        ' Release AP barrier so all cores can start dispatching tasks simultaneously
+        Arch.Smp.ActivateDispatch
+
+        ' Enable hardware interrupts on CPU
+        Arch.X86_64.PortIO.Sti
+        Serial.PrintF "[PRK] CPU Hardware Interrupts enabled (STI).\r\n"
 
         ' Preemptively yield to let User Thread execute in Ring 3
         SchedEngine.Yield

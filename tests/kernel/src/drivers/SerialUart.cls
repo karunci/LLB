@@ -16,13 +16,22 @@ Namespace Drivers
 
         Private portBase As UInt16
         Private uartLock As Sync.Spinlock
+        Private isPortAvailable As Boolean
 
         Public Sub Initialize()
             Sync.SpinlockOps.Init uartLock
             portBase = &H3F8 ' COM1 Base Port
+            isPortAvailable = True
 
             ' Disable interrupts
             Arch.X86_64.PortIO.OutB portBase + 1, 0
+
+            ' Probe UART scratchpad register (portBase + 7) to verify hardware presence
+            Arch.X86_64.PortIO.OutB portBase + 7, &H5A
+            If Arch.X86_64.PortIO.InB(portBase + 7) <> &H5A Then
+                isPortAvailable = False
+                Exit Sub
+            End If
 
             ' Enable DLAB (set baud rate divisor)
             Arch.X86_64.PortIO.OutB portBase + 3, &H80
@@ -43,6 +52,10 @@ Namespace Drivers
 
         ' Check if Transmit Holding Register Empty (bit 5 of Line Status Register)
         Public Function IsTransmitEmpty() As Boolean
+            If Not isPortAvailable Then
+                IsTransmitEmpty = False
+                Exit Function
+            End If
             Dim status As Byte = Arch.X86_64.PortIO.InB(portBase + 5)
             If (status And &H20) <> 0 Then
                 IsTransmitEmpty = True
@@ -53,10 +66,13 @@ Namespace Drivers
 
         ' Raw un-synchronized character write to COM1 (internal use under uartLock)
         Private Unsafe Sub WriteCharRaw(ByVal ch As Byte)
+            If Not isPortAvailable Then Exit Sub
+
+            Dim timeout As UInt32 = 100
             While Not Me.IsTransmitEmpty()
-                Asm
-                    "pause"
-                End Asm
+                timeout = timeout - 1
+                If timeout = 0 Then Exit Sub
+                Asm "pause" : : : "memory"
             Wend
 
             Arch.X86_64.PortIO.OutB portBase, ch

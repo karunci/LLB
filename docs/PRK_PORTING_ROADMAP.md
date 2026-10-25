@@ -554,21 +554,51 @@ tests/kernel/
   - Clean procedural callback decoupling via `Arch.Idt.RegisterHandler 44, @OnMouseInterrupt`.
 ---
 
-## Phase 13: Userspace Unified Input Service Driver (`input_srv.bax`) (Completed)
+## Phase 13: Userspace Unified Input Driver Service (`input_srv.bax`) (Completed)
 
-- [x] **Service Architecture & Node Registration (`services/input_srv/InputMain.bas`):**
-  - Standalone Ring 3 driver daemon packaged as `input_srv.bax` with embedded manifest metadata.
-  - Registers Node `srv.input` (Node `#1004`, Kind: `NODE_ROUTER`, Caps: `0x7`).
-  - Discovers hardware input node `hw.input.raw` via `SYS_NODE_LOOKUP` and establishes Synapse Channel `#5002`.
-- [x] **Zero-Copy Shared Memory Event Gradient:**
-  - Creates 8 KB shared event ring buffer (`SharedInputQueue` / `INPUT_QUEUE_MAGIC`) mapped at `0x60000000`.
-  - Normalizes raw scancodes and mouse packets into structured high-level `InputEvent` records ready for compositor and window manager consumption.
-- [x] **Multi-Binary USTAR Ramdisk Packaging (`tools/bax_pack.py`):**
-  - Extended packager with `--extra` support to bundle multiple `.bax` executables and manifests into a unified `initrd.tar` (20,480 bytes).
-- [x] **Concurrent SMP Multitasking Verification:**
-  - Verified live in QEMU SMP 4 cores with WHPX hardware acceleration:
-    - Microkernel locates both `input_srv.bax` and `user_app.bax` in the USTAR ramdisk.
-    - Spawns `srv.input` as PID 1 on Core #0 and `user.test.app` as PID 2 on Core #1.
-    - Both tasks execute concurrently in Ring 3: `srv.input` allocates shared memory gradient, `user.test.app` dynamically discovers both `hw.input.raw` and `srv.input` via `SYS_NODE_LOOKUP`, and connects Synapse channels.
-    - Both tasks exit cleanly and are reaped by the microkernel scheduler.
+- [x] **Unified Input Architecture (`services/input_srv/`):**
+  - Ports userspace driver daemon for keyboard and mouse input event normalization.
+  - Registers Neural Service Node `srv.input` (Kind: `NODE_ROUTER`, Caps: `0x7`).
+  - Discovers hardware input node `hw.input.raw` (Node #1002) via `SYS_NODE_LOOKUP`.
+  - Establishes Axonal Synapse Channel to receive raw keyboard scancodes and mouse motion packets.
+- [x] **Zero-Copy Shared Event Queue:**
+  - Creates 8 KB shared memory buffer (`SHMID 2`) via `SYS_SHMEM_CREATE` mapped at `0x60000000`.
+  - Formats lock-free circular event ring buffer (`SharedInputQueue`) with 64-event capacity for low-latency dispatch to Window Compositor (`compositor.bax`).
+- [x] **Verification & Live QEMU Confirmation:**
+  - Verified daemon startup, peer synapse connection to `hw.input.raw`, event queue allocation, and clean yield loop in Ring 3 under 4-core SMP.
+
+---
+
+## Phase 14: Userspace Display Driver Service (`disp_srv.bax`) (Completed)
+
+- [x] **Kernel Display Aperture Syscalls (`tests/kernel/src/sys/Syscall.bas`):**
+  - `SYS_FB_GET_INFO = 70`: Return display geometry (`width`, `height`, `pitch`, `bpp`, `physLfb`) from kernel `Framebuffer` driver.
+  - `SYS_FB_MAP = 71`: Map physical VRAM aperture into calling process's User PML4 space with `PTE_PRESENT | PTE_WRITABLE | PTE_USER`.
+- [x] **Standard Library Bindings (`include/pros.bas` & `lib/pros/src/Display.bas`):**
+  - Added `DisplayInfo` structure and declared `GetDisplayInfo` and `MapFramebuffer`.
+- [x] **Display Driver Daemon (`services/disp_srv/`):**
+  - Packaged as `disp_srv.bax` with manifest `sys.service.display` in `initrd.tar`.
+  - Registers Node `srv.display` (Kind: `NODE_DEVICE`, Caps: `0x7`).
+  - Maps physical VRAM aperture dynamically at `0x78000000` (zero hardcoding; dynamically queries resolution, pitch, and hex aperture from `SYS_FB_GET_INFO`).
+  - Allocates 64 KB Compositor Command Queue via zero-copy shared memory (`SYS_SHMEM_CREATE`).
+  - Directly renders animated status indicator badge with breathing LED, ping-pong cyber scanner glow bar, embedded 5x7 ASCII bitmap font glyph engine, and real-time `30 FPS` telemetry counter on a recessed `#1B2028` background.
+- [x] **SMP Bring-up Barrier & WHPX Stability:**
+  - Resolved `qemu: WHPX: Unexpected VP exit code 4` by sequencing SMP AP bring-up ahead of userland process dispatch.
+  - Added volatile SMP barrier routines (`Arch.Smp.IsDispatchActive()` / `Arch.Smp.ActivateDispatch()`) holding AP cores until BSP has initialized all subsystems, queued processes across cores, and signaled dispatch start.
+- [x] **Hybrid BIOS & UEFI Bootable ISO (`tests/kernel/scripts/build_iso.sh`):**
+  - Automated packaging of `kernel.elf`, `initrd.tar` (containing `disp_srv.bax`, `input_srv.bax`, `user_app.bax`), and GRUB configuration with `gfxpayload=keep` and `gfxmode=1024x768x32` into `tests/kernel/build/kernel.iso`.
+  - Configured Multiboot 1 and Multiboot 2 headers in `boot.S` with valid struct sizes (Type 5: 20 bytes) and dynamic Nord dashboard scaling.
+  - Implemented early boot identity mapping for 0–2GB and 3–4GB while reserving 2–3GB (`0x80000000 - 0xC0000000`) for VMM 4KB page allocations (`KernelHeap` at `0x81000000`).
+  - Added PMM physical memory bounding (< 2GB) to eliminate early triple faults on VMs with $\ge$2GB RAM.
+  - Tested and verified bootable across QEMU (`q35` and standard) and VirtualBox (ICH9, 4 vCPUs) with live 30 FPS animated status badge and complete userland execution.
+
+---
+
+## Phase 15: Display Compositor Daemon (`compositor.bax`) (Planned)
+
+- [ ] **Compositor Architecture (`services/compositor/`):**
+  - Package as `compositor.bax` with manifest `sys.service.compositor`.
+  - Connects to `srv.display` for rendering backend and `srv.input` for mouse/keyboard events.
+  - Composites window surfaces from client shared memory and blits real-time cursor plane.
+
 

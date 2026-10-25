@@ -39,6 +39,7 @@ struct ProjectConfig {
     std::vector<std::string> assemblyFiles;  // .S / .s
     std::vector<std::string> libraries;      // static archives (.a), shared libs (.so), or bare lib names
     std::vector<std::string> libraryPaths;  // -L search paths
+    std::vector<std::string> includeDirs;   // include search paths (-I)
     std::vector<std::string> postBuildCommands; // sequential post-build commands/scripts
     int scriptTimeout{30};               // default post-build timeout in seconds (0 = disabled)
 };

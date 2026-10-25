@@ -276,10 +276,15 @@ Public Class Scheduler
         Dim idleKstackTop As UInt64 = idleTask.KStackBase + CType(UInt64, KERNEL_STACK_SIZE)
         Arch.X86_64.Gdt.SetKernelStackForCore cpuId, idleKstackTop
 
-        Serial.PrintF "[SCHED] AP Core #%d online: idle task ready. Enabling interrupts...\r\n", cpuId
+        Serial.PrintF "[SCHED] AP Core #%d online: idle task ready. Waiting for dispatch barrier...\r\n", cpuId
 
         ' Atomically notify BSP that idle task is online and serial output is done
         SignalApJoined
+
+        ' Wait for BSP to complete full SMP bring-up of all cores and signal dispatch start
+        While Not Arch.Smp.IsDispatchActive()
+            Asm "pause" : : : "memory"
+        Wend
 
         ' Enable hardware interrupts on AP and start cooperative yield loop
         Arch.X86_64.PortIO.Sti

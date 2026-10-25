@@ -19,6 +19,9 @@ EntryPoint = "_start"
 
 [Linker]
 LinkerScript = "user_linker.ld"
+Libraries    = [
+    "../../lib/pros/build/libpros.a"
+]
 
 [Sources]
 Assembly = "brt0.S"

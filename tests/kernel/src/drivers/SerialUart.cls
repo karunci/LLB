@@ -4,6 +4,7 @@
 
 Import Drivers.ICharDevice
 Import Arch.X86_64.PortIO
+Import Sync
 
 Namespace Drivers
 
@@ -14,8 +15,10 @@ Namespace Drivers
         Private Declare Function SprintF Lib "libllb_metal" (ByVal outBuf As Pointer To Byte, ByVal maxLen As UInt32, ByVal fmt As Pointer To Byte, ParamArray args() As Pointer To Int64) As UInt32
 
         Private portBase As UInt16
+        Private uartLock As Sync.Spinlock
 
         Public Sub Initialize()
+            Sync.SpinlockOps.Init uartLock
             portBase = &H3F8 ' COM1 Base Port
 
             ' Disable interrupts
@@ -48,8 +51,8 @@ Namespace Drivers
             End If
         End Function
 
-        ' Write a single character
-        Public Unsafe Sub WriteChar(ByVal ch As Byte)
+        ' Raw un-synchronized character write to COM1 (internal use under uartLock)
+        Private Unsafe Sub WriteCharRaw(ByVal ch As Byte)
             While Not Me.IsTransmitEmpty()
                 Asm
                     "pause"
@@ -59,36 +62,72 @@ Namespace Drivers
             Arch.X86_64.PortIO.OutB portBase, ch
         End Sub
 
-        ' Write a null-terminated ASCII string
-        Public Unsafe Sub WriteString(ByVal strPtr As Pointer To Byte)
-            Dim i As UInt64
-            i = 0
-            Do While strPtr(i) <> 0
-                If strPtr(i) = 10 Then
-                    Me.WriteChar 13 ' Prepend CR before LF
+        ' Write a single character (thread-safe, acquires uartLock)
+        Public Unsafe Sub WriteChar(ByVal ch As Byte)
+            Dim flags As UInt64 = Sync.SpinlockOps.AcquireIrqSave(uartLock)
+            Me.WriteCharRaw ch
+            Sync.SpinlockOps.ReleaseIrqRestore uartLock, flags
+        End Sub
+
+        ' Write a raw buffer of bytes of given length atomically (thread-safe, acquires uartLock)
+        Public Unsafe Sub WriteBuffer(ByVal bufPtr As Pointer To Byte, ByVal length As UInt64)
+            If bufPtr = 0 Or length = 0 Then Exit Sub
+            Dim flags As UInt64 = Sync.SpinlockOps.AcquireIrqSave(uartLock)
+            Dim i As UInt64 = 0
+            Do While i < length
+                If bufPtr(i) = 10 Then
+                    Me.WriteCharRaw 13 ' Prepend CR before LF
                 End If
-                Me.WriteChar strPtr(i)
+                Me.WriteCharRaw bufPtr(i)
                 i = i + 1
             Loop
+            Sync.SpinlockOps.ReleaseIrqRestore uartLock, flags
         End Sub
 
-        ' Write a line of text followed by newline
+        ' Write a null-terminated ASCII string (thread-safe, acquires uartLock)
+        Public Unsafe Sub WriteString(ByVal strPtr As Pointer To Byte)
+            If strPtr = 0 Then Exit Sub
+            Dim flags As UInt64 = Sync.SpinlockOps.AcquireIrqSave(uartLock)
+            Dim i As UInt64 = 0
+            Do While strPtr(i) <> 0
+                If strPtr(i) = 10 Then
+                    Me.WriteCharRaw 13 ' Prepend CR before LF
+                End If
+                Me.WriteCharRaw strPtr(i)
+                i = i + 1
+            Loop
+            Sync.SpinlockOps.ReleaseIrqRestore uartLock, flags
+        End Sub
+
+        ' Write a line of text followed by newline (thread-safe, acquires uartLock across whole line)
         Public Unsafe Sub WriteLine(ByVal str As Pointer To Byte)
-            Me.WriteString str
-            Me.WriteChar 10
+            If str = 0 Then Exit Sub
+            Dim flags As UInt64 = Sync.SpinlockOps.AcquireIrqSave(uartLock)
+            Dim i As UInt64 = 0
+            Do While str(i) <> 0
+                If str(i) = 10 Then
+                    Me.WriteCharRaw 13 ' Prepend CR before LF
+                End If
+                Me.WriteCharRaw str(i)
+                i = i + 1
+            Loop
+            Me.WriteCharRaw 13
+            Me.WriteCharRaw 10
+            Sync.SpinlockOps.ReleaseIrqRestore uartLock, flags
         End Sub
 
-        ' Write a 64-bit integer formatted in hexadecimal
+        ' Write a 64-bit integer formatted in hexadecimal (thread-safe, acquires uartLock)
         Public Unsafe Sub WriteHex(ByVal value As UInt64)
-            Me.WriteString CPtr(Pointer To Byte, "0x")
+            Dim flags As UInt64 = Sync.SpinlockOps.AcquireIrqSave(uartLock)
+            Me.WriteCharRaw 48 ' '0'
+            Me.WriteCharRaw 120 ' 'x'
             If value = 0 Then
-                Me.WriteString CPtr(Pointer To Byte, "0")
+                Me.WriteCharRaw 48 ' '0'
+                Sync.SpinlockOps.ReleaseIrqRestore uartLock, flags
                 Exit Sub
             End If
 
-            Dim digits As Pointer To Byte
-            digits = CPtr(Pointer To Byte, "0123456789ABCDEF")
-
+            Dim digits As Pointer To Byte = CPtr(Pointer To Byte, "0123456789ABCDEF")
             Dim buffer(16) As Byte
             Dim pos As Int32 = 0
 
@@ -100,8 +139,9 @@ Namespace Drivers
 
             Dim i As Int32
             For i = pos - 1 To 0 Step -1
-                Me.WriteChar buffer(i)
+                Me.WriteCharRaw buffer(i)
             Next i
+            Sync.SpinlockOps.ReleaseIrqRestore uartLock, flags
         End Sub
 
         ' Write a formatted string (printf-style %s, %u, %d, %x, %c, %%)

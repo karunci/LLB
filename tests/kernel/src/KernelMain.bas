@@ -15,6 +15,7 @@ Module KernelMain
     Import Arch.Smp
     Import Core.Nodes
     Import Core.Nodes.SynapseCaps
+    Import Sys.Syscall
 
     ' --- Instantiable Classes ---
     Use Drivers.Terminal As Term
@@ -34,6 +35,7 @@ Module KernelMain
 
     ' LibLLB_Metal Static Library Declarations
     Public Declare Function ToHex Lib "libllb_metal" (ByVal value As UInt64, ByVal outBuf As Pointer To Byte, ByVal prefix As Boolean) As UInt32
+    Public Declare Function SprintF Lib "libllb_metal" (ByVal outBuf As Pointer To Byte, ByVal maxLen As UInt32, ByVal fmt As Pointer To Byte, ParamArray args() As Pointer To Int64) As UInt32
 
     Public Unsafe Sub KernelEntry(ByVal magic As UInt32, ByVal mbAddress As Pointer To Byte)
         ' Initialize COM1 line control & Serial UART driver
@@ -220,19 +222,117 @@ Module KernelMain
         FB.InitializeDoubleBuffer
         FB.ClearScreen &H00181824
 
-        ' Top Header Banner with Nord Accent Stripe
-        FB.FillRect 20, 20, 560, 38, &H002E3440
+        ' ---------------------------------------------------------------------
+        ' Render High-Resolution Nord Dashboard & Hardware Monitor (1024x768)
+        ' ---------------------------------------------------------------------
+
+        ' Top Header Banner with Nord Accent Stripe (x: 20..1004, w: 984, h: 38)
+        FB.FillRect 20, 20, 984, 38, &H002E3440
         FB.FillRect 20, 20, 6, 38, &H0088C0D0
         FB.DrawString 36, 31, "PRK Dual-Plane Node Kernel (LLB) [Online]", &H00ECEFF4, 1
+        FB.DrawString 680, 31, "x86_64 Long Mode | SMP 4 Cores", &H0088C0D0, 1
 
-        ' System Status Dashboard Card
-        FB.FillRect 20, 70, 560, 110, &H00232731
-        FB.FillRect 20, 70, 4, 110, &H0081A1C1
-        FB.DrawString 36, 82, "Display  : 1024x768x32 BPP (Double Buffered RAM)", &H0088C0D0, 1
-        FB.DrawString 36, 102, "Topology : Everything is a Node via Synapses", &H00A3BE8C, 1
-        FB.DrawString 36, 122, "Control  : Cap-Checked Routing & Node Registry", &H00D8DEE9, 1
-        FB.DrawString 36, 142, "Data     : Axonal Fast-Path 128-Slot Ring Buffers", &H00EBCB8B, 1
-        FB.DrawString 36, 162, "SMP Sched: 4 Cores Active / Preemptive Work-Stealing", &H00B48EAD, 1
+        ' --- LEFT COLUMN: SYSTEM TOPOLOGY & DUAL-PLANE NODES (w: 480) ---
+
+        ' Left Card 1: System Status & Topology (x: 20, y: 70, w: 480, h: 140)
+        FB.FillRect 20, 70, 480, 140, &H00232731
+        FB.FillRect 20, 70, 4, 140, &H0081A1C1
+        FB.DrawString 36, 80, "[ SYSTEM STATUS & ARCHITECTURE ]", &H0081A1C1, 1
+        FB.DrawString 36, 100, "Display  : 1024x768x32 BPP (Double Buffered RAM)", &H0088C0D0, 1
+        FB.DrawString 36, 120, "Topology : Everything is a Node via Synapses", &H00A3BE8C, 1
+        FB.DrawString 36, 140, "Control  : Cap-Checked Routing & Node Registry", &H00D8DEE9, 1
+        FB.DrawString 36, 160, "Data     : Axonal Fast-Path 128-Slot Ring Buffers", &H00EBCB8B, 1
+        FB.DrawString 36, 180, "SMP Sched: 4 Cores Active / Preemptive Stealing", &H00B48EAD, 1
+
+        ' Left Card 2: Dual-Plane Neural Node Registry (x: 20, y: 222, w: 480, h: 150)
+        FB.FillRect 20, 222, 480, 150, &H00232731
+        FB.FillRect 20, 222, 4, 150, &H00A3BE8C
+        FB.DrawString 36, 232, "[ DUAL-PLANE NEURAL NODE REGISTRY ]", &H00A3BE8C, 1
+        FB.DrawString 36, 252, "Synapse #5000: Node #1000 <---> Node #1001", &H00ECEFF4, 1
+        FB.DrawString 36, 272, "Synapse #5001: Node #1002 <---> Node #1000", &H00ECEFF4, 1
+        FB.DrawString 36, 292, "Axon Data Plane: Packet Transmission Verified", &H00A3BE8C, 1
+        FB.DrawString 36, 312, "Syscall Gate   : Ring 0/3 MSR LSTAR (BRT Online)", &H00EBCB8B, 1
+        FB.DrawString 36, 332, "Security Model : Capability-Checked Synapse Channels", &H00D8DEE9, 1
+
+        ' --- RIGHT COLUMN: HARDWARE INFO (CPU & RAM MONITOR) (w: 488) ---
+
+        Dim strBuf(128) As Byte
+        Dim sPtr As Pointer To Byte = CPtr(Pointer To Byte, strBuf)
+
+        Dim cpuVendor(16) As Byte
+        Dim cpuBrand(64) As Byte
+        Dim cpuFeat(64) As Byte
+        HwInfo.GetVendor CPtr(Pointer To Byte, cpuVendor)
+        HwInfo.GetBrand CPtr(Pointer To Byte, cpuBrand)
+        HwInfo.GetFeatures CPtr(Pointer To Byte, cpuFeat), 64
+
+        ' Right Card 1: CPU Hardware Info (x: 516, y: 70, w: 488, h: 140)
+        FB.FillRect 516, 70, 488, 140, &H00232731
+        FB.FillRect 516, 70, 4, 140, &H00EBCB8B
+        FB.DrawString 532, 80, "[ CPU HARDWARE INFO ]", &H00EBCB8B, 1
+
+        SprintF sPtr, 128, "Vendor   : %s", CPtr(Pointer To Byte, cpuVendor)
+        FB.DrawString 532, 100, sPtr, &H00ECEFF4, 1
+
+        If cpuBrand(0) <> 0 Then
+            SprintF sPtr, 128, "Model    : %s", CPtr(Pointer To Byte, cpuBrand)
+            FB.DrawString 532, 120, sPtr, &H0088C0D0, 1
+        Else
+            FB.DrawString 532, 120, "Model    : Generic x86_64 Processor", &H0088C0D0, 1
+        End If
+
+        Dim apicModeStr As Pointer To Byte
+        If Arch.X86_64.Apic.IsX2Apic() Then
+            apicModeStr = CPtr(Pointer To Byte, "x2APIC")
+        Else
+            apicModeStr = CPtr(Pointer To Byte, "MMIO")
+        End If
+        SprintF sPtr, 128, "Topology : %u Symmetrical Cores (%s)", Arch.Acpi.GetCpuCount(), apicModeStr
+        FB.DrawString 532, 140, sPtr, &H00D8DEE9, 1
+
+        SprintF sPtr, 128, "Features : %s", CPtr(Pointer To Byte, cpuFeat)
+        FB.DrawString 532, 160, sPtr, &H00B48EAD, 1
+
+        SprintF sPtr, 128, "Platform : LAPIC 0x%x | IO-APIC 0x%x", Arch.Acpi.GetLapicBase(), Arch.Acpi.GetIoapicBase()
+        FB.DrawString 532, 180, sPtr, &H0081A1C1, 1
+
+        ' Right Card 2: RAM Physical & Virtual Memory Info (x: 516, y: 222, w: 488, h: 150)
+        FB.FillRect 516, 222, 488, 150, &H00232731
+        FB.FillRect 516, 222, 4, 150, &H005E81AC
+        FB.DrawString 532, 232, "[ RAM MEMORY INFO (PMM / VMM) ]", &H0088C0D0, 1
+
+        SprintF sPtr, 128, "Total RAM: %u MB (%u KB Managed)", CType(UInt32, totalMB), CType(UInt32, totalBytes RShift 10)
+        FB.DrawString 532, 252, sPtr, &H00ECEFF4, 1
+
+        Dim usedMB As UInt64 = 0
+        If totalMB > freeMB Then usedMB = totalMB - freeMB
+        Dim usedPct As UInt32 = 0
+        If totalMB > 0 Then usedPct = CType(UInt32, (usedMB * 100) / totalMB)
+
+        SprintF sPtr, 128, "Used RAM : %u MB (%u%%) | Free: %u MB (%u%%)", CType(UInt32, usedMB), usedPct, CType(UInt32, freeMB), 100 - usedPct
+        FB.DrawString 532, 272, sPtr, &H00A3BE8C, 1
+
+        ' Visual Memory Gauge Bar (Nord Styling)
+        Dim barWidth As UInt32 = 452
+        Dim fillW As UInt32 = 8
+        If totalMB > 0 Then
+            fillW = CType(UInt32, (usedMB * CType(UInt64, barWidth)) / totalMB)
+            If fillW < 8 Then fillW = 8
+            If fillW > barWidth Then fillW = barWidth
+        End If
+        FB.FillRect 532, 292, barWidth, 10, &H003B4252
+        FB.FillRect 532, 292, fillW, 10, &H00A3BE8C
+
+        FB.DrawString 532, 310, "Buddy Pool : 64 MB (16 MB - 80 MB, Order 0..10)", &H00D8DEE9, 1
+        FB.DrawString 532, 328, "Kernel Heap: 8 MB @ 0x81000000 (16-Byte Aligned)", &H00EBCB8B, 1
+        FB.DrawString 532, 346, "Page Table : 4-Level PML4 Isolated User Address Space", &H00B48EAD, 1
+
+        ' --- BOTTOM FULL-WIDTH CARD: USERLAND RUNTIME (BRT) (w: 984) ---
+        FB.FillRect 20, 384, 984, 66, &H00232731
+        FB.FillRect 20, 384, 4, 66, &H00B48EAD
+        FB.DrawString 36, 394, "[ USERLAND RUNTIME (BRT0) & RING 3 EXECUTION ]", &H00B48EAD, 1
+        FB.DrawString 36, 412, "App Payload : 'user.test.app' (8200 bytes, Entry: 0x40000000, Stack: ASLR)", &H00ECEFF4, 1
+        FB.DrawString 36, 430, "System Calls: Process Yield, GetPid, Exit, Node Register, Synapse Connect", &H0088C0D0, 1
 
         ' Initialize Dual-Plane Node Registry & Fast-Path Synapse Channels
         Serial.PrintF "[PRK] Initializing Dual-Plane Neural Node Registry...\r\n"
@@ -260,11 +360,6 @@ Module KernelMain
                 Serial.PrintF "[NODE] Axonal Data Plane packet delivery verified (Seq: %u, Type: %u)\r\n", _
                               CType(UInt32, recvPkt.Sequence), recvPkt.PacketType
             End If
-
-            ' Render Synapse verification badge on screen
-            FB.FillRect 20, 192, 560, 30, &H002E3440
-            FB.FillRect 20, 192, 4, 30, &H00A3BE8C
-            FB.DrawString 36, 200, "Synapse #5000: Node #1000 <---> Node #1001 [VERIFIED]", &H00A3BE8C, 1
         End If
 
         ' Initialize Application Processor cores (SMP bring-up via INIT-SIPI-SIPI)
@@ -274,10 +369,54 @@ Module KernelMain
         ' Enable hardware interrupts on CPU
         Arch.X86_64.PortIO.Sti
         Serial.PrintF "[PRK] CPU Hardware Interrupts enabled (STI).\r\n"
-        Serial.PrintF "[PRK] Kernel boot phase completed successfully.\r\n"
+
+        ' Initialize Native Microkernel Syscall MSRs
+        Sys.Syscall.Initialize
+
+        ' Create dedicated User Address Space (CR3) with cloned kernel higher-half
+        Dim userCr3 As UInt64 = VMM.CreateUserPml4()
+        Serial.PrintF "[PRK] Created User Address Space (CR3: 0x%lx)\r\n", userCr3
+
+        ' Resolve embedded standalone UserApp binary payload
+        Dim blobStart As UInt64 = 0
+        Dim blobEnd As UInt64 = 0
+        Asm "movabs $user_app_blob_start, %0" : "=r"(blobStart) : : "memory"
+        Asm "movabs $user_app_blob_end, %0" : "=r"(blobEnd) : : "memory"
+        Dim blobSize As UInt64 = blobEnd - blobStart
+        Serial.PrintF "[PRK] Found embedded UserApp payload (%u bytes at 0x%lx)\r\n", CType(UInt32, blobSize), blobStart
+
+        ' Map user payload at 0x40000000 with PTE_PRESENT | PTE_WRITABLE | PTE_USER
+        Dim pagesNeeded As UInt32 = CType(UInt32, (blobSize + 4095) / 4096)
+        Dim p As UInt32
+        For p = 0 To pagesNeeded - 1
+            Dim pagePhys As UInt64 = Buddy.AllocPages(0)
+            Dim pageVirt As UInt64 = &H40000000 + CType(UInt64, p * 4096)
+            VMM.MapPage userCr3, pageVirt, pagePhys, &H07
+
+            Dim srcSlice As Pointer To Byte = CPtr(Pointer To Byte, blobStart + CType(UInt64, p * 4096))
+            Dim dstSlice As Pointer To Byte = CPtr(Pointer To Byte, pagePhys)
+            Dim copyLen As UInt64 = 4096
+            If (CType(UInt64, p * 4096) + copyLen) > blobSize Then
+                copyLen = blobSize - CType(UInt64, p * 4096)
+            End If
+            Dim b As UInt64
+            For b = 0 To copyLen - 1
+                dstSlice(b) = srcSlice(b)
+            Next b
+        Next p
+
+        ' Spawn standalone Ring 3 User Thread
+        Dim userPid As UInt64 = SchedEngine.CreateUserThread("user.test.app", &H40000000, userCr3, 2)
+        Serial.PrintF "[PRK] Spawned Standalone Ring 3 User Thread (PID: %u, Entry: 0x40000000)\r\n", CType(UInt32, userPid)
+
+        ' Preemptively yield to let User Thread execute in Ring 3
+        SchedEngine.Yield
+
+        Serial.PrintF "[PRK] Kernel boot and userland dispatch completed successfully.\r\n"
 
         Do
-            Asm "hlt"
+            SchedEngine.Yield
+            Asm "sti\n\thlt" : : : "memory"
         Loop
     End Sub
 

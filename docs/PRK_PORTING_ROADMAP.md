@@ -385,38 +385,74 @@ tests/kernel/
 
 ---
 
-### Phase 9: Userspace Syscall Dispatch & Neural Node Interface (TODO)
-- [ ] **Hardened Assembly Syscall Entry (`src/arch/x86_64/SyscallEntry.S`):**
+### Phase 9: Userspace Syscall Dispatch, Basic Runtime (BRT) & Neural Node Interface
+- [x] **Basic Runtime (BRT0 - `tests/user_app/brt0.S`):**
+  - High-performance, freestanding runtime entry (`_start`) for Low-Level Basic userspace executables.
+  - Aligns user `%rsp` to 16 bytes per System V AMD64 ABI specification.
+  - Extracts and sets up command-line arguments (`argc`, `argv`).
+  - Calls high-level application entry point `user_main(argc, argv)`.
+  - Automatically captures `user_main` return code in `%rax` and invokes native `SYS_PROCESS_EXIT` syscall to prevent unmapped memory execution crashes.
+  - Provides freestanding runtime primitives (`memset`, `memcpy`, `__stack_chk_guard`, `__stack_chk_fail`).
+- [x] **Hardened Assembly Syscall Entry (`src/arch/x86_64/SyscallEntry.S`):**
   - Implement `syscall_entry` using x86_64 `swapgs`.
   - Save User RSP into `%gs:0` (`CpuScratch.UserRsp`) and load Per-CPU Kernel Stack Top into RSP from `%gs:8` (`CpuScratch.KernelStack`).
   - Construct Interrupt/Syscall return frame on kernel stack (User SS `0x1B`, User RSP, User RFLAGS, User CS `0x23`, User RIP, Syscall Number).
   - Preserve general-purpose register frame (`rdi`, `rsi`, `rdx`, `r10`, `r8`, `r9`, `rbx`, `rbp`, `r12`-`r15`).
   - Marshal System V ABI arguments to LLB dispatcher: `rdi`=Syscall Num, `rsi`=Arg1, `rdx`=Arg2, `rcx`=Arg3, `r8`=Arg4.
-  - Restore user registers, sanitize User RFLAGS (`IF=1`, `NT=0`), swap GS base, and exit via `sysretq`.
-- [ ] **MSR Hardware Configuration & Dispatch Engine (`src/sys/Syscall.bas`):**
+  - Restore user registers, sanitize User RFLAGS (`IF=1`, `NT=0`), swap GS base back to user, and exit via `sysretq`.
+- [x] **Hardware MSR Configuration & Validation (`src/sys/Syscall.bas`):**
   - Namespace `Sys`, Module `Syscall`.
   - Program MSR registers:
     - `IA32_EFER` (`0xC0000080`): Enable System Call Extensions (Bit 0 `SCE=1`).
     - `IA32_STAR` (`0xC0000081`): Kernel CS `0x08` (bits 47:32) & User CS/SS base `0x10` (bits 63:48).
     - `IA32_LSTAR` (`0xC0000082`): Target RIP set to `AddressOf syscall_entry`.
     - `IA32_FMASK` (`0xC0000084`): Mask Interrupt Flag (`0x200`) and direction/trap flags on syscall entry.
-  - Implement `ValidateUserBuffer(userPtr, size)`: enforce canonical lower-half user space bounds (`<= 0x00007FFFFFFFFFFF`) with overflow protection.
-- [ ] **Core PRK Syscall Table Implementation:**
-  - `SYS_WRITE` (1): Write bytes to serial UART COM1 or terminal console.
-  - `SYS_YIELD` (2): Preemptively yield current time slice via `Scheduler.Yield()`.
-  - `SYS_SLEEP` (3): Block current task for specified milliseconds via `Scheduler.Sleep(ms)`.
-  - `SYS_GETPID` (6): Return running PID from `Scheduler.GetCurrentPid()`.
-  - `SYS_GET_UPTIME` (28): Return system uptime in milliseconds derived from APIC timer ticks.
-  - `SYS_GET_SYS_INFO` (33): Populate system telemetry (total/free physical RAM from PMM and buddy allocator).
-  - `SYS_GET_CPU_CORES` (34): Return number of online SMP cores discovered via ACPI MADT.
-- [ ] **Dual-Plane Neural Node Syscall Extensions:**
-  - `SYS_NODE_REGISTER` (50): Dynamic registration of userspace compute/device nodes in `NodeRegistry`.
-  - `SYS_SYNAPSE_CONNECT` (51): Establish capability-authenticated synaptic channels between nodes.
-  - `SYS_SYNAPSE_PUSH` (52): High-speed axonal data plane packet enqueue into zero-copy ring buffers.
-  - `SYS_SYNAPSE_POP` (53): Axonal data plane packet dequeue with blocking/non-blocking support.
-- [ ] **Verification Plan:**
-  - Build `tests/kernel/Kernel.llbproj` with `llbc-stage0`.
-  - Add userspace syscall invocation test harness in `KernelMain.bas` triggering `syscall` instructions.
-  - Verify register preservation, correct return values in `%rax`, and multi-core APIC dispatch in QEMU.
-
-
+  - Implement `ValidateUserBuffer(userPtr, size)`: enforce canonical lower-half user space bounds (`<= 0x00007FFFFFFFFFFF`) with arithmetic overflow prevention.
+- [x] **Native Microkernel Syscall Table (Independent of POSIX; PLCL planned for future compatibility):**
+  - `SYS_CONSOLE_WRITE` (1): Write bytes to serial UART COM1 or terminal console.
+  - `SYS_PROCESS_YIELD` (2): Preemptively yield current time slice via `Scheduler.Yield()`.
+  - `SYS_PROCESS_SLEEP` (3): Block current task for specified milliseconds via `Scheduler.Sleep(ms)`.
+  - `SYS_PROCESS_GETPID` (6): Return running PID from `Scheduler.GetCurrentPid()`.
+  - `SYS_PROCESS_EXIT` (16): Terminate current task and mark `STATE_TERMINATED`.
+  - `SYS_MEM_ALLOC_PAGES` (26): Allocate user pages from physical memory manager.
+  - `SYS_TIME_UPTIME` (28): Return system uptime in milliseconds derived from APIC timer ticks.
+  - `SYS_SYSTEM_INFO` (33): Populate system telemetry (total/free physical RAM from PMM and buddy allocator).
+  - `SYS_SMP_CORE_COUNT` (34): Return number of online SMP cores discovered via ACPI MADT.
+  - **Dual-Plane Neural Node Extensions:**
+    - `SYS_NODE_REGISTER` (50): Dynamic registration of userspace compute/device nodes in `NodeRegistry`.
+    - `SYS_SYNAPSE_CONNECT` (51): Establish capability-authenticated synaptic channels between nodes.
+    - `SYS_SYNAPSE_PUSH` (52): High-speed axonal data plane packet enqueue into zero-copy ring buffers.
+    - `SYS_SYNAPSE_POP` (53): Axonal data plane packet dequeue with blocking/non-blocking support.
+- [x] **Scheduler Modernization & Process Management (`src/sched/Scheduler.cls`):**
+  - `CreateUserThread(name, entryPoint, userPml4, priority)`:
+    - Dedicated user PML4 address space via `VMM.CreateUserPml4()`.
+    - Address Randomizer (User Stack ASLR): generates randomized stack virtual address (`0x70000000 - random_slide`) using TSC entropy (`rdtsc ^ uptime`).
+    - Maps user binary code pages at `0x40000000` (1GB) and stack pages at randomized address with `PTE_PRESENT | PTE_WRITABLE | PTE_USER`.
+    - Sets up synthetic `thread_start_trampoline` iret frame targeting Ring 3 (`CS = 0x23`, `SS = 0x1B`).
+  - Automated Zombie/Reaper Engine (`ReapTerminatedTasks()`):
+    - Reclaims terminated task stacks, releases user PML4 frame tables, and frees TCB descriptor nodes during idle or yield passes.
+- [x] **Standalone Userspace Test Application (`tests/user_app/`):**
+  - Standalone build descriptor `tests/user_app/UserApp.llbproj` and linker script `user_linker.ld` loading at `0x40000000`.
+  - `UserMain.bas` executing in true Ring 3 (CPL=3):
+    - Prints banner via `SYS_CONSOLE_WRITE`.
+    - Queries PID via `SYS_PROCESS_GETPID`.
+    - Queries online SMP core count via `SYS_SMP_CORE_COUNT`.
+    - Registers user compute node via `SYS_NODE_REGISTER`.
+    - Establishes synapse and streams axonal packets via `SYS_SYNAPSE_PUSH`.
+    - Yields via `SYS_PROCESS_YIELD` and resumes execution cleanly.
+    - Returns cleanly with exit code 0 via BRT0.
+- [x] **Verified & Live QEMU Confirmation:**
+  - Full project compiled and verified on Termux and Windows QEMU (SMP 4 cores, 512MB RAM):
+    - Standalone Ring 3 user thread spawned and scheduled across SMP runqueues.
+    - BRT0 runtime entry verified in Ring 3 (CPL=3).
+    - Syscall roundtrip confirmed: console writes, PID query (PID: 1), SMP core count (4 cores), dynamic node registration (Node #1002), synapse channel connection (Channel #5001), axonal data plane transmission (Seq: 101), process yield and resume.
+    - Clean process exit via `SYS_PROCESS_EXIT` (code 0) and automated reaping by scheduler's zombie engine (`Reaped terminated task (PID: 1)`).
+- [x] **Concurrency & Concurrency Hardening (SMP UART Synchronization):**
+  - Resolved character interleaving race condition on multi-core SMP UART by encapsulating COM1 writes inside `Serial.WriteBuffer` and protecting `WriteChar`, `WriteString`, `WriteLine`, and `WriteHex` with `AcquireIrqSave(uartLock)`.
+  - Re-routed `SYS_CONSOLE_WRITE` system call to atomic `Serial.WriteBuffer` to prevent Ring 3 user thread output from tearing kernel boot messages.
+- [x] **Format Specifier Support (`libllb_metal` & `libllb`):**
+  - Added length modifier (`%lx`, `%lX`, `%lu`, `%ld`, `%llx`, `%p`) parsing to `SprintF` in `lib/metal/src/Format.bas` and `lib/hosted/src/Format.bas`.
+- [x] **On-Screen High-Resolution Hardware Monitor Dashboard (`1024x768x32 BPP`):**
+  - Integrated CPU Hardware Info Card: CPU Vendor (`GetVendor`), CPU Model Brand (`GetBrand`), Features (`GetFeatures`), dynamic APIC interface detection (`x2APIC` vs `MMIO`), and LAPIC/IO-APIC base addresses.
+  - Integrated RAM Memory Info Card: Total managed RAM, Used/Free metrics with exact percentages, dynamic visual memory gauge bar, and Buddy Allocator/Heap bounds.
+  - Userland Runtime Card: displaying Ring 3 `user.test.app` execution status and syscall dispatch capabilities.

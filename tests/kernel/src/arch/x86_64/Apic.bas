@@ -38,6 +38,14 @@ Module Arch.X86_64.Apic
     ' Runtime flag: True when x2APIC MSR mode is active
     Private x2ApicActive As Boolean = False
 
+    ''
+    ' @brief Check whether Local APIC is currently in x2APIC (MSR) mode.
+    ' @return True if x2APIC active, False if legacy MMIO mode.
+    ''
+    Public Function IsX2Apic() As Boolean
+        IsX2Apic = x2ApicActive
+    End Function
+
     ' Read 64-bit Model-Specific Register
     Public Unsafe Function RdMsr(ByVal msr As UInt32) As UInt64
         Dim lo As UInt32 = 0

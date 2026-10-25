@@ -134,60 +134,77 @@ Module Format
                 If spec = 37 Then ' '%%'
                     outBuf(outPos) = 37
                     outPos = outPos + 1
-                ElseIf spec = 115 Then ' '%s'
-                    Dim strArg As Pointer To Byte = CPtr(Pointer To Byte, args(argIdx))
-                    argIdx = argIdx + 1
-                    If strArg = 0 Then
-                        strArg = CPtr(Pointer To Byte, "(null)")
-                    End If
-                    Dim sIdx As UInt64 = 0
-                    Do While strArg(sIdx) <> 0 And outPos < (maxLen - 1)
-                        outBuf(outPos) = strArg(sIdx)
-                        outPos = outPos + 1
-                        sIdx = sIdx + 1
-                    Loop
-                ElseIf spec = 117 Then ' '%u'
-                    Dim uval As UInt64 = CType(UInt64, args(argIdx))
-                    argIdx = argIdx + 1
-                    tmpLen = ToUInt(uval, tmpPtr)
-                    tmpIdx = 0
-                    Do While tmpIdx < tmpLen And outPos < (maxLen - 1)
-                        outBuf(outPos) = tmpBuf(tmpIdx)
-                        outPos = outPos + 1
-                        tmpIdx = tmpIdx + 1
-                    Loop
-                ElseIf spec = 100 Or spec = 105 Then ' '%d', '%i'
-                    Dim ival As Int64 = args(argIdx)
-                    argIdx = argIdx + 1
-                    tmpLen = ToInt(ival, tmpPtr)
-                    tmpIdx = 0
-                    Do While tmpIdx < tmpLen And outPos < (maxLen - 1)
-                        outBuf(outPos) = tmpBuf(tmpIdx)
-                        outPos = outPos + 1
-                        tmpIdx = tmpIdx + 1
-                    Loop
-                ElseIf spec = 120 Or spec = 88 Then ' '%x', '%X'
-                    Dim xval As UInt64 = CType(UInt64, args(argIdx))
-                    argIdx = argIdx + 1
-                    tmpLen = ToHex(xval, tmpPtr, False)
-                    tmpIdx = 0
-                    Do While tmpIdx < tmpLen And outPos < (maxLen - 1)
-                        outBuf(outPos) = tmpBuf(tmpIdx)
-                        outPos = outPos + 1
-                        tmpIdx = tmpIdx + 1
-                    Loop
-                ElseIf spec = 99 Then ' '%c'
-                    Dim cval As Byte = CType(Byte, args(argIdx) And 255)
-                    argIdx = argIdx + 1
-                    outBuf(outPos) = cval
-                    outPos = outPos + 1
                 Else
-                    ' Unknown specifier: emit verbatim
-                    outBuf(outPos) = 37
-                    outPos = outPos + 1
-                    If outPos < (maxLen - 1) Then
-                        outBuf(outPos) = spec
+                    ' Check for length modifiers ('l' = 108, 'L' = 76, 'h' = 104, 'z' = 122)
+                    Dim isLong As Boolean = False
+                    Do While spec = 108 Or spec = 76 Or spec = 104 Or spec = 122
+                        isLong = True
+                        fmtPos = fmtPos + 1
+                        spec = fmt(fmtPos)
+                        If spec = 0 Then Exit Do
+                    Loop
+                    If spec = 0 Then Exit Do
+
+                    If spec = 115 Then ' '%s'
+                        Dim strArg As Pointer To Byte = CPtr(Pointer To Byte, args(argIdx))
+                        argIdx = argIdx + 1
+                        If strArg = 0 Then
+                            strArg = CPtr(Pointer To Byte, "(null)")
+                        End If
+                        Dim sIdx As UInt64 = 0
+                        Do While strArg(sIdx) <> 0 And outPos < (maxLen - 1)
+                            outBuf(outPos) = strArg(sIdx)
+                            outPos = outPos + 1
+                            sIdx = sIdx + 1
+                        Loop
+                    ElseIf spec = 117 Then ' '%u', '%lu', '%llu'
+                        Dim uval As UInt64 = CType(UInt64, args(argIdx))
+                        argIdx = argIdx + 1
+                        tmpLen = ToUInt(uval, tmpPtr)
+                        tmpIdx = 0
+                        Do While tmpIdx < tmpLen And outPos < (maxLen - 1)
+                            outBuf(outPos) = tmpBuf(tmpIdx)
+                            outPos = outPos + 1
+                            tmpIdx = tmpIdx + 1
+                        Loop
+                    ElseIf spec = 100 Or spec = 105 Then ' '%d', '%i', '%ld', '%lld'
+                        Dim ival As Int64 = args(argIdx)
+                        argIdx = argIdx + 1
+                        tmpLen = ToInt(ival, tmpPtr)
+                        tmpIdx = 0
+                        Do While tmpIdx < tmpLen And outPos < (maxLen - 1)
+                            outBuf(outPos) = tmpBuf(tmpIdx)
+                            outPos = outPos + 1
+                            tmpIdx = tmpIdx + 1
+                        Loop
+                    ElseIf spec = 120 Or spec = 88 Or spec = 112 Then ' '%x', '%X', '%lx', '%lX', '%p'
+                        Dim xval As UInt64 = CType(UInt64, args(argIdx))
+                        argIdx = argIdx + 1
+                        Dim prefixHex As Boolean = (spec = 112)
+                        tmpLen = ToHex(xval, tmpPtr, prefixHex)
+                        tmpIdx = 0
+                        Do While tmpIdx < tmpLen And outPos < (maxLen - 1)
+                            outBuf(outPos) = tmpBuf(tmpIdx)
+                            outPos = outPos + 1
+                            tmpIdx = tmpIdx + 1
+                        Loop
+                    ElseIf spec = 99 Then ' '%c'
+                        Dim cval As Byte = CType(Byte, args(argIdx) And 255)
+                        argIdx = argIdx + 1
+                        outBuf(outPos) = cval
                         outPos = outPos + 1
+                    Else
+                        ' Unknown specifier: emit verbatim '%' + skipped modifier + spec
+                        outBuf(outPos) = 37
+                        outPos = outPos + 1
+                        If isLong And outPos < (maxLen - 1) Then
+                            outBuf(outPos) = 108 ' 'l'
+                            outPos = outPos + 1
+                        End If
+                        If outPos < (maxLen - 1) Then
+                            outBuf(outPos) = spec
+                            outPos = outPos + 1
+                        End If
                     End If
                 End If
                 fmtPos = fmtPos + 1

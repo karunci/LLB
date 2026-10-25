@@ -40,6 +40,63 @@ Namespace Mem
             GetKernelPml4 = kernelPml4Phys
         End Function
 
+        ''
+        ' @brief Allocate a new user PML4 table, clone kernel identity and higher-half mappings,
+        '        and provide isolated lower-half entries for user space execution.
+        ' @return Physical address of the newly constructed user PML4 table (suitable for CR3).
+        ''
+        Public Unsafe Function CreateUserPml4() As UInt64
+            Dim newPml4Phys As UInt64 = Buddy.AllocPages(0)
+            If newPml4Phys = 0 Then
+                CreateUserPml4 = 0
+                Exit Function
+            End If
+
+            Dim newTable As Volatile Pointer To UInt64 = CPtr(Volatile Pointer To UInt64, newPml4Phys)
+            Dim kernelTable As Volatile Pointer To UInt64 = CPtr(Volatile Pointer To UInt64, kernelPml4Phys)
+
+            ' Zero all 512 entries initially
+            Dim i As UInt32
+            For i = 0 To 511
+                newTable(i) = 0
+            Next i
+
+            ' Clone higher-half kernel entries (256..511)
+            For i = 256 To 511
+                newTable(i) = kernelTable(i)
+            Next i
+
+            ' Allocate dedicated User PDPT for PML4 entry 0 (0..512GB)
+            Dim userPdptPhys As UInt64 = Buddy.AllocPages(0)
+            If userPdptPhys = 0 Then
+                Buddy.FreePages newPml4Phys, 0
+                CreateUserPml4 = 0
+                Exit Function
+            End If
+
+            Dim userPdptTable As Volatile Pointer To UInt64 = CPtr(Volatile Pointer To UInt64, userPdptPhys)
+            For i = 0 To 511
+                userPdptTable(i) = 0
+            Next i
+
+            ' Link User PDPT to PML4[0] with PTE_USER
+            newTable(0) = userPdptPhys Or VmmFlags.PTE_PRESENT Or VmmFlags.PTE_WRITABLE Or VmmFlags.PTE_USER
+
+            ' Fetch Kernel PDPT
+            Dim kernelPdptPhys As UInt64 = kernelTable(0) And VmmFlags.PTE_FRAME_MASK
+            Dim kernelPdptTable As Volatile Pointer To UInt64 = CPtr(Volatile Pointer To UInt64, kernelPdptPhys)
+
+            ' Clone Kernel 0..1GB (PDPT[0]), Kernel Heap (2GB..3GB, PDPT[2]), and APIC/MMIO (3GB..4GB, PDPT[3]) - Supervisor Only
+            userPdptTable(0) = kernelPdptTable(0)
+            userPdptTable(2) = kernelPdptTable(2)
+            userPdptTable(3) = kernelPdptTable(3)
+
+            ' PDPT[1] (1GB..2GB: 0x40000000 - 0x80000000) is left 0 for User Space (code, data, stack).
+            ' It will be populated with PTE_USER page directories and tables on demand via MapPage.
+
+            CreateUserPml4 = newPml4Phys
+        End Function
+
         ' Extract PML4 index (bits 39..47)
         Public Function Pml4Index(ByVal virtAddr As UInt64) As UInt32
             Pml4Index = CType(UInt32, (virtAddr RShift 39) And &H1FF)
@@ -101,6 +158,9 @@ Namespace Mem
                 pml4Table(l4Idx) = pdptPhys Or VmmFlags.PTE_PRESENT Or VmmFlags.PTE_WRITABLE Or (flags And VmmFlags.PTE_USER)
             Else
                 pdptPhys = pml4Table(l4Idx) And VmmFlags.PTE_FRAME_MASK
+                If (flags And VmmFlags.PTE_USER) <> 0 Then
+                    pml4Table(l4Idx) = pml4Table(l4Idx) Or VmmFlags.PTE_USER
+                End If
             End If
 
             ' 2. Walk or Allocate Page Directory (Level 2)
@@ -117,6 +177,9 @@ Namespace Mem
                 pdptTable(l3Idx) = pdPhys Or VmmFlags.PTE_PRESENT Or VmmFlags.PTE_WRITABLE Or (flags And VmmFlags.PTE_USER)
             Else
                 pdPhys = pdptTable(l3Idx) And VmmFlags.PTE_FRAME_MASK
+                If (flags And VmmFlags.PTE_USER) <> 0 Then
+                    pdptTable(l3Idx) = pdptTable(l3Idx) Or VmmFlags.PTE_USER
+                End If
             End If
 
             ' 3. Walk or Allocate Page Table (Level 1)
@@ -133,6 +196,9 @@ Namespace Mem
                 pdTable(l2Idx) = ptPhys Or VmmFlags.PTE_PRESENT Or VmmFlags.PTE_WRITABLE Or (flags And VmmFlags.PTE_USER)
             Else
                 ptPhys = pdTable(l2Idx) And VmmFlags.PTE_FRAME_MASK
+                If (flags And VmmFlags.PTE_USER) <> 0 Then
+                    pdTable(l2Idx) = pdTable(l2Idx) Or VmmFlags.PTE_USER
+                End If
             End If
 
             ' 4. Set leaf PTE entry in Level 1 Page Table

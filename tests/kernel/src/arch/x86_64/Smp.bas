@@ -157,6 +157,32 @@ Module Arch.Smp
     End Sub
 
     ''
+    ''
+    ' @brief Configure hardware Syscall MSRs on this logical CPU core.
+    ''
+    Private Unsafe Sub InitSyscallMsrs()
+        ' 1. Enable SCE in IA32_EFER (0xC0000080)
+        Dim lowPart As UInt32 = 0
+        Dim highPart As UInt32 = 0
+        Asm "rdmsr" : "=a"(lowPart), "=d"(highPart) : "c"(&HC0000080) : "memory"
+        lowPart = lowPart Or 1
+        Asm "wrmsr" : : "c"(&HC0000080), "a"(lowPart), "d"(highPart) : "memory"
+
+        ' 2. Program IA32_STAR (0xC0000081)
+        Asm "wrmsr" : : "c"(&HC0000081), "a"(0), "d"(&H00100008) : "memory"
+
+        ' 3. Program IA32_LSTAR (0xC0000082) with target syscall_entry RIP
+        Dim lstarAddr As UInt64 = 0
+        Asm "movabs $syscall_entry, %0" : "=r"(lstarAddr) : : "memory"
+        Dim loLstar As UInt32 = CType(UInt32, lstarAddr And &HFFFFFFFF)
+        Dim hiLstar As UInt32 = CType(UInt32, (lstarAddr RShift 32) And &HFFFFFFFF)
+        Asm "wrmsr" : : "c"(&HC0000082), "a"(loLstar), "d"(hiLstar) : "memory"
+
+        ' 4. Program IA32_FMASK (0xC0000084)
+        Asm "wrmsr" : : "c"(&HC0000084), "a"(&H00004700), "d"(0) : "memory"
+    End Sub
+
+    ''
     ' @brief Entry point called by each AP core after long mode entry in the trampoline.
     '        Mirrors PRK kernel/smp.c ap_main().
     ''
@@ -176,7 +202,10 @@ Module Arch.Smp
         ' 4. Initialize per-core GDT, TSS, and GS scratchpad
         Arch.X86_64.Gdt.InitializeCore cpuId
 
-        ' 5. Initialize Local APIC periodic preemption timer on this AP
+        ' 5. Initialize per-core hardware Syscall MSRs
+        InitSyscallMsrs
+
+        ' 6. Initialize Local APIC periodic preemption timer on this AP
         Arch.X86_64.Apic.InitializeTimer 3, &H200000
 
         ' 6. Signal BSP that this AP is fully online and initialized

@@ -11,6 +11,8 @@ Import Arch.X86_64.PortIO
 Import Arch.Acpi
 Use Drivers.SerialUart As Serial
 Use Mem.KernelHeap As KHeap
+Use Mem.BuddyAllocator As Buddy
+Use Mem.VirtualMemoryManager As VMM
 
 Namespace Sched
 
@@ -66,6 +68,65 @@ Public Class Scheduler
         ' RIP (entryPoint)
         stack = stack - 1
         stack(0) = CType(UInt64, entryPoint)
+
+        ' Dummy Vector & Error Code
+        stack = stack - 1
+        stack(0) = 0
+        stack = stack - 1
+        stack(0) = 0
+
+        ' 15 dummy general-purpose registers popped by thread_start_trampoline
+        Dim i As UInt32
+        For i = 0 To 14
+            stack = stack - 1
+            stack(0) = 0
+        Next i
+
+        ' Return address for switch_context's ret
+        stack = stack - 1
+        stack(0) = CType(UInt64, @thread_start_trampoline)
+
+        ' 6 dummy callee-saved registers popped by switch_context (rbp, rbx, r12, r13, r14, r15)
+        For i = 0 To 5
+            stack = stack - 1
+            stack(0) = 0
+        Next i
+
+        tcbPtr.ContextRsp = CType(UInt64, stack)
+        tcbPtr.Rsp = CType(UInt64, stack)
+    End Sub
+
+    ''
+    ' @brief Helper to construct synthetic call frame for a Ring 3 user thread.
+    '        Mirrors PRK stack layout in create_user_thread.
+    ' @param tcbPtr Target TaskControlBlock pointer.
+    ' @param entryPoint Target virtual RIP in user space.
+    ' @param userRsp Target virtual stack pointer in user space.
+    ''
+    Private Unsafe Sub SetupSyntheticUserStack(ByVal tcbPtr As Pointer To TaskControlBlock, ByVal entryPoint As UInt64, ByVal userRsp As UInt64)
+        Dim stackTop As UInt64 = (tcbPtr.KStackBase + CType(UInt64, KERNEL_STACK_SIZE)) And (Not CType(UInt64, 15))
+        Dim stack As Pointer To UInt64 = CPtr(Pointer To UInt64, stackTop)
+
+        ' IRET Frame for Ring 3 user transition:
+        ' SS = 0x1B (User Data: 0x18 | 3)
+        stack = stack - 1
+        stack(0) = &H1B
+
+        ' User RSP
+        stack = stack - 1
+        stack(0) = userRsp
+
+        ' RFLAGS (0x202 = Interrupts Enabled)
+        stack = stack - 1
+        stack(0) = &H202
+
+        ' CS = 0x23 (User Code: 0x20 | 3)
+        stack = stack - 1
+        stack(0) = &H23
+
+        ' User RIP (entryPoint)
+        stack = stack - 1
+        stack(0) = entryPoint
 
         ' Dummy Vector & Error Code
         stack = stack - 1
@@ -312,6 +373,98 @@ Public Class Scheduler
     End Function
 
     ''
+    ' @brief Create a new user thread with isolated CR3, stack ASLR, and Ring 3 iret frame.
+    '        Mirrors PRK create_user_thread_from_buffer().
+    ' @param name Identifier string.
+    ' @param entryPoint Virtual entry address in user space (e.g. 0x400000).
+    ' @param userPml4 Physical CR3 root of user address space.
+    ' @param priority Initial scheduling priority.
+    ' @return PID of newly created user thread.
+    ''
+    Public Unsafe Function CreateUserThread(ByVal name As Pointer To Byte, ByVal entryPoint As UInt64, ByVal userPml4 As UInt64, ByVal priority As UInt32) As UInt64
+        Dim tcbMem As UInt64 = KHeap.KMalloc(SizeOf(TaskControlBlock))
+        If tcbMem = 0 Then
+            CreateUserThread = 0
+            Exit Function
+        End If
+
+        Dim thread As Pointer To TaskControlBlock = CPtr(Pointer To TaskControlBlock, tcbMem)
+
+        Dim flags As UInt64 = Sync.SpinlockOps.AcquireIrqSave(schedLock)
+        Dim assignedPid As UInt64 = nextPid
+        nextPid = nextPid + 1
+        Sync.SpinlockOps.ReleaseIrqRestore schedLock, flags
+
+        thread.Id = assignedPid
+        thread.ParentId = GetCurrentPid()
+        thread.State = Sched.ThreadState.STATE_READY
+        thread.TaskType = Sched.ThreadType.TYPE_GPOS
+        thread.Priority = priority
+        thread.WakeUptime = 0
+        thread.CpuTicks = 0
+        thread.PendingSignals = 0
+        thread.Cr3Root = userPml4
+        thread.KStackBase = KHeap.KMalloc(KERNEL_STACK_SIZE)
+
+        If thread.KStackBase = 0 Then
+            KHeap.KFree tcbMem
+            CreateUserThread = 0
+            Exit Function
+        End If
+
+        ' ASLR Entropy Generator (random 16-page increments up to 1MB slide via TSC)
+        Dim tsc As UInt64 = 0
+        Asm "rdtsc" : "=A"(tsc) : : "memory"
+        Dim randomSlide As UInt64 = ((tsc Xor systemUptimeMs) And &H0F) * &H10000
+        Dim ustackVaddr As UInt64 = &H70000000 - randomSlide
+
+        ' Allocate and map user stack pages (4 pages = 16KB stack)
+        Dim stackPages As UInt32 = 4
+        Dim topPhys As UInt64 = 0
+        Dim s As UInt32
+        For s = 0 To stackPages - 1
+            Dim ustackPhys As UInt64 = Buddy.AllocPages(0)
+            If s = (stackPages - 1) Then
+                topPhys = ustackPhys
+            End If
+            VMM.MapPage userPml4, ustackVaddr + CType(UInt64, s * 4096), ustackPhys, &H07 ' PTE_PRESENT | PTE_WRITABLE | PTE_USER
+        Next s
+
+        ' Initialize user stack frame: envp[0]=0, argv[0]=0, argc=0
+        If topPhys <> 0 Then
+            Dim topPtr As Pointer To UInt64 = CPtr(Pointer To UInt64, topPhys + 4096)
+            topPtr = topPtr - 1
+            topPtr(0) = 0 ' NULL envp
+            topPtr = topPtr - 1
+            topPtr(0) = 0 ' NULL argv
+            topPtr = topPtr - 1
+            topPtr(0) = 0 ' argc = 0
+        End If
+
+        Dim userRsp As UInt64 = ustackVaddr + CType(UInt64, stackPages * 4096) - 24
+
+        SetupSyntheticUserStack thread, entryPoint, userRsp
+
+        ' Select target CPU core and insert into its circular runqueue
+        Dim targetCore As UInt32 = GetNextTargetCore()
+
+        flags = Sync.SpinlockOps.AcquireIrqSave(schedLock)
+        If gposQueueHeads(targetCore) = 0 Then
+            gposQueueHeads(targetCore) = tcbMem
+            thread.NextTask = tcbMem
+        Else
+            Dim gHead As Pointer To TaskControlBlock = CPtr(Pointer To TaskControlBlock, gposQueueHeads(targetCore))
+            thread.NextTask = gHead.NextTask
+            gHead.NextTask = tcbMem
+        End If
+        Sync.SpinlockOps.ReleaseIrqRestore schedLock, flags
+
+        Serial.PrintF "[SCHED] Spawned User Thread '%s' (PID: %u, Entry: 0x%x, RSP: 0x%x) on Core #%d\r\n", _
+                      name, CType(UInt32, assignedPid), entryPoint, userRsp, targetCore
+        CreateUserThread = assignedPid
+    End Function
+
+    ''
     ' @brief Select next ready task from a circular runqueue using priority aging.
     '        Mirrors PRK pick_next_ready().
     ''
@@ -520,6 +673,7 @@ Public Class Scheduler
     ''
     Public Unsafe Sub Yield()
         SchedYieldInternal Sched.ThreadState.STATE_READY, 0
+        ReapTerminatedTasks
     End Sub
 
     ''
@@ -629,6 +783,100 @@ Public Class Scheduler
 
         WakeTask = False
     End Function
+
+    ''
+    ' @brief Get the system uptime in milliseconds.
+    ' @return Milliseconds since scheduler start.
+    ''
+    Public Function GetUptime() As UInt64
+        GetUptime = systemUptimeMs
+    End Function
+
+    ''
+    ' @brief Terminate execution of the calling task with an exit code.
+    ' @param exitCode Return code passed by userspace / task.
+    ''
+    Public Unsafe Sub ExitCurrentTask(ByVal exitCode As UInt32)
+        Dim thisCpu As UInt32 = Arch.X86_64.Gdt.GetCpuId()
+        If thisCpu >= MAX_SCHED_CPUS Then thisCpu = 0
+
+        Dim currAddr As UInt64 = currentTaskAddrs(thisCpu)
+        If currAddr <> 0 Then
+            Dim currTcb As Pointer To TaskControlBlock = CPtr(Pointer To TaskControlBlock, currAddr)
+            Serial.PrintF "[SCHED] PID %u exited with code %u. Marking TERMINATED.\r\n", CType(UInt32, currTcb.Id), exitCode
+            currTcb.State = Sched.ThreadState.STATE_TERMINATED
+        End If
+        Yield
+    End Sub
+
+    ''
+    ' @brief Reclaim resources of any terminated tasks (zombies) in runqueues.
+    '        Safely frees stack and TCB memory for tasks that called SYS_PROCESS_EXIT.
+    ''
+    Public Unsafe Sub ReapTerminatedTasks()
+        Dim flags As UInt64 = Sync.SpinlockOps.AcquireIrqSave(schedLock)
+        Dim c As UInt32
+        For c = 0 To MAX_SCHED_CPUS - 1
+            Dim headAddr As UInt64 = gposQueueHeads(c)
+            If headAddr <> 0 Then
+                Dim prevAddr As UInt64 = headAddr
+                Dim currAddr As UInt64 = headAddr
+                Dim checkedCount As UInt32 = 0
+
+                Do
+                    Dim curr As Pointer To TaskControlBlock = CPtr(Pointer To TaskControlBlock, currAddr)
+                    Dim nextAddr As UInt64 = curr.NextTask
+
+                    ' If task is terminated and not actively executing on any core
+                    If curr.State = Sched.ThreadState.STATE_TERMINATED Then
+                        Dim isExecuting As Boolean = False
+                        Dim checkCore As UInt32
+                        For checkCore = 0 To MAX_SCHED_CPUS - 1
+                            If currentTaskAddrs(checkCore) = currAddr Then
+                                isExecuting = True
+                            End If
+                        Next checkCore
+
+                        If Not isExecuting Then
+                            ' Mark blocked immediately so no other pass touches it
+                            curr.State = Sched.ThreadState.STATE_BLOCKED
+
+                            ' Unlink from circular list
+                            If currAddr = nextAddr Then
+                                gposQueueHeads(c) = 0
+                            Else
+                                Dim prev As Pointer To TaskControlBlock = CPtr(Pointer To TaskControlBlock, prevAddr)
+                                prev.NextTask = nextAddr
+                                If gposQueueHeads(c) = currAddr Then
+                                    gposQueueHeads(c) = nextAddr
+                                End If
+                            End If
+
+                            Dim reapedPid As UInt32 = CType(UInt32, curr.Id)
+                            Dim kstack As UInt64 = curr.KStackBase
+                            Dim tcbToFree As UInt64 = currAddr
+
+                            Sync.SpinlockOps.ReleaseIrqRestore schedLock, flags
+
+                            Serial.PrintF "[SCHED] Reaped terminated task (PID: %u)\r\n", reapedPid
+
+                            If kstack <> 0 Then
+                                KHeap.KFree kstack
+                            End If
+                            KHeap.KFree tcbToFree
+
+                            Exit Sub
+                        End If
+                    End If
+
+                    prevAddr = currAddr
+                    currAddr = nextAddr
+                    checkedCount = checkedCount + 1
+                Loop While currAddr <> headAddr And checkedCount < 64
+            End If
+        Next c
+        Sync.SpinlockOps.ReleaseIrqRestore schedLock, flags
+    End Sub
 
 End Class
 

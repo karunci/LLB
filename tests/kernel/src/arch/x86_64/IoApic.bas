@@ -86,4 +86,9 @@ Module Arch.X86_64.IoApic
         MapIrq IRQ_KEYBOARD, 33, 0, False
     End Sub
 
+    ' Route PS/2 mouse IRQ 12 to IDT vector 44 on CPU 0
+    Public Unsafe Sub EnableMouse()
+        MapIrq IRQ_MOUSE, 44, 0, False
+    End Sub
+
 End Module

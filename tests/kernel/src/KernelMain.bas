@@ -33,10 +33,33 @@ Module KernelMain
     Use Core.Nodes.SynapseChannel
     Use Core.Nodes.NodeRegistry As NodeReg
     Use Fs.TarArchive As Tar
+    Use Mem.SharedMemoryManager As Shmem
+    Use Drivers.Mouse As MouseDriver
 
     ' LibLLB_Metal Static Library Declarations
     Public Declare Function ToHex Lib "libllb_metal" (ByVal value As UInt64, ByVal outBuf As Pointer To Byte, ByVal prefix As Boolean) As UInt32
     Public Declare Function SprintF Lib "libllb_metal" (ByVal outBuf As Pointer To Byte, ByVal maxLen As UInt32, ByVal fmt As Pointer To Byte, ParamArray args() As Pointer To Int64) As UInt32
+
+    ''
+    ' @brief System Timer Interrupt Service Routine (Vector 32 / IRQ 0).
+    ''
+    Public Unsafe Sub OnTimerInterrupt(ByRef frame As Arch.Idt.InterruptFrame)
+        SchedEngine.OnTimerTick 10
+    End Sub
+
+    ''
+    ' @brief PS/2 Keyboard Interrupt Service Routine (Vector 33 / IRQ 1).
+    ''
+    Public Unsafe Sub OnKeyboardInterrupt(ByRef frame As Arch.Idt.InterruptFrame)
+        Kbd.HandleInterrupt
+    End Sub
+
+    ''
+    ' @brief PS/2 Mouse Interrupt Service Routine (Vector 44 / IRQ 12).
+    ''
+    Public Unsafe Sub OnMouseInterrupt(ByRef frame As Arch.Idt.InterruptFrame)
+        MouseDriver.HandleInterrupt
+    End Sub
 
     Public Unsafe Sub KernelEntry(ByVal magic As UInt32, ByVal mbAddress As Pointer To Byte)
         ' Initialize COM1 line control & Serial UART driver
@@ -55,9 +78,10 @@ Module KernelMain
         Arch.X86_64.Gdt.Initialize
         Serial.PrintF "[PRK] GDT & TSS initialized successfully.\r\n"
 
-        ' Initialize PS/2 Keyboard controller
+        ' Initialize PS/2 Keyboard and Mouse controllers
         Kbd.Initialize
         Serial.PrintF "[PRK] PS/2 Keyboard controller initialized.\r\n"
+        MouseDriver.Initialize
 
         ' Initialize VGA Terminal Driver
         Term.Initialize Term.COLOR_LIGHT_GREEN, Term.COLOR_BLACK
@@ -177,6 +201,9 @@ Module KernelMain
             Serial.PrintF "[HEAP] Error: KMalloc returned null.\r\n"
         End If
 
+        ' Initialize Zero-Copy Shared Memory Subsystem (Phase 11)
+        Shmem.Initialize
+
         ' Discover and parse ACPI tables (Phase 3)
         Serial.PrintF "[PRK] Discovering ACPI Tables (RSDP/MADT/FADT)...\r\n"
         Arch.Acpi.Initialize CType(UInt64, mbAddress)
@@ -192,6 +219,9 @@ Module KernelMain
 
         Serial.PrintF "[PRK] Initializing IDT interrupt descriptors...\r\n"
         Arch.Idt.Initialize
+        Arch.Idt.RegisterHandler 32, @OnTimerInterrupt
+        Arch.Idt.RegisterHandler 33, @OnKeyboardInterrupt
+        Arch.Idt.RegisterHandler 44, @OnMouseInterrupt
         Serial.PrintF "[PRK] IDT gates registered successfully.\r\n"
 
         ' Initialize Local APIC and I/O APIC Hardware Engines
@@ -207,7 +237,8 @@ Module KernelMain
         Serial.PrintF "[PRK] Initializing I/O APIC Redirection Engine...\r\n"
         Arch.X86_64.IoApic.Initialize
         Arch.X86_64.IoApic.EnableKeyboard
-        Serial.PrintF "[PRK] I/O APIC online. Keyboard IRQ 1 routed to Vector 33.\r\n"
+        Arch.X86_64.IoApic.EnableMouse
+        Serial.PrintF "[PRK] I/O APIC online. Keyboard IRQ 1 -> Vec 33, Mouse IRQ 12 -> Vec 44.\r\n"
 
         ' Initialize Periodic LAPIC Timer (Vector 32)
         Serial.PrintF "[PRK] Calibrating Local APIC Timer (Vector 32)...\r\n"
@@ -344,6 +375,7 @@ Module KernelMain
         NodeReg.Initialize
         Dim kernelNodeId As UInt64 = NodeReg.RegisterNode("core.kernel", 1, 0, SynapseCaps.CAP_SYNAPSE_ADMIN)
         Dim displayNodeId As UInt64 = NodeReg.RegisterNode("drivers.display.lfb", 2, 0, SynapseCaps.CAP_SYNAPSE_WRITE Or SynapseCaps.CAP_SYNAPSE_READ)
+        Dim rawInputNodeId As UInt64 = NodeReg.RegisterNode("hw.input.raw", 2, 0, SynapseCaps.CAP_SYNAPSE_WRITE Or SynapseCaps.CAP_SYNAPSE_READ)
 
         ' Establish Synapse Channel between Kernel Compute Node and Display Device Node
         Dim fbSynapseId As UInt64 = NodeReg.ConnectSynapse(kernelNodeId, displayNodeId, SynapseCaps.CAP_SYNAPSE_WRITE Or SynapseCaps.CAP_SYNAPSE_READ)

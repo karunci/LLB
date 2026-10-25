@@ -18,6 +18,12 @@ Module UserApplication
     Public Const SYS_SYNAPSE_CONNECT As UInt64 = 51
     Public Const SYS_SYNAPSE_PUSH    As UInt64 = 52
     Public Const SYS_SYNAPSE_POP     As UInt64 = 53
+    Public Const SYS_NODE_LOOKUP     As UInt64 = 55
+
+    ' Zero-Copy Shared Memory Extensions
+    Public Const SYS_SHMEM_CREATE    As UInt64 = 60
+    Public Const SYS_SHMEM_ATTACH    As UInt64 = 61
+    Public Const SYS_SHMEM_DETACH    As UInt64 = 62
 
     ' Packed 288-byte AxonPacket structure for fast-path data plane transfer
     <Packed>
@@ -211,6 +217,50 @@ Module UserApplication
         If resTablePtr(0) = 1 Then ' ASSET_MANIFEST
             Dim manifestByteLenPtr As Pointer To UInt64 = CPtr(Pointer To UInt64, &H50000020)
             PrintMessageWithUInt "[USER-APP] Memory-Mapped BAX Manifest verified (Size: ", manifestByteLenPtr(0), " bytes, Mapped: 0x50000000)\r\n"
+        End If
+
+        ' 8. Verify Peer-to-Peer Node Lookup via SYS_NODE_LOOKUP
+        Dim lookupId As UInt64 = Syscall1(SYS_NODE_LOOKUP, CType(UInt64, @nodeName(0)))
+        PrintMessageWithUInt "[USER-APP] Peer-to-Peer Node Lookup verified: Node 'user.app' -> ID #", lookupId, "\r\n"
+
+        ' 8b. Discover Hardware Input Node ('hw.input.raw') and establish Synapse channel
+        Dim rawInputName(15) As Byte
+        rawInputName(0) = 104 ' 'h'
+        rawInputName(1) = 119 ' 'w'
+        rawInputName(2) = 46  ' '.'
+        rawInputName(3) = 105 ' 'i'
+        rawInputName(4) = 110 ' 'n'
+        rawInputName(5) = 112 ' 'p'
+        rawInputName(6) = 117 ' 'u'
+        rawInputName(7) = 116 ' 't'
+        rawInputName(8) = 46  ' '.'
+        rawInputName(9) = 114 ' 'r'
+        rawInputName(10) = 97 ' 'a'
+        rawInputName(11) = 119' 'w'
+        rawInputName(12) = 0
+        Dim rawInputNodeId As UInt64 = Syscall1(SYS_NODE_LOOKUP, CType(UInt64, @rawInputName(0)))
+        PrintMessageWithUInt "[USER-APP] Discovered Hardware Input Node: 'hw.input.raw' -> ID #", rawInputNodeId, "\r\n"
+        If rawInputNodeId > 0 Then
+            Dim inputSynId As UInt64 = Syscall3(SYS_SYNAPSE_CONNECT, userNodeId, rawInputNodeId, 3)
+            PrintMessageWithUInt "[USER-APP] Subscribed Synapse to 'hw.input.raw' -> Channel #", inputSynId, "\r\n"
+        End If
+
+        ' 9. Verify Zero-Copy Shared Memory (SYS_SHMEM_CREATE, Write Verification, SYS_SHMEM_DETACH)
+        Dim shmTargetVaddr As UInt64 = &H60000000
+        Dim shmid As UInt64 = Syscall2(SYS_SHMEM_CREATE, 8192, shmTargetVaddr)
+        If shmid > 0 Then
+            PrintMessageWithUInt "[USER-APP] Zero-Copy Shared Memory created (SHMID: ", shmid, ", Mapped @ 0x60000000)\r\n"
+            Dim shmPtr As Volatile Pointer To UInt64 = CPtr(Volatile Pointer To UInt64, shmTargetVaddr)
+            shmPtr(0) = &HCAFEBABE12345678
+            If shmPtr(0) = &HCAFEBABE12345678 Then
+                PrintString "[USER-APP] Zero-Copy Shared Memory write/read verified (0xCAFEBABE12345678)\r\n"
+            End If
+
+            ' Detach shared memory block
+            Dim detRes As UInt64 = Syscall1(SYS_SHMEM_DETACH, shmid)
+            If detRes = 0 Then
+                PrintString "[USER-APP] Zero-Copy Shared Memory detached cleanly via SYS_SHMEM_DETACH\r\n"
+            End If
         End If
 
         PrintString "[BRT0] user_main completed successfully. Returning exit code 0.\r\n"

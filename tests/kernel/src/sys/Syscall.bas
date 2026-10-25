@@ -10,6 +10,7 @@ Use Drivers.SerialUart As Serial
 Use Core.Nodes.SynapseChannel
 Use Core.Nodes.NodeRegistry As Registry
 Use Sched.Scheduler As SchedEngine
+Use Mem.SharedMemoryManager As Shmem
 
 Namespace Sys
 
@@ -32,6 +33,12 @@ Namespace Sys
         Public Const SYS_SYNAPSE_PUSH    As UInt64 = 52
         Public Const SYS_SYNAPSE_POP     As UInt64 = 53
         Public Const SYS_SYNAPSE_WAIT    As UInt64 = 54
+        Public Const SYS_NODE_LOOKUP     As UInt64 = 55
+
+        ' Zero-Copy Shared Memory Extensions
+        Public Const SYS_SHMEM_CREATE    As UInt64 = 60
+        Public Const SYS_SHMEM_ATTACH    As UInt64 = 61
+        Public Const SYS_SHMEM_DETACH    As UInt64 = 62
 
         ' Hardware MSR Register Constants
         Private Const IA32_EFER          As UInt32 = &HC0000080
@@ -206,6 +213,41 @@ Namespace Sys
                     Else
                         Dispatch = 0
                     End If
+
+                Case SYS_NODE_LOOKUP
+                    ' arg1 = namePtr (UInt64)
+                    If arg1 <> 0 And ValidateUserBuffer(arg1, 1) Then
+                        Dim lookupName As Pointer To Byte = CPtr(Pointer To Byte, arg1)
+                        Dispatch = Registry.LookupNode(lookupName)
+                    Else
+                        Dispatch = 0
+                    End If
+
+                Case SYS_SHMEM_CREATE
+                    ' arg1 = sizeBytes (UInt64), arg2 = targetVaddr (UInt64)
+                    If ValidateUserBuffer(arg2, arg1) Then
+                        Dim curPml4 As UInt64 = SchedEngine.GetCurrentCr3()
+                        Dim curPid As UInt64 = SchedEngine.GetCurrentPid()
+                        Dim shmRes As Int64 = Shmem.CreateShmem(arg1, arg2, curPml4, curPid)
+                        Dispatch = CType(UInt64, shmRes)
+                    Else
+                        Dispatch = CType(UInt64, -1)
+                    End If
+
+                Case SYS_SHMEM_ATTACH
+                    ' arg1 = shmid (Int64), arg2 = targetVaddr (UInt64)
+                    If ValidateUserBuffer(arg2, 4096) Then
+                        Dim attPml4 As UInt64 = SchedEngine.GetCurrentCr3()
+                        Dim attRes As Int64 = Shmem.AttachShmem(CType(Int64, arg1), arg2, attPml4)
+                        Dispatch = CType(UInt64, attRes)
+                    Else
+                        Dispatch = CType(UInt64, -1)
+                    End If
+
+                Case SYS_SHMEM_DETACH
+                    ' arg1 = shmid (Int64)
+                    Dim detRes As Int64 = Shmem.DetachShmem(CType(Int64, arg1))
+                    Dispatch = CType(UInt64, detRes)
 
                 Case Else
                     Serial.PrintF "[SYSCALL] Unknown native syscall #%u invoked\r\n", CType(UInt32, sysNum)

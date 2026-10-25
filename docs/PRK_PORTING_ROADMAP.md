@@ -512,9 +512,49 @@ tests/kernel/
     [USER-APP] Calling SYS_PROCESS_YIELD...
     [USER-APP] Returned from SYS_PROCESS_YIELD! Task execution intact.
     [USER-APP] Memory-Mapped BAX Manifest verified (Size: 237 bytes, Mapped: 0x50000000)
-    [BRT0] user_main completed successfully. Returning exit code 0.
-    [BRT0] =======================================================
-    [SCHED] PID 1 exited with code 0. Marking TERMINATED.
-    [SCHED] Reaped terminated task (PID: 1)
+---
+
+## Phase 11: Zero-Copy Shared Memory & Peer-to-Peer Synapse IPC (Completed)
+
+- [x] **Zero-Copy Shared Memory Subsystem (`tests/kernel/src/mem/SharedMemoryManager.cls`):**
+  - Ports PRK `kernel/shmem.c` to Low-Level Basic as `<Instancing(SingleUse)> Class SharedMemoryManager`.
+  - Up to 64 shared memory objects, supporting up to 1024 4KB pages (4MB) per block with per-object IRQ-safe spinlocks.
+  - Implemented `CreateShmem(sizeBytes, targetVaddr, pml4Phys, callerPid)`: allocates physical frames via `Buddy.AllocPages(0)`, zero-initializes frames, maps them into caller's User PML4, sets `RefCount = 1`, and returns a unique `SHMID`.
+  - Implemented `AttachShmem(shmid, targetVaddr, pml4Phys)`: maps identical physical frames into attacher's User PML4 and increments `RefCount`.
+  - Implemented `DetachShmem(shmid)`: decrements `RefCount`, and automatically frees physical frames back to `Buddy` when `RefCount` drops to 0.
+  - Implemented `CleanupPid(pid)`: safely reclaims orphaned shared memory blocks upon process death.
+- [x] **System Call Dispatcher Extensions (`tests/kernel/src/sys/Syscall.bas`):**
+  - Added `SYS_NODE_LOOKUP = 55`: enables userspace processes to discover registered service nodes by string name without hardcoded node IDs.
+  - Added `SYS_SHMEM_CREATE = 60`: allocate and map shared memory block into caller's virtual address space.
+  - Added `SYS_SHMEM_ATTACH = 61`: attach an existing `SHMID` to another process's virtual address space.
+  - Added `SYS_SHMEM_DETACH = 62`: detach and release shared memory reference.
+- [x] **Scheduler Integration (`tests/kernel/src/sched/Scheduler.cls`):**
+  - Implemented `GetCurrentCr3()`: returns the active User PML4 physical address for the currently executing task on the caller core.
+- [x] **Verification & Live QEMU Confirmation:**
+  - Tested in QEMU SMP 4 cores with WHPX hardware acceleration:
     ```
+    [SHMEM] Zero-Copy Shared Memory Subsystem Initialized (Max: 64 Objects, 4 MB/Obj).
+    ...
+    [USER-APP] Peer-to-Peer Node Lookup verified: Node 'user.app' -> ID #1002
+    [SHMEM] Created SHMID 1 (2 pages, 8 KB) for PID 1 @ vaddr 0x60000000
+    ---
+
+## Phase 12: Raw Hardware Input Node & PS/2 Mouse IRQ 12 Capture (Completed)
+
+- [x] **PS/2 Mouse Hardware Driver (`tests/kernel/src/drivers/Mouse.cls`):**
+  - Ports PRK `kernel/mouse.c` to Low-Level Basic as `<Instancing(SingleUse)> Class Mouse`.
+  - Configures auxiliary mouse port (`0xA8`), unmasks Compaq status byte interrupt generation (`0x20` / `0x60`), and commands packet streaming mode (`0xF4`).
+  - Implements 3-byte packet assembly state machine with bit 3 validation and PS/2 hardware sign extension (bits 4 & 5).
+  - Maintains lock-free Structure-of-Arrays (SoA) raw ring buffer for incoming packets (`packetButtons`, `packetDx`, `packetDy`, `packetPosX`, `packetPosY`).
+  - Clamps mouse coordinates to linear framebuffer resolution (`1024x768`) and tracks 3-button bitmask.
+- [x] **I/O APIC & IDT Redirection:**
+  - Added assembly stub `isr_stub_44` in `tests/kernel/src/arch/x86_64/IsrStubs.S`.
+  - Registered IDT Gate 44 in `tests/kernel/src/arch/x86_64/Idt.bas`.
+  - Added `IoApic.EnableMouse()` routing `IRQ_MOUSE` (12) to Vector 44 on CPU 0 in `tests/kernel/src/arch/x86_64/IoApic.bas`.
+  - Clean procedural callback decoupling via `Arch.Idt.RegisterHandler 44, @OnMouseInterrupt`.
+- [x] **Dual-Plane Node Architecture Registration:**
+  - Registered `hw.input.raw` as Node `#1002` (Kind: `NODE_DEVICE`).
+- [x] **Userspace Live Verification (`tests/user_app/UserMain.bas`):**
+  - Ring 3 userspace application queries `SYS_NODE_LOOKUP("hw.input.raw")`, discovers Node `#1002`, and establishes Synapse Channel `#5002` with read/write capability to stream hardware input events.
+  - Verified live in QEMU SMP 4 cores with WHPX hardware acceleration.
 

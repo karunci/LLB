@@ -96,3 +96,4 @@ ISR_NO_ERR   19  /* SIMD Floating-Point Exception */
 /* Hardware Interrupts / APIC / PIC (Vectors 32 - 47) */
 ISR_NO_ERR   32  /* System Timer (IRQ 0 / LAPIC Timer) */
 ISR_NO_ERR   33  /* PS/2 Keyboard (IRQ 1) */
+ISR_NO_ERR   44  /* PS/2 Mouse (IRQ 12) */

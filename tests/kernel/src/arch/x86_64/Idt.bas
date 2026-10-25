@@ -120,6 +120,7 @@ Module Arch.Idt
     Public Declare Sub isr_stub_14()
     Public Declare Sub isr_stub_32()
     Public Declare Sub isr_stub_33()
+    Public Declare Sub isr_stub_44()
 
     ' Initialize and load the IDT
     Public Unsafe Sub Initialize()
@@ -135,6 +136,7 @@ Module Arch.Idt
         SetGate 14, @isr_stub_14, &H08, &H8E  ' Vector 14: Page Fault
         SetGate 32, @isr_stub_32, &H08, &H8E  ' Vector 32: Timer Interrupt
         SetGate 33, @isr_stub_33, &H08, &H8E  ' Vector 33: Keyboard Interrupt
+        SetGate 44, @isr_stub_44, &H08, &H8E  ' Vector 44: PS/2 Mouse Interrupt
 
         ' Set up IDTR Pointer
         idtr.Limit = CType(UInt16, (256 * 16) - 1)

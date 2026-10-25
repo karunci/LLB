@@ -7,7 +7,7 @@ param(
     [string]$Initrd = "T:\projects\LLB\llbc\tests\user_app\build\initrd.tar",
     [int]$Smp = 2,
     [string]$Accel = "whpx",
-    [int]$TimeoutSec = 15
+    [int]$TimeoutSec = 30
 )
 
 $qemuPath = "C:\Program Files\qemu\qemu-system-x86_64.exe"

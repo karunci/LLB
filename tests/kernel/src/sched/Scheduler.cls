@@ -758,6 +758,26 @@ Public Class Scheduler
     End Function
 
     ''
+    ' @brief Get the hardware Cr3Root of the currently executing task on this CPU core.
+    ' @return Physical PML4 root address, or kernel PML4 if no active user task.
+    ''
+    Public Unsafe Function GetCurrentCr3() As UInt64
+        Dim coreId As UInt32 = Arch.X86_64.Gdt.GetCpuId()
+        If coreId >= MAX_SCHED_CPUS Then coreId = 0
+
+        If currentTaskAddrs(coreId) = 0 Then
+            GetCurrentCr3 = VMM.GetKernelPml4()
+            Exit Function
+        End If
+        Dim curr As Pointer To TaskControlBlock = CPtr(Pointer To TaskControlBlock, currentTaskAddrs(coreId))
+        If curr.Cr3Root <> 0 Then
+            GetCurrentCr3 = curr.Cr3Root
+        Else
+            GetCurrentCr3 = VMM.GetKernelPml4()
+        End If
+    End Function
+
+    ''
     ' @brief Transition current task to STATE_BLOCKED and immediately yield CPU.
     ''
     Public Unsafe Sub BlockCurrentTask()

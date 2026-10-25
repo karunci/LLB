@@ -230,8 +230,9 @@ Module KernelMain
         ' Top Header Banner with Nord Accent Stripe (x: 20..1004, w: 984, h: 38)
         FB.FillRect 20, 20, 984, 38, &H002E3440
         FB.FillRect 20, 20, 6, 38, &H0088C0D0
-        FB.DrawString 36, 31, "PRK Dual-Plane Node Kernel (LLB) [Online]", &H00ECEFF4, 1
-        FB.DrawString 680, 31, "x86_64 Long Mode | SMP 4 Cores", &H0088C0D0, 1
+        Dim topBannerBuf(64) As Byte
+        SprintF CPtr(Pointer To Byte, topBannerBuf), 64, "x86_64 Long Mode | SMP %u Cores", Arch.Acpi.GetCpuCount()
+        FB.DrawString 680, 31, CPtr(Pointer To Byte, topBannerBuf), &H0088C0D0, 1
 
         ' --- LEFT COLUMN: SYSTEM TOPOLOGY & DUAL-PLANE NODES (w: 480) ---
 
@@ -243,7 +244,10 @@ Module KernelMain
         FB.DrawString 36, 120, "Topology : Everything is a Node via Synapses", &H00A3BE8C, 1
         FB.DrawString 36, 140, "Control  : Cap-Checked Routing & Node Registry", &H00D8DEE9, 1
         FB.DrawString 36, 160, "Data     : Axonal Fast-Path 128-Slot Ring Buffers", &H00EBCB8B, 1
-        FB.DrawString 36, 180, "SMP Sched: 4 Cores Active / Preemptive Stealing", &H00B48EAD, 1
+
+        Dim smpSchedBuf(64) As Byte
+        SprintF CPtr(Pointer To Byte, smpSchedBuf), 64, "SMP Sched: %u Cores Active / Preemptive Stealing", Arch.Acpi.GetCpuCount()
+        FB.DrawString 36, 180, CPtr(Pointer To Byte, smpSchedBuf), &H00B48EAD, 1
 
         ' Left Card 2: Dual-Plane Neural Node Registry (x: 20, y: 222, w: 480, h: 150)
         FB.FillRect 20, 222, 480, 150, &H00232731

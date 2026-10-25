@@ -1,12 +1,16 @@
 ' Project Name: PROS (Personal Research Operating System)
 ' Filename: services/compositor/CompositorMain.bas
 ' Summary: Standalone Ring 3 Display Compositor and Window Engine daemon.
-'          Manages window surfaces, double-buffered presentation,
-'          interactive software cursor, and system telemetry badge.
+'          Adheres to PROS / PRK Nord theme specification, full 8x16 ASCII
+'          bitmap font rendering, 30 FPS paced presentation loop,
+'          and decoupled software cursor engine.
 
 Import "../../include/pros.bas"
 
 Module CompositorMain
+
+    ' External reference to 2048-byte 8x16 ASCII font bitmap table in brt0.S
+    Extern font_8x16_data As Byte
 
     ' -------------------------------------------------------------------------
     ' Internal Data & State
@@ -28,7 +32,7 @@ Module CompositorMain
     Private badgeY As Int32 = 0
     Private badgeActive As Boolean = False
     Private animPos As Int32 = 0
-    Private animDir As Int32 = 3
+    Private animDir As Int32 = 1
     Private frameCount As UInt32 = 0
 
     ''
@@ -67,151 +71,48 @@ Module CompositorMain
         Wend
     End Sub
 
-    ''
-    ' @brief Append 64-bit integer formatted in uppercase hexadecimal into buffer.
-    ''
-    Private Unsafe Sub AppendHex(ByVal val As UInt64, ByVal buf As Pointer To Byte, ByRef idx As UInt32)
-        If val = 0 Then
-            buf(idx) = 48 ' '0'
-            idx = idx + 1
-            Exit Sub
-        End If
-        Dim hexDigits As Pointer To Byte = CPtr(Pointer To Byte, "0123456789ABCDEF")
-        Dim tmp(16) As Byte
-        Dim tIdx As Int32 = 0
-        While val > 0
-            tmp(tIdx) = hexDigits(CType(Byte, val And 15))
-            val = val RShift 4
-            tIdx = tIdx + 1
-        Wend
-        While tIdx > 0
-            tIdx = tIdx - 1
-            buf(idx) = tmp(tIdx)
-            idx = idx + 1
-        Wend
-    End Sub
-
     ' -------------------------------------------------------------------------
-    ' 5x7 ASCII Bitmap Font Engine
+    ' Full 8x16 ASCII Bitmap Font Engine (128 Glyphs)
     ' -------------------------------------------------------------------------
-    Private Unsafe Sub DrawGlyph(ByRef surf As Surface, ByVal gx As Int32, ByVal gy As Int32, ByVal ascii As Byte, ByVal color As UInt32)
-        Dim rows(7) As Byte
-        Dim valid As Boolean = True
+    Private Unsafe Sub DrawGlyph8x16(ByRef surf As Surface, ByVal gx As Int32, ByVal gy As Int32, ByVal ascii As Byte, ByVal color As UInt32)
+        If ascii >= 128 Then Exit Sub
+        If surf.Pixels = 0 Then Exit Sub
 
-        ' Digits 0-9
-        If ascii = 48 Then      ' '0'
-            rows(0) = 14: rows(1) = 17: rows(2) = 19: rows(3) = 21: rows(4) = 25: rows(5) = 17: rows(6) = 14
-        ElseIf ascii = 49 Then  ' '1'
-            rows(0) = 4:  rows(1) = 12: rows(2) = 4:  rows(3) = 4:  rows(4) = 4:  rows(5) = 4:  rows(6) = 14
-        ElseIf ascii = 50 Then  ' '2'
-            rows(0) = 14: rows(1) = 17: rows(2) = 1:  rows(3) = 6:  rows(4) = 8:  rows(5) = 16: rows(6) = 31
-        ElseIf ascii = 51 Then  ' '3'
-            rows(0) = 30: rows(1) = 1:  rows(2) = 1:  rows(3) = 14: rows(4) = 1:  rows(5) = 1:  rows(6) = 30
-        ElseIf ascii = 52 Then  ' '4'
-            rows(0) = 2:  rows(1) = 6:  rows(2) = 10: rows(3) = 18: rows(4) = 31: rows(5) = 2:  rows(6) = 2
-        ElseIf ascii = 53 Then  ' '5'
-            rows(0) = 31: rows(1) = 16: rows(2) = 30: rows(3) = 1:  rows(4) = 1:  rows(5) = 17: rows(6) = 14
-        ElseIf ascii = 54 Then  ' '6'
-            rows(0) = 14: rows(1) = 16: rows(2) = 16: rows(3) = 30: rows(4) = 17: rows(5) = 17: rows(6) = 14
-        ElseIf ascii = 55 Then  ' '7'
-            rows(0) = 31: rows(1) = 1:  rows(2) = 2:  rows(3) = 4:  rows(4) = 8:  rows(5) = 8:  rows(6) = 8
-        ElseIf ascii = 56 Then  ' '8'
-            rows(0) = 14: rows(1) = 17: rows(2) = 17: rows(3) = 14: rows(4) = 17: rows(5) = 17: rows(6) = 14
-        ElseIf ascii = 57 Then  ' '9'
-            rows(0) = 14: rows(1) = 17: rows(2) = 17: rows(3) = 15: rows(4) = 1:  rows(5) = 1:  rows(6) = 14
-        ' Common Uppercase
-        ElseIf ascii = 65 Then  ' 'A'
-            rows(0) = 14: rows(1) = 17: rows(2) = 17: rows(3) = 31: rows(4) = 17: rows(5) = 17: rows(6) = 17
-        ElseIf ascii = 66 Then  ' 'B'
-            rows(0) = 30: rows(1) = 17: rows(2) = 17: rows(3) = 30: rows(4) = 17: rows(5) = 17: rows(6) = 30
-        ElseIf ascii = 67 Then  ' 'C'
-            rows(0) = 14: rows(1) = 17: rows(2) = 16: rows(3) = 16: rows(4) = 16: rows(5) = 17: rows(6) = 14
-        ElseIf ascii = 68 Then  ' 'D'
-            rows(0) = 28: rows(1) = 18: rows(2) = 17: rows(3) = 17: rows(4) = 17: rows(5) = 18: rows(6) = 28
-        ElseIf ascii = 69 Then  ' 'E'
-            rows(0) = 31: rows(1) = 16: rows(2) = 16: rows(3) = 30: rows(4) = 16: rows(5) = 16: rows(6) = 31
-        ElseIf ascii = 70 Then  ' 'F'
-            rows(0) = 31: rows(1) = 16: rows(2) = 16: rows(3) = 30: rows(4) = 16: rows(5) = 16: rows(6) = 16
-        ElseIf ascii = 71 Then  ' 'G'
-            rows(0) = 14: rows(1) = 17: rows(2) = 16: rows(3) = 23: rows(4) = 17: rows(5) = 17: rows(6) = 14
-        ElseIf ascii = 72 Then  ' 'H'
-            rows(0) = 17: rows(1) = 17: rows(2) = 17: rows(3) = 31: rows(4) = 17: rows(5) = 17: rows(6) = 17
-        ElseIf ascii = 73 Then  ' 'I'
-            rows(0) = 14: rows(1) = 4:  rows(2) = 4:  rows(3) = 4:  rows(4) = 4:  rows(5) = 4:  rows(6) = 14
-        ElseIf ascii = 75 Then  ' 'K'
-            rows(0) = 17: rows(1) = 18: rows(2) = 20: rows(3) = 24: rows(4) = 20: rows(5) = 18: rows(6) = 17
-        ElseIf ascii = 76 Then  ' 'L'
-            rows(0) = 16: rows(1) = 16: rows(2) = 16: rows(3) = 16: rows(4) = 16: rows(5) = 16: rows(6) = 31
-        ElseIf ascii = 77 Then  ' 'M'
-            rows(0) = 17: rows(1) = 27: rows(2) = 21: rows(3) = 21: rows(4) = 17: rows(5) = 17: rows(6) = 17
-        ElseIf ascii = 78 Then  ' 'N'
-            rows(0) = 17: rows(1) = 25: rows(2) = 21: rows(3) = 19: rows(4) = 17: rows(5) = 17: rows(6) = 17
-        ElseIf ascii = 79 Then  ' 'O'
-            rows(0) = 14: rows(1) = 17: rows(2) = 17: rows(3) = 17: rows(4) = 17: rows(5) = 17: rows(6) = 14
-        ElseIf ascii = 80 Then  ' 'P'
-            rows(0) = 30: rows(1) = 17: rows(2) = 17: rows(3) = 30: rows(4) = 16: rows(5) = 16: rows(6) = 16
-        ElseIf ascii = 82 Then  ' 'R'
-            rows(0) = 30: rows(1) = 17: rows(2) = 17: rows(3) = 30: rows(4) = 20: rows(5) = 18: rows(6) = 17
-        ElseIf ascii = 83 Then  ' 'S'
-            rows(0) = 15: rows(1) = 16: rows(2) = 16: rows(3) = 14: rows(4) = 1:  rows(5) = 1:  rows(6) = 30
-        ElseIf ascii = 84 Then  ' 'T'
-            rows(0) = 31: rows(1) = 4:  rows(2) = 4:  rows(3) = 4:  rows(4) = 4:  rows(5) = 4:  rows(6) = 4
-        ElseIf ascii = 85 Then  ' 'U'
-            rows(0) = 17: rows(1) = 17: rows(2) = 17: rows(3) = 17: rows(4) = 17: rows(5) = 17: rows(6) = 14
-        ElseIf ascii = 86 Then  ' 'V'
-            rows(0) = 17: rows(1) = 17: rows(2) = 17: rows(3) = 17: rows(4) = 10: rows(5) = 10: rows(6) = 4
-        ElseIf ascii = 87 Then  ' 'W'
-            rows(0) = 17: rows(1) = 17: rows(2) = 21: rows(3) = 21: rows(4) = 21: rows(5) = 21: rows(6) = 10
-        ' Punctuation
-        ElseIf ascii = 32 Then  ' ' ' (Space)
-            rows(0) = 0:  rows(1) = 0:  rows(2) = 0:  rows(3) = 0:  rows(4) = 0:  rows(5) = 0:  rows(6) = 0
-        ElseIf ascii = 58 Then  ' ':'
-            rows(0) = 0:  rows(1) = 12: rows(2) = 12: rows(3) = 0:  rows(4) = 12: rows(5) = 12: rows(6) = 0
-        ElseIf ascii = 45 Then  ' '-'
-            rows(0) = 0:  rows(1) = 0:  rows(2) = 0:  rows(3) = 31: rows(4) = 0:  rows(5) = 0:  rows(6) = 0
-        ElseIf ascii = 46 Then  ' '.'
-            rows(0) = 0:  rows(1) = 0:  rows(2) = 0:  rows(3) = 0:  rows(4) = 0:  rows(5) = 12: rows(6) = 12
-        ElseIf ascii = 124 Then ' '|'
-            rows(0) = 4:  rows(1) = 4:  rows(2) = 4:  rows(3) = 4:  rows(4) = 4:  rows(5) = 4:  rows(6) = 4
-        ElseIf ascii = 40 Then  ' '('
-            rows(0) = 2:  rows(1) = 4:  rows(2) = 8:  rows(3) = 8:  rows(4) = 8:  rows(5) = 4:  rows(6) = 2
-        ElseIf ascii = 41 Then  ' ')'
-            rows(0) = 8:  rows(1) = 4:  rows(2) = 2:  rows(3) = 2:  rows(4) = 2:  rows(5) = 4:  rows(6) = 8
-        Else
-            ' Fallback dot
-            rows(0) = 0:  rows(1) = 0:  rows(2) = 0:  rows(3) = 4:  rows(4) = 0:  rows(5) = 0:  rows(6) = 0
-        End If
+        Dim fontBase As Pointer To Byte = 0
+        Asm "movabs $font_8x16_data, %0" : "=r"(fontBase) : : "memory"
+
+        Dim charOffset As UInt64 = CType(UInt64, ascii) * 16
+        Dim pitchPix As UInt32 = surf.Pitch / 4
 
         Dim r As Int32 = 0
-        While r < 7
-            Dim b As Byte = rows(r)
-            Dim c As Int32 = 0
-            While c < 5
-                Dim bitMask As Byte = CType(Byte, 16 RShift c)
-                If (b And bitMask) <> 0 Then
-                    FillRect surf, gx + c, gy + r, 1, 1, color
-                End If
-                c = c + 1
-            Wend
+        While r < 16
+            Dim py As Int32 = gy + r
+            If py >= 0 And py < CType(Int32, surf.Height) Then
+                Dim rowBits As Byte = fontBase(charOffset + CType(UInt64, r))
+                Dim rowPtr As Pointer To UInt32 = surf.Pixels + (CType(UInt32, py) * pitchPix)
+                Dim c As Int32 = 0
+                While c < 8
+                    Dim px As Int32 = gx + c
+                    If px >= 0 And px < CType(Int32, surf.Width) Then
+                        Dim bitMask As Byte = CType(Byte, 128 RShift c)
+                        If (rowBits And bitMask) <> 0 Then
+                            rowPtr(px) = color
+                        End If
+                    End If
+                    c = c + 1
+                Wend
+            End If
             r = r + 1
         Wend
     End Sub
 
-    ''
-    ' @brief Draw null-terminated ASCII string using 5x7 font with 1px character spacing.
-    ''
-    Private Unsafe Sub DrawText5x7(ByRef surf As Surface, ByVal startX As Int32, ByVal startY As Int32, ByVal textPtr As Pointer To Byte, ByVal color As UInt32)
-        If textPtr = 0 Then Exit Sub
+    Private Unsafe Sub DrawString8x16(ByRef surf As Surface, ByVal sx As Int32, ByVal sy As Int32, ByVal strPtr As Pointer To Byte, ByVal color As UInt32)
+        If strPtr = 0 Then Exit Sub
         Dim i As UInt32 = 0
-        Dim curX As Int32 = startX
-        While textPtr(i) <> 0
-            Dim ch As Byte = textPtr(i)
-            ' Auto-convert lowercase to uppercase for 5x7 glyph set
-            If ch >= 97 And ch <= 122 Then
-                ch = ch - 32
-            End If
-            DrawGlyph surf, curX, startY, ch, color
-            curX = curX + 6
+        Dim curX As Int32 = sx
+        While strPtr(i) <> 0
+            DrawGlyph8x16 surf, curX, sy, strPtr(i), color
+            curX = curX + 8
             i = i + 1
         Wend
     End Sub
@@ -308,14 +209,14 @@ Module CompositorMain
     End Sub
 
     ' -------------------------------------------------------------------------
-    ' Telemetry Status Badge Renderer
+    ' Telemetry Status Badge Renderer (~30 FPS Smooth Cyber Indicator)
     ' -------------------------------------------------------------------------
     Private Unsafe Sub RenderTelemetryBadge()
         If Not badgeActive Then Exit Sub
 
-        ' 1. Cycle status LED color (breathing green -> cyan -> mint -> emerald)
+        ' 1. Status LED: Smooth breathing color cycle across Nord/Mint/Emerald palette
         Dim ledColor As UInt32 = &HFF00C853
-        Dim colorPhase As UInt32 = (frameCount / 6) Mod 4
+        Dim colorPhase As UInt32 = (frameCount / 10) Mod 4
         If colorPhase = 0 Then
             ledColor = &HFF00E676
         ElseIf colorPhase = 1 Then
@@ -325,42 +226,54 @@ Module CompositorMain
         Else
             ledColor = &HFF00C853
         End If
-        FillRect frontSurf, badgeX + 4, badgeY + 4, 8, 18, ledColor
+        FillRect frontSurf, badgeX + 6, badgeY + 5, 8, 18, ledColor
 
-        ' 2. Redraw recessed dark channel for scanner pulse
-        Dim trackX As Int32 = badgeX + 16
-        Dim trackY As Int32 = badgeY + 5
-        Dim trackW As Int32 = 120
+        ' 2. Recessed dark channel for scanner pulse
+        Dim trackX As Int32 = badgeX + 20
+        Dim trackY As Int32 = badgeY + 6
+        Dim trackW As Int32 = 110
         Dim trackH As Int32 = 16
-        Dim pulseW As Int32 = 28
+        Dim pulseW As Int32 = 24
         FillRect frontSurf, trackX, trackY, trackW, trackH, &HFF1B2028
 
-        ' 3. Ping-pong animated scanner pulse
+        ' 3. Smooth ping-pong animated scanner pulse with multi-layer glow
         Dim pulseX As Int32 = trackX + animPos
         If pulseX < trackX Then pulseX = trackX
         If (pulseX + pulseW) > (trackX + trackW) Then
             pulseX = (trackX + trackW) - pulseW
         End If
 
-        FillRect frontSurf, pulseX, trackY + 2, pulseW, trackH - 4, &HFF00B0FF
-        FillRect frontSurf, pulseX + 3, trackY + 4, pulseW - 6, trackH - 8, &HFF80D8FF
-        FillRect frontSurf, pulseX + 6, trackY + 6, pulseW - 12, trackH - 12, &HFFFFFFFF
+        ' Outer glow
+        FillRect frontSurf, pulseX, trackY + 1, pulseW, trackH - 2, &HFF00897B
+        ' Mid cyber glow
+        FillRect frontSurf, pulseX + 4, trackY + 3, pulseW - 8, trackH - 6, &HFF00E5FF
+        ' Crisp white core
+        FillRect frontSurf, pulseX + 8, trackY + 5, pulseW - 16, trackH - 10, &HFFFFFFFF
 
+        ' Smooth single-pixel advancement
         animPos = animPos + animDir
-        If animPos >= (trackW - pulseW) Then
+        If animPos + pulseW >= trackW Then
             animPos = trackW - pulseW
-            animDir = -3
+            animDir = -1
         ElseIf animPos <= 0 Then
             animPos = 0
-            animDir = 3
+            animDir = 1
         End If
 
-        ' 4. Real-time 30 FPS telemetry counter text
-        DrawText5x7 frontSurf, badgeX + 144, badgeY + 10, CPtr(Pointer To Byte, "30 FPS"), &HFF88C0D0
+        ' 4. Real-time 30 FPS telemetry counter text in 8x16 font
+        DrawString8x16 frontSurf, badgeX + 144, badgeY + 6, CPtr(Pointer To Byte, "30 FPS"), &HFF88C0D0
+
+        frameCount = frameCount + 1
     End Sub
 
     ' -------------------------------------------------------------------------
     ' Desktop Background & Initial Window Canvas Pre-Renderer
+    ' Adheres strictly to PRK / PROS GUI Theme Specification:
+    ' - Base: Deep Dark (#191D24)
+    ' - Titlebar: Charcoal Slate (#2E3440), Height: 28px
+    ' - Accent Line: Cyan Accent (#56B6C2), Height: 1px below titlebar
+    ' - Title Text: Monospaced 8x16 font (#D8DEE9)
+    ' - Controls: Close (#BF616A / 'X'), Maximize (#A3BE8C / 'O'), Minimize (#5E81AC / '-')
     ' -------------------------------------------------------------------------
     Private Unsafe Sub DrawDesktopScene()
         If frontSurf.Pixels = 0 Then Exit Sub
@@ -368,70 +281,91 @@ Module CompositorMain
         ' 1. Clear boot splash to Nord Dark Background (#191D24)
         FillRect frontSurf, 0, 0, dispInfo.Width, dispInfo.Height, &HFF191D24
 
-        ' 2. Top System Menu Bar (y: 0..26)
-        FillRect frontSurf, 0, 0, dispInfo.Width, 26, &HFF232731
-        FillRect frontSurf, 0, 25, dispInfo.Width, 1, &HFF4C566A
-        FillRect frontSurf, 0, 0, 4, 25, &HFF88C0D0
+        ' 2. Top System Menu Bar (y: 0..27, height: 28px)
+        FillRect frontSurf, 0, 0, dispInfo.Width, 28, &HFF2E3440
+        FillRect frontSurf, 0, 27, dispInfo.Width, 1, &HFF4C566A
+        FillRect frontSurf, 8, 6, 4, 16, &HFF88C0D0
 
-        DrawText5x7 frontSurf, 16, 10, CPtr(Pointer To Byte, "PROS WORKSTATION  |  APPLICATIONS  NODES  SERVICES  VIEW"), &HFFECEFF4
-        DrawText5x7 frontSurf, CType(Int32, dispInfo.Width) - 180, 10, CPtr(Pointer To Byte, "SMP 4 CORES  ONLINE"), &HFFA3BE8C
+        DrawString8x16 frontSurf, 20, 6, CPtr(Pointer To Byte, "PROS Workstation  |  Applications  Nodes  Services  View"), &HFFECEFF4
+        DrawString8x16 frontSurf, CType(Int32, dispInfo.Width) - 180, 6, CPtr(Pointer To Byte, "SMP 4 Cores  [OK]"), &HFFA3BE8C
 
         ' 3. Render Floating Desktop Window: "PROS System Monitor"
         Dim wx As Int32 = 60
-        Dim wy As Int32 = 60
-        Dim ww As Int32 = 480
-        Dim wh As Int32 = 280
+        Dim wy As Int32 = 56
+        Dim ww As Int32 = 580
+        Dim wh As Int32 = 380
 
         ' Outer drop-shadow effect
-        FillRect frontSurf, wx + 4, wy + 4, ww, wh, &HFF121419
+        FillRect frontSurf, wx + 6, wy + 6, ww, wh, &HFF121419
 
-        ' Window Frame Border
-        FillRect frontSurf, wx, wy, ww, wh, &HFF434C5E
-        FillRect frontSurf, wx + 1, wy + 1, ww - 2, wh - 2, &HFF2E3440
+        ' Window Frame Borders (Top/Left: #4C566A, Bottom/Right: #1B2028)
+        FillRect frontSurf, wx, wy, ww, 1, &HFF4C566A
+        FillRect frontSurf, wx, wy, 1, wh, &HFF4C566A
+        FillRect frontSurf, wx, wy + wh - 1, ww, 1, &HFF1B2028
+        FillRect frontSurf, wx + ww - 1, wy, 1, wh, &HFF1B2028
 
-        ' Titlebar (h: 26)
-        FillRect frontSurf, wx + 1, wy + 1, ww - 2, 26, &HFF2E3440
-        FillRect frontSurf, wx + 1, wy + 1, 4, 26, &HFF5E81AC
-        DrawText5x7 frontSurf, wx + 16, wy + 10, CPtr(Pointer To Byte, "PROS SYSTEM MONITOR (RING 3 COMPOSITED)"), &HFFECEFF4
+        ' Titlebar (h: 28px, #2E3440)
+        FillRect frontSurf, wx + 1, wy + 1, ww - 2, 27, &HFF2E3440
 
-        ' Window Buttons (Minimize, Maximize, Close)
-        FillRect frontSurf, (wx + ww) - 54, wy + 8, 10, 10, &HFF5E81AC ' Min
-        FillRect frontSurf, (wx + ww) - 38, wy + 8, 10, 10, &HFFA3BE8C ' Max
-        FillRect frontSurf, (wx + ww) - 22, wy + 8, 10, 10, &HFFBF616A ' Close
+        ' Cyan Accent Line (1px below titlebar: #56B6C2)
+        FillRect frontSurf, wx + 1, wy + 28, ww - 2, 1, &HFF56B6C2
 
-        ' Window Client Canvas
-        FillRect frontSurf, wx + 2, wy + 28, ww - 4, wh - 30, &HFF232731
+        ' Title Text in 8x16 font (centered vertically at y = wy + 6)
+        DrawString8x16 frontSurf, wx + 12, wy + 6, CPtr(Pointer To Byte, "PROS System Monitor (Ring 3 Composited)"), &HFFD8DEE9
+
+        ' Window Buttons (Exact PRK specs: 22x22, btn_y = wy + 3, spacing: 4px)
+        Dim btnY As Int32 = wy + 3
+        Dim btnW As Int32 = 22
+        Dim btnH As Int32 = 22
+
+        ' Close Button (Red: #BF616A)
+        Dim closeX As Int32 = (wx + ww) - btnW - 6
+        FillRect frontSurf, closeX, btnY, btnW, btnH, &HFFBF616A
+        DrawString8x16 frontSurf, closeX + 7, btnY + 3, CPtr(Pointer To Byte, "X"), &HFFFFFFFF
+
+        ' Maximize Button (Green: #A3BE8C)
+        Dim maxX As Int32 = closeX - btnW - 4
+        FillRect frontSurf, maxX, btnY, btnW, btnH, &HFFA3BE8C
+        DrawString8x16 frontSurf, maxX + 7, btnY + 3, CPtr(Pointer To Byte, "O"), &HFFFFFFFF
+
+        ' Minimize Button (Blue: #5E81AC)
+        Dim minX As Int32 = maxX - btnW - 4
+        FillRect frontSurf, minX, btnY, btnW, btnH, &HFF5E81AC
+        DrawString8x16 frontSurf, minX + 7, btnY + 3, CPtr(Pointer To Byte, "-"), &HFFFFFFFF
+
+        ' Window Client Canvas Background (#232731)
+        FillRect frontSurf, wx + 1, wy + 29, ww - 2, wh - 30, &HFF232731
 
         ' Card 1: Microkernel Architecture
-        FillRect frontSurf, wx + 16, wy + 40, ww - 32, 42, &HFF1E222A
-        FillRect frontSurf, wx + 16, wy + 40, 3, 42, &HFF81A1C1
-        DrawText5x7 frontSurf, wx + 26, wy + 48, CPtr(Pointer To Byte, "KERNEL : PRK-LLB (LOW-LEVEL BASIC MICROKERNEL)"), &HFF81A1C1
-        DrawText5x7 frontSurf, wx + 26, wy + 64, CPtr(Pointer To Byte, "MODEL  : DUAL-PLANE NEURAL SYNAPSE ROUTING"), &HFFD8DEE9
+        FillRect frontSurf, wx + 16, wy + 42, ww - 32, 54, &HFF1E222A
+        FillRect frontSurf, wx + 16, wy + 42, 3, 54, &HFF81A1C1
+        DrawString8x16 frontSurf, wx + 28, wy + 50, CPtr(Pointer To Byte, "KERNEL : PRK-LLB (Low-Level Basic Microkernel)"), &HFF81A1C1
+        DrawString8x16 frontSurf, wx + 28, wy + 70, CPtr(Pointer To Byte, "MODEL  : Dual-Plane Neural Synapse Routing"), &HFFD8DEE9
 
         ' Card 2: Compositor Status
-        FillRect frontSurf, wx + 16, wy + 92, ww - 32, 42, &HFF1E222A
-        FillRect frontSurf, wx + 16, wy + 92, 3, 42, &HFFA3BE8C
-        DrawText5x7 frontSurf, wx + 26, wy + 100, CPtr(Pointer To Byte, "ENGINE : ZERO-COPY WINDOW SURFACE PIPELINE"), &HFFA3BE8C
-        DrawText5x7 frontSurf, wx + 26, wy + 116, CPtr(Pointer To Byte, "DRIVER : DIRECT LINEAR FRAMEBUFFER APERTURE"), &HFFECEFF4
+        FillRect frontSurf, wx + 16, wy + 104, ww - 32, 54, &HFF1E222A
+        FillRect frontSurf, wx + 16, wy + 104, 3, 54, &HFFA3BE8C
+        DrawString8x16 frontSurf, wx + 28, wy + 112, CPtr(Pointer To Byte, "ENGINE : Zero-Copy Window Surface Pipeline"), &HFFA3BE8C
+        DrawString8x16 frontSurf, wx + 28, wy + 132, CPtr(Pointer To Byte, "DRIVER : Direct Linear Framebuffer Aperture"), &HFFECEFF4
 
         ' Card 3: Subsystem Status
-        FillRect frontSurf, wx + 16, wy + 144, ww - 32, 42, &HFF1E222A
-        FillRect frontSurf, wx + 16, wy + 144, 3, 42, &HFFEBCB8B
-        DrawText5x7 frontSurf, wx + 26, wy + 152, CPtr(Pointer To Byte, "INPUT  : INPUT_SRV DAEMON ONLINE (PS/2 MOUSE)"), &HFFEBCB8B
-        DrawText5x7 frontSurf, wx + 26, wy + 168, CPtr(Pointer To Byte, "DISPLAY: DISP_SRV DEVICE CONTROLLER ONLINE"), &HFFECEFF4
+        FillRect frontSurf, wx + 16, wy + 166, ww - 32, 54, &HFF1E222A
+        FillRect frontSurf, wx + 16, wy + 166, 3, 54, &HFFEBCB8B
+        DrawString8x16 frontSurf, wx + 28, wy + 174, CPtr(Pointer To Byte, "INPUT  : input_srv Daemon Online (PS/2 Mouse)"), &HFFEBCB8B
+        DrawString8x16 frontSurf, wx + 28, wy + 194, CPtr(Pointer To Byte, "DISPLAY: disp_srv Device Controller Online"), &HFFECEFF4
 
         ' Card 4: Ring 3 Performance
-        FillRect frontSurf, wx + 16, wy + 196, ww - 32, 42, &HFF1E222A
-        FillRect frontSurf, wx + 16, wy + 196, 3, 42, &HFFB48EAD
-        DrawText5x7 frontSurf, wx + 26, wy + 204, CPtr(Pointer To Byte, "SECURITY: CPL=3 USERLAND HARDWARE ISOLATION"), &HFFB48EAD
-        DrawText5x7 frontSurf, wx + 26, wy + 220, CPtr(Pointer To Byte, "SHARED MEMORY: SHMEM GRADIENTS MAPPED"), &HFFECEFF4
+        FillRect frontSurf, wx + 16, wy + 228, ww - 32, 54, &HFF1E222A
+        FillRect frontSurf, wx + 16, wy + 228, 3, 54, &HFFB48EAD
+        DrawString8x16 frontSurf, wx + 28, wy + 236, CPtr(Pointer To Byte, "SECURITY: CPL=3 Userland Hardware Isolation"), &HFFB48EAD
+        DrawString8x16 frontSurf, wx + 28, wy + 256, CPtr(Pointer To Byte, "SHARED MEMORY: SHMEM Gradients Mapped"), &HFFECEFF4
 
         ' 4. Initialize Telemetry Status Badge Container
-        If dispInfo.Width > 220 And dispInfo.Height > 60 Then
-            badgeX = CType(Int32, dispInfo.Width) - 210
-            badgeY = CType(Int32, dispInfo.Height) - 34
-            FillRect frontSurf, badgeX, badgeY, 200, 26, &HFF2E3440
-            FillRect frontSurf, badgeX, badgeY, 200, 1, &HFF434C5E
+        If dispInfo.Width > 230 And dispInfo.Height > 60 Then
+            badgeX = CType(Int32, dispInfo.Width) - 220
+            badgeY = CType(Int32, dispInfo.Height) - 36
+            FillRect frontSurf, badgeX, badgeY, 210, 28, &HFF2E3440
+            FillRect frontSurf, badgeX, badgeY, 210, 1, &HFF4C566A
             badgeActive = True
         End If
     End Sub
@@ -515,37 +449,16 @@ Module CompositorMain
         cursorInitialized = True
         ConsoleWriteLine "[COMPOSITOR] Hardware software cursor plane initialized at screen center."
 
-        ' 7. Active Presentation & Event Loop
+        ' 7. Active Presentation & Event Loop (~30 FPS paced with ProcessSleep)
         ConsoleWriteLine "[COMPOSITOR] Compositor online. Entering presentation loop (~30 FPS)..."
 
-        Dim tickCount As UInt32 = 0
         Do
-            ' A. Update and animate telemetry badge
+            ' A. Update and animate live telemetry badge smoothly
             RenderTelemetryBadge
 
-            ' B. Update interactive cursor (simulated test drift or input queue sampling)
-            ' Every 4 frames, animate a subtle cursor scan or motion test
-            If (frameCount Mod 8) = 0 Then
-                Dim nextX As Int32 = cursorX + 1
-                Dim nextY As Int32 = cursorY
-                If nextX > (CType(Int32, dispInfo.Width) - 100) Then
-                    nextX = CType(Int32, dispInfo.Width / 2) - 100
-                End If
-
-                ' Fast tear-free cursor blit
-                RestoreCursorBackground oldCursorX, oldCursorY
-                SaveCursorBackground nextX, nextY
-                DrawCursorArrow nextX, nextY
-                oldCursorX = nextX
-                oldCursorY = nextY
-                cursorX = nextX
-                cursorY = nextY
-            End If
-
-            frameCount = frameCount + 1
-            tickCount = tickCount + 1
-
-            ' Cooperatively yield CPU slice across SMP cores
+            ' B. Pace presentation loop to exact ~30 FPS (33 ms per frame)
+            ' Yields remaining CPU slice across SMP cores without supersonic spinning
+            ProcessSleep 33
             ProcessYield
         Loop
 

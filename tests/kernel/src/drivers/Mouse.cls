@@ -178,9 +178,12 @@ Namespace Drivers
         '        Zero-polling, zero-VM-exit overhead.
         ''
         Public Unsafe Sub HandleInterrupt()
+            Dim flags As UInt64 = Sync.SpinlockOps.AcquireIrqSave(mouseLock)
+
             Dim status As Byte = Arch.X86_64.PortIO.InB(MOUSE_STATUS_PORT)
             ' Exit if output buffer is empty or byte is not from auxiliary device (Bit 5 = 0)
             If (status And &H01) = 0 Or (status And &H20) = 0 Then
+                Sync.SpinlockOps.ReleaseIrqRestore mouseLock, flags
                 Exit Sub
             End If
 
@@ -189,11 +192,10 @@ Namespace Drivers
 
             ' Read byte from 8042 data port
             Dim data As Byte = Arch.X86_64.PortIO.InB(MOUSE_DATA_PORT)
-            Dim flags As UInt64 = Sync.SpinlockOps.AcquireIrqSave(mouseLock)
 
             If mouseCycle = 0 Then
-                ' Bit 3 must be 1 for valid packet alignment; drop corrupt or overflow packets
-                If (data And &H08) = 0 Or (data And &HC0) <> 0 Then
+                ' Bit 3 must be 1 for valid packet alignment
+                If (data And &H08) = 0 Then
                     mouseCycle = 0
                     Sync.SpinlockOps.ReleaseIrqRestore mouseLock, flags
                     Exit Sub
@@ -210,13 +212,17 @@ Namespace Drivers
                 Dim flagsByte As Byte = mouseBytes(0)
                 currentButtons = flagsByte And &H07
 
-                ' Validate no hardware overflow occurred on deltas
+                ' Validate no hardware overflow occurred on deltas (Bit 6 = X overflow, Bit 7 = Y overflow)
                 If (flagsByte And &HC0) = 0 Then
-                    ' Standard Linux 9-bit signed delta formula:
-                    ' dx = packet[1] - ((packet[0] << 4) & 0x100)
-                    ' dy = packet[2] - ((packet[0] << 3) & 0x100)
-                    Dim rawDx As Int32 = CType(Int32, mouseBytes(1)) - CType(Int32, (CType(UInt32, flagsByte) LShift 4) And &H100)
-                    Dim rawDy As Int32 = CType(Int32, mouseBytes(2)) - CType(Int32, (CType(UInt32, flagsByte) LShift 3) And &H100)
+                    ' PS/2 bitwise sign extension per llb-patch-author rule:
+                    Dim rawDx As Int32 = CType(Int32, mouseBytes(1))
+                    If (flagsByte And &H10) <> 0 Then
+                        rawDx = CType(Int32, CType(UInt32, rawDx) Or &HFFFFFF00)
+                    End If
+                    Dim rawDy As Int32 = CType(Int32, mouseBytes(2))
+                    If (flagsByte And &H20) <> 0 Then
+                        rawDy = CType(Int32, CType(UInt32, rawDy) Or &HFFFFFF00)
+                    End If
 
                     ' Sanity filter: ignore impossible delta spikes (> 250 px in one burst)
                     If rawDx >= -250 And rawDx <= 250 And rawDy >= -250 And rawDy <= 250 Then

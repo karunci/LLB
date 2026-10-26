@@ -1,7 +1,7 @@
 /*
  * Project Name: PRK (Personal Research Kernel) / Low-Level Basic (LLB)
  * Filename: tests/kernel/src/arch/x86_64/boot.S
- * Summary: 32-bit Multiboot bootstrap, 64-bit long-mode paging setup, and kernel entry.
+ * Summary: 32-bit Multiboot 2 bootstrap, 64-bit long-mode paging setup, and kernel entry.
  */
 
 .code32
@@ -37,29 +37,6 @@ header_start:
     .short 0
     .long 8
 header_end:
-
-/* ============================================================================
- * MULTIBOOT 1 HEADER (For Legacy BIOS / CSM / QEMU -kernel direct boot)
- * ============================================================================ */
-#define MULTIBOOT1_HEADER_MAGIC      0x1BADB002
-#define MULTIBOOT1_HEADER_FLAGS      0x00000007 /* ALIGN + MEMINFO + VIDEO (Native ELF loading) */
-
-.align 4
-multiboot1_header:
-    .long MULTIBOOT1_HEADER_MAGIC
-    .long MULTIBOOT1_HEADER_FLAGS
-    .long -(MULTIBOOT1_HEADER_MAGIC + MULTIBOOT1_HEADER_FLAGS)
-    /* Required 5 address fields preceding video fields per Multiboot 1 spec */
-    .long 0     /* header_addr (unused for ELF, must be present) */
-    .long 0     /* load_addr */
-    .long 0     /* load_end_addr */
-    .long 0     /* bss_end_addr */
-    .long 0     /* entry_addr */
-    /* Video mode fields at offset 32 */
-    .long 0     /* mode_type: 0 = linear graphics */
-    .long 1024  /* width */
-    .long 768   /* height */
-    .long 32    /* depth */
 
 /* ============================================================================
  * 32-BIT PROTECTED MODE ENTRY POINT
@@ -463,4 +440,3 @@ smp_trampoline_end:
 .global ap_main
 ap_main:
     jmp Arch_Smp_ApMain
-

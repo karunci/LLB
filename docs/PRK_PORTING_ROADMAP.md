@@ -741,6 +741,32 @@ tests/kernel/
 - [x] **Mandatory Revision Bumping:**
   - Bumped build revision to `REV: 2026.10.26-r27` across kernel boot banner, serial logs, top desktop menu bar, and system monitor window.
 
+---
+
+## Phase 22: Dual Kernel Binaries (MB1/MB2), Online Core Task Affinity, and Robust PS/2 Tracking (`REV: 2026.10.26-r28`)
+
+- [x] **Dedicated Segregated Binaries for Multiboot 1 vs Multiboot 2:**
+  - Built two independent kernel images to eliminate header ambiguity and parser crosstalk across different bootloaders and firmware:
+    - `kernel_mb2.elf`: Native 64-bit UEFI GOP image containing pure Multiboot 2 header at offset 0 (`tests/kernel/src/arch/x86_64/boot_mb2.S`), configured as default Entry 0 in `grub.cfg`.
+    - `kernel_mb1.elf`: Legacy BIOS/CSM image containing pure Multiboot 1 header at offset 0 (`tests/kernel/src/arch/x86_64/boot_mb1.S`, flags `0x00000007`), configured as Entry 1 in `grub.cfg`.
+  - Created shared bootstrap include `tests/kernel/src/arch/x86_64/boot_core.inc` ensuring unified 32-to-64 bit transition, 16GB identity paging, GDT setup, and SMP trampoline.
+  - Validated both binaries independently via `grub-file --is-x86-multiboot2` and `grub-file --is-x86-multiboot`.
+- [x] **Elimination of VirtualBox Boot Splash Freeze (`screeninfo`):**
+  - **Root Cause:** In `Scheduler.cls`, `GetNextTargetCore()` round-robined daemons using `Arch.Acpi.GetCpuCount()`. When ACPI MADT listed 4 cores but VirtualBox was configured with 1 or 2 vCPUs, `srv.compositor` was pinned to offline `Core #2` and never executed.
+  - **Resolution:**
+    - Added `Arch.Smp.GetOnlineCoreCount()` returning `apJoinCounter` (the count of cores that actually joined the scheduler).
+    - Updated `GetNextTargetCore()` to bind tasks strictly modulo `Arch.Smp.GetOnlineCoreCount()`.
+    - Enhanced `StealTask()` to inspect and steal both RTOS and GPOS tasks across all core slots (`0..MAX_SCHED_CPUS-1`), guaranteeing no runnable task is ever stranded on an offline core.
+- [x] **Elimination of 70% VMM Load in `services/disp_srv`:**
+  - In `services/disp_srv/DispMain.bas`, replaced the tight `Do : ProcessYield : Loop` with `Do : ProcessSleep 1000 : Loop`.
+  - Adheres strictly to the `Event-Driven Services (Zero Idle CPU)` architecture rule, freeing the CPU core to halt (`sti; hlt`) and eliminating hundreds of thousands of VM-exits per second.
+- [x] **Elimination of Erratic Mouse Cursor Leaps in QEMU:**
+  - **Misalignment Fix:** Removed the premature `(data And &HC0) <> 0` drop condition from `mouseCycle = 0` in `Drivers.Mouse.cls`. Dropping byte 0 on overflow previously caused bytes 1 and 2 to shift phase and become parsed as subsequent packet headers.
+  - **Sign Extension Fix:** Restored standard bitwise two's complement sign extension (`rawDx Or &HFFFFFF00` when bit 4 is set, `rawDy Or &HFFFFFF00` when bit 5 is set), replacing the error-prone subtraction formula.
+  - **Serialization:** Acquired `mouseLock` before reading 8042 status and data ports, preventing reentrant ISR or multi-core syscall races.
+- [x] **Mandatory Revision Bumping:**
+  - Bumped build revision to `REV: 2026.10.26-r28` across kernel boot banner, serial logs, top desktop menu bar, and system monitor window.
+
 
 
 

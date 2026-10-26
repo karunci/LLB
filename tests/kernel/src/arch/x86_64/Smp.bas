@@ -244,4 +244,11 @@ Module Arch.Smp
         Asm "mfence" : : : "memory"
     End Sub
 
+    ''
+    ' @brief Get the count of CPU cores that successfully initialized and joined the scheduler.
+    ''
+    Public Function GetOnlineCoreCount() As UInt32
+        GetOnlineCoreCount = apJoinCounter
+    End Function
+
 End Module

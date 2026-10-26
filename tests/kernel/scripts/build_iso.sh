@@ -36,13 +36,17 @@ tar -cf "${INITRD_TAR}" \
     -C "${PROJECT_ROOT}/services/input_srv/build" input_srv.bax \
     -C "${PROJECT_ROOT}/services/compositor/build" compositor.bax
 
-echo "[+] Building Kernel ELF..."
-./build/llbc-stage0 tests/kernel/Kernel.llbproj
+echo "[+] Building Dedicated Kernel ELFs (MB2 and MB1)..."
+./build/llbc-stage0 tests/kernel/Kernel_MB2.llbproj
+./build/llbc-stage0 tests/kernel/Kernel_MB1.llbproj
+cp "${KERNEL_DIR}/build/kernel_mb2.elf" "${KERNEL_DIR}/build/kernel.elf"
 
 echo "[+] Preparing GRUB ISO staging tree at ${ISO_DIR}..."
 rm -rf "${ISO_DIR}"
 mkdir -p "${ISO_DIR}/boot/grub"
-cp "${KERNEL_ELF}" "${ISO_DIR}/boot/kernel.elf"
+cp "${KERNEL_DIR}/build/kernel_mb2.elf" "${ISO_DIR}/boot/kernel_mb2.elf"
+cp "${KERNEL_DIR}/build/kernel_mb1.elf" "${ISO_DIR}/boot/kernel_mb1.elf"
+cp "${KERNEL_DIR}/build/kernel_mb2.elf" "${ISO_DIR}/boot/kernel.elf"
 cp "${INITRD_TAR}" "${ISO_DIR}/boot/initrd.tar"
 
 cat << 'EOF' > "${ISO_DIR}/boot/grub/grub.cfg"
@@ -67,7 +71,7 @@ set gfxpayload=1024x768x32,auto,keep
 
 menuentry "Low-Level Basic Kernel (PROS/LLB) [Multiboot 2 - Native UEFI GOP]" {
     set gfxpayload=1024x768x32,auto,keep
-    multiboot2 /boot/kernel.elf
+    multiboot2 /boot/kernel_mb2.elf
     module2 /boot/initrd.tar "initrd"
     boot
 }
@@ -76,15 +80,15 @@ menuentry "Low-Level Basic Kernel (PROS/LLB) [Multiboot 1 - Legacy BIOS / CSM]" 
     insmod part_msdos
     insmod iso9660
     set gfxpayload=1024x768x32,auto,keep
-    multiboot /boot/kernel.elf
+    multiboot /boot/kernel_mb1.elf
     module /boot/initrd.tar "initrd"
     boot
 }
 EOF
 
 echo "[+] Validating Multiboot headers via proot-distro grub-file..."
-proot-distro login ubuntu --minimal --shared-tmp -b "$HOME:$HOME" -- grub-file --is-x86-multiboot "${ISO_DIR}/boot/kernel.elf"
-proot-distro login ubuntu --minimal --shared-tmp -b "$HOME:$HOME" -- grub-file --is-x86-multiboot2 "${ISO_DIR}/boot/kernel.elf"
+proot-distro login ubuntu --minimal --shared-tmp -b "$HOME:$HOME" -- grub-file --is-x86-multiboot2 "${ISO_DIR}/boot/kernel_mb2.elf"
+proot-distro login ubuntu --minimal --shared-tmp -b "$HOME:$HOME" -- grub-file --is-x86-multiboot "${ISO_DIR}/boot/kernel_mb1.elf"
 
 echo "[+] Generating Hybrid BIOS/UEFI bootable ISO with grub-mkrescue..."
 proot-distro login ubuntu --minimal --shared-tmp -b "$HOME:$HOME" -- grub-mkrescue -o "${OUTPUT_ISO}" "${ISO_DIR}"

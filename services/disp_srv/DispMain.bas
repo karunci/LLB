@@ -201,7 +201,7 @@ Module DispServiceMain
         ConsoleWriteLine "[DISP_SRV] Display Driver Service online. Entering active daemon loop..."
 
         Do
-            ProcessYield
+            ProcessSleep 1000
         Loop
 
         user_main = 0

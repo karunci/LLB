@@ -300,7 +300,7 @@ Public Class Scheduler
     ' @return Logical CPU index to receive the new thread.
     ''
     Private Function GetNextTargetCore() As UInt32
-        Dim onlineCores As UInt32 = Arch.Acpi.GetCpuCount()
+        Dim onlineCores As UInt32 = Arch.Smp.GetOnlineCoreCount()
         If onlineCores = 0 Or onlineCores > MAX_SCHED_CPUS Then
             onlineCores = 1
         End If
@@ -588,31 +588,58 @@ Public Class Scheduler
     ' @return Address of stolen ready TCB, or 0 if all cores are idle.
     ''
     Private Unsafe Function StealTask(ByVal thisCpu As UInt32) As UInt64
-        Dim onlineCores As UInt32 = Arch.Acpi.GetCpuCount()
-        If onlineCores <= 1 Then
-            StealTask = 0
-            Exit Function
-        End If
-        If onlineCores > MAX_SCHED_CPUS Then onlineCores = MAX_SCHED_CPUS
-
         Dim otherCore As UInt32 = 0
-        While otherCore < onlineCores
+        While otherCore < MAX_SCHED_CPUS
             If otherCore <> thisCpu Then
+                ' 1. Check peer RTOS queue first
+                Dim rHeadAddr As UInt64 = rtosQueueHeads(otherCore)
+                If rHeadAddr <> 0 Then
+                    Dim rIterAddr As UInt64 = rHeadAddr
+                    Do
+                        Dim rIter As Pointer To TaskControlBlock = CPtr(Pointer To TaskControlBlock, rIterAddr)
+                        If rIter.State = Sched.ThreadState.STATE_READY Then
+                            If rIter.NextTask <> rIterAddr Then
+                                Dim predAddr As UInt64 = rIterAddr
+                                While CPtr(Pointer To TaskControlBlock, predAddr).NextTask <> rIterAddr
+                                    predAddr = CPtr(Pointer To TaskControlBlock, predAddr).NextTask
+                                Wend
+                                CPtr(Pointer To TaskControlBlock, predAddr).NextTask = rIter.NextTask
+                                If rtosQueueHeads(otherCore) = rIterAddr Then
+                                    rtosQueueHeads(otherCore) = rIter.NextTask
+                                End If
+                            Else
+                                rtosQueueHeads(otherCore) = 0
+                            End If
+
+                            If rtosQueueHeads(thisCpu) = 0 Then
+                                rtosQueueHeads(thisCpu) = rIterAddr
+                                rIter.NextTask = rIterAddr
+                            Else
+                                Dim thisHead As Pointer To TaskControlBlock = CPtr(Pointer To TaskControlBlock, rtosQueueHeads(thisCpu))
+                                rIter.NextTask = thisHead.NextTask
+                                thisHead.NextTask = rIterAddr
+                            End If
+
+                            StealTask = rIterAddr
+                            Exit Function
+                        End If
+                        rIterAddr = rIter.NextTask
+                    Loop While rIterAddr <> rHeadAddr
+                End If
+
+                ' 2. Check peer GPOS queue
                 Dim headAddr As UInt64 = gposQueueHeads(otherCore)
                 If headAddr <> 0 Then
                     Dim iterAddr As UInt64 = headAddr
                     Do
                         Dim iter As Pointer To TaskControlBlock = CPtr(Pointer To TaskControlBlock, iterAddr)
-                        ' Only steal tasks in STATE_READY (not currently running on the other core)
                         If iter.State = Sched.ThreadState.STATE_READY Then
-                            ' Remove iter from otherCore's queue if there are multiple tasks
                             If iter.NextTask <> iterAddr Then
-                                ' Find predecessor
-                                Dim predAddr As UInt64 = iterAddr
-                                While CPtr(Pointer To TaskControlBlock, predAddr).NextTask <> iterAddr
-                                    predAddr = CPtr(Pointer To TaskControlBlock, predAddr).NextTask
+                                Dim gPredAddr As UInt64 = iterAddr
+                                While CPtr(Pointer To TaskControlBlock, gPredAddr).NextTask <> iterAddr
+                                    gPredAddr = CPtr(Pointer To TaskControlBlock, gPredAddr).NextTask
                                 Wend
-                                CPtr(Pointer To TaskControlBlock, predAddr).NextTask = iter.NextTask
+                                CPtr(Pointer To TaskControlBlock, gPredAddr).NextTask = iter.NextTask
                                 If gposQueueHeads(otherCore) = iterAddr Then
                                     gposQueueHeads(otherCore) = iter.NextTask
                                 End If
@@ -620,14 +647,13 @@ Public Class Scheduler
                                 gposQueueHeads(otherCore) = 0
                             End If
 
-                            ' Insert into thisCpu's runqueue
                             If gposQueueHeads(thisCpu) = 0 Then
                                 gposQueueHeads(thisCpu) = iterAddr
                                 iter.NextTask = iterAddr
                             Else
-                                Dim thisHead As Pointer To TaskControlBlock = CPtr(Pointer To TaskControlBlock, gposQueueHeads(thisCpu))
-                                iter.NextTask = thisHead.NextTask
-                                thisHead.NextTask = iterAddr
+                                Dim gThisHead As Pointer To TaskControlBlock = CPtr(Pointer To TaskControlBlock, gposQueueHeads(thisCpu))
+                                iter.NextTask = gThisHead.NextTask
+                                gThisHead.NextTask = iterAddr
                             End If
 
                             StealTask = iterAddr

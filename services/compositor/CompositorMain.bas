@@ -217,44 +217,100 @@ Module CompositorMain
     ' -------------------------------------------------------------------------
     Private Unsafe Sub SaveCursorBackground(ByVal x As Int32, ByVal y As Int32)
         If frontSurf.Pixels = 0 Then Exit Sub
-        Dim pitchPix As UInt32 = frontSurf.Pitch / 4
         Dim cy As Int32 = 0
-        While cy < CURSOR_H
-            Dim curY As Int32 = y + cy
-            If curY >= 0 And curY < CType(Int32, frontSurf.Height) Then
-                Dim rowPtr As Pointer To UInt32 = frontSurf.Pixels + (CType(UInt32, curY) * pitchPix)
-                Dim cx As Int32 = 0
-                While cx < CURSOR_W
-                    Dim curX As Int32 = x + cx
-                    If curX >= 0 And curX < CType(Int32, frontSurf.Width) Then
-                        cursorSavedBg((cy * CURSOR_W) + cx) = rowPtr(curX)
-                    End If
-                    cx = cx + 1
-                Wend
-            End If
-            cy = cy + 1
-        Wend
+        Dim curY As Int32 = 0
+        Dim cx As Int32 = 0
+        Dim curX As Int32 = 0
+
+        If frontSurf.Bpp = 24 Then
+            cy = 0
+            While cy < CURSOR_H
+                curY = y + cy
+                If curY >= 0 And curY < CType(Int32, frontSurf.Height) Then
+                    Dim rawRow As Pointer To Byte = CPtr(Pointer To Byte, frontSurf.Pixels) + (CType(UInt32, curY) * frontSurf.Pitch)
+                    cx = 0
+                    While cx < CURSOR_W
+                        curX = x + cx
+                        If curX >= 0 And curX < CType(Int32, frontSurf.Width) Then
+                            Dim bOff As UInt32 = CType(UInt32, curX) * 3
+                            Dim b As UInt32 = CType(UInt32, rawRow(bOff))
+                            Dim g As UInt32 = CType(UInt32, rawRow(bOff + 1))
+                            Dim r As UInt32 = CType(UInt32, rawRow(bOff + 2))
+                            cursorSavedBg((cy * CURSOR_W) + cx) = &HFF000000 Or (r LShift 16) Or (g LShift 8) Or b
+                        End If
+                        cx = cx + 1
+                    Wend
+                End If
+                cy = cy + 1
+            Wend
+        Else
+            Dim pitchPix As UInt32 = frontSurf.Pitch / 4
+            cy = 0
+            While cy < CURSOR_H
+                curY = y + cy
+                If curY >= 0 And curY < CType(Int32, frontSurf.Height) Then
+                    Dim rowPtr As Pointer To UInt32 = frontSurf.Pixels + (CType(UInt32, curY) * pitchPix)
+                    cx = 0
+                    While cx < CURSOR_W
+                        curX = x + cx
+                        If curX >= 0 And curX < CType(Int32, frontSurf.Width) Then
+                            cursorSavedBg((cy * CURSOR_W) + cx) = rowPtr(curX)
+                        End If
+                        cx = cx + 1
+                    Wend
+                End If
+                cy = cy + 1
+            Wend
+        End If
     End Sub
 
     Private Unsafe Sub RestoreCursorBackground(ByVal x As Int32, ByVal y As Int32)
         If frontSurf.Pixels = 0 Then Exit Sub
-        Dim pitchPix As UInt32 = frontSurf.Pitch / 4
         Dim cy As Int32 = 0
-        While cy < CURSOR_H
-            Dim curY As Int32 = y + cy
-            If curY >= 0 And curY < CType(Int32, frontSurf.Height) Then
-                Dim rowPtr As Pointer To UInt32 = frontSurf.Pixels + (CType(UInt32, curY) * pitchPix)
-                Dim cx As Int32 = 0
-                While cx < CURSOR_W
-                    Dim curX As Int32 = x + cx
-                    If curX >= 0 And curX < CType(Int32, frontSurf.Width) Then
-                        rowPtr(curX) = cursorSavedBg((cy * CURSOR_W) + cx)
-                    End If
-                    cx = cx + 1
-                Wend
-            End If
-            cy = cy + 1
-        Wend
+        Dim curY As Int32 = 0
+        Dim cx As Int32 = 0
+        Dim curX As Int32 = 0
+
+        If frontSurf.Bpp = 24 Then
+            cy = 0
+            While cy < CURSOR_H
+                curY = y + cy
+                If curY >= 0 And curY < CType(Int32, frontSurf.Height) Then
+                    Dim rawRow As Pointer To Byte = CPtr(Pointer To Byte, frontSurf.Pixels) + (CType(UInt32, curY) * frontSurf.Pitch)
+                    cx = 0
+                    While cx < CURSOR_W
+                        curX = x + cx
+                        If curX >= 0 And curX < CType(Int32, frontSurf.Width) Then
+                            Dim col As UInt32 = cursorSavedBg((cy * CURSOR_W) + cx)
+                            Dim bOff As UInt32 = CType(UInt32, curX) * 3
+                            rawRow(bOff) = CType(Byte, col And &HFF)
+                            rawRow(bOff + 1) = CType(Byte, (col RShift 8) And &HFF)
+                            rawRow(bOff + 2) = CType(Byte, (col RShift 16) And &HFF)
+                        End If
+                        cx = cx + 1
+                    Wend
+                End If
+                cy = cy + 1
+            Wend
+        Else
+            Dim pitchPix As UInt32 = frontSurf.Pitch / 4
+            cy = 0
+            While cy < CURSOR_H
+                curY = y + cy
+                If curY >= 0 And curY < CType(Int32, frontSurf.Height) Then
+                    Dim rowPtr As Pointer To UInt32 = frontSurf.Pixels + (CType(UInt32, curY) * pitchPix)
+                    cx = 0
+                    While cx < CURSOR_W
+                        curX = x + cx
+                        If curX >= 0 And curX < CType(Int32, frontSurf.Width) Then
+                            rowPtr(curX) = cursorSavedBg((cy * CURSOR_W) + cx)
+                        End If
+                        cx = cx + 1
+                    Wend
+                End If
+                cy = cy + 1
+            Wend
+        End If
     End Sub
 
     Private Unsafe Sub DrawCursorArrow(ByVal x As Int32, ByVal y As Int32)
@@ -285,34 +341,79 @@ Module CompositorMain
         activeMask(16) = &H0300: colorMask(16) = &H0000 ' "      XX        "
         activeMask(17) = &H0000: colorMask(17) = &H0000 ' "                "
 
-        Dim pitchPix As UInt32 = frontSurf.Pitch / 4
         Dim cy As Int32 = 0
-        While cy < CURSOR_H
-            Dim curY As Int32 = y + cy
-            If curY >= 0 And curY < CType(Int32, frontSurf.Height) Then
-                Dim rowPtr As Pointer To UInt32 = frontSurf.Pixels + (CType(UInt32, curY) * pitchPix)
-                Dim actRow As UInt16 = activeMask(cy)
-                Dim colRow As UInt16 = colorMask(cy)
-                Dim cx As Int32 = 0
-                While cx < CURSOR_W
-                    Dim curX As Int32 = x + cx
-                    If curX >= 0 And curX < CType(Int32, frontSurf.Width) Then
-                        Dim shiftVal As Int32 = 15 - cx
-                        Dim isDrawn As Boolean = ((actRow RShift shiftVal) And 1) <> 0
-                        If isDrawn Then
-                            Dim isWhite As Boolean = ((colRow RShift shiftVal) And 1) <> 0
-                            If isWhite Then
-                                rowPtr(curX) = &HFFFFFFFF ' Crisp White Fill
-                            Else
-                                rowPtr(curX) = &HFF000000 ' Sharp Black Border
+        Dim curY As Int32 = 0
+        Dim cx As Int32 = 0
+        Dim curX As Int32 = 0
+        Dim actRow As UInt16 = 0
+        Dim colRow As UInt16 = 0
+        Dim shiftVal As Int32 = 0
+        Dim isDrawn As Boolean = False
+        Dim isWhite As Boolean = False
+
+        If frontSurf.Bpp = 24 Then
+            cy = 0
+            While cy < CURSOR_H
+                curY = y + cy
+                If curY >= 0 And curY < CType(Int32, frontSurf.Height) Then
+                    Dim rawRow As Pointer To Byte = CPtr(Pointer To Byte, frontSurf.Pixels) + (CType(UInt32, curY) * frontSurf.Pitch)
+                    actRow = activeMask(cy)
+                    colRow = colorMask(cy)
+                    cx = 0
+                    While cx < CURSOR_W
+                        curX = x + cx
+                        If curX >= 0 And curX < CType(Int32, frontSurf.Width) Then
+                            shiftVal = 15 - cx
+                            isDrawn = ((actRow RShift shiftVal) And 1) <> 0
+                            If isDrawn Then
+                                isWhite = ((colRow RShift shiftVal) And 1) <> 0
+                                Dim bOff As UInt32 = CType(UInt32, curX) * 3
+                                If isWhite Then
+                                    rawRow(bOff) = &HFF
+                                    rawRow(bOff + 1) = &HFF
+                                    rawRow(bOff + 2) = &HFF
+                                Else
+                                    rawRow(bOff) = 0
+                                    rawRow(bOff + 1) = 0
+                                    rawRow(bOff + 2) = 0
+                                End If
                             End If
                         End If
-                    End If
-                    cx = cx + 1
-                Wend
-            End If
-            cy = cy + 1
-        Wend
+                        cx = cx + 1
+                    Wend
+                End If
+                cy = cy + 1
+            Wend
+        Else
+            Dim pitchPix As UInt32 = frontSurf.Pitch / 4
+            cy = 0
+            While cy < CURSOR_H
+                curY = y + cy
+                If curY >= 0 And curY < CType(Int32, frontSurf.Height) Then
+                    Dim rowPtr As Pointer To UInt32 = frontSurf.Pixels + (CType(UInt32, curY) * pitchPix)
+                    actRow = activeMask(cy)
+                    colRow = colorMask(cy)
+                    cx = 0
+                    While cx < CURSOR_W
+                        curX = x + cx
+                        If curX >= 0 And curX < CType(Int32, frontSurf.Width) Then
+                            shiftVal = 15 - cx
+                            isDrawn = ((actRow RShift shiftVal) And 1) <> 0
+                            If isDrawn Then
+                                isWhite = ((colRow RShift shiftVal) And 1) <> 0
+                                If isWhite Then
+                                    rowPtr(curX) = &HFFFFFFFF ' Crisp White Fill
+                                Else
+                                    rowPtr(curX) = &HFF000000 ' Sharp Black Border
+                                End If
+                            End If
+                        End If
+                        cx = cx + 1
+                    Wend
+                End If
+                cy = cy + 1
+            Wend
+        End If
     End Sub
 
     ''
@@ -446,7 +547,7 @@ Module CompositorMain
 
         DrawText5x7 frontSurf, 16, 10, CPtr(Pointer To Byte, "PROS WORKSTATION  |  APPLICATIONS  NODES  SERVICES"), &HFFECEFF4
         RenderMouseCoordinates
-        DrawText5x7 frontSurf, CType(Int32, dispInfo.Width) - 340, 10, CPtr(Pointer To Byte, "REV: 2026.10.26-r22"), &HFF88C0D0
+        DrawText5x7 frontSurf, CType(Int32, dispInfo.Width) - 340, 10, CPtr(Pointer To Byte, "REV: 2026.10.26-r23"), &HFF88C0D0
         DrawText5x7 frontSurf, CType(Int32, dispInfo.Width) - 170, 10, CPtr(Pointer To Byte, "SMP 4 CORES  ONLINE"), &HFFA3BE8C
 
         ' 3. Render Floating Desktop Window: "PROS System Monitor"
@@ -478,7 +579,7 @@ Module CompositorMain
         ' Card 1: Microkernel Architecture
         FillRect frontSurf, wx + 16, wy + 40, ww - 32, 42, &HFF1E222A
         FillRect frontSurf, wx + 16, wy + 40, 3, 42, &HFF81A1C1
-        DrawText5x7 frontSurf, wx + 26, wy + 48, CPtr(Pointer To Byte, "KERNEL : PRK-LLB MICROKERNEL [REV: 2026.10.26-r22]"), &HFF81A1C1
+        DrawText5x7 frontSurf, wx + 26, wy + 48, CPtr(Pointer To Byte, "KERNEL : PRK-LLB MICROKERNEL [REV: 2026.10.26-r23]"), &HFF81A1C1
         DrawText5x7 frontSurf, wx + 26, wy + 64, CPtr(Pointer To Byte, "MODEL  : DUAL-PLANE NEURAL SYNAPSE ROUTING"), &HFFD8DEE9
 
         ' Card 2: Compositor Status
@@ -656,9 +757,14 @@ Module CompositorMain
                 lastFpsTime = nowTime
             End If
 
-            ' Adaptive Pacing matching PRK user/servers/input/main.c:
-            ' Direct cooperative yield ensures immediate sub-millisecond mouse responsiveness with zero sleep delay.
-            ProcessYield
+            ' Adaptive Event-Driven Pacing:
+            ' When mouse is actively moving, yield immediately for high responsiveness.
+            ' When idle, sleep briefly (4 ms) to allow CPU idle halt (sti; hlt), eliminating VMM load!
+            If Not mouseMoved Then
+                ProcessSleep 4
+            Else
+                ProcessYield
+            End If
         Loop
 
         user_main = 0

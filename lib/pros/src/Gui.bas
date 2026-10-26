@@ -46,21 +46,43 @@ Namespace Pros.Gui
 
             If x0 >= x1 Or y0 >= y1 Then Exit Sub
 
-            Dim pitchPixels As UInt32 = surf.Pitch / 4
-            Dim py As Int32 = y0
-            While py < y1
-                Dim rowPtr As Pointer To UInt32 = surf.Pixels + (CType(UInt32, py) * pitchPixels)
-                Dim px As Int32 = x0
-                While px < x1
-                    rowPtr(px) = color
-                    px = px + 1
+            Dim py As Int32
+            Dim px As Int32
+
+            If surf.Bpp = 24 Then
+                Dim b0 As Byte = CType(Byte, color And &HFF)
+                Dim b1 As Byte = CType(Byte, (color RShift 8) And &HFF)
+                Dim b2 As Byte = CType(Byte, (color RShift 16) And &HFF)
+                py = y0
+                While py < y1
+                    Dim rawRow As Pointer To Byte = CPtr(Pointer To Byte, surf.Pixels) + (CType(UInt32, py) * surf.Pitch)
+                    px = x0
+                    While px < x1
+                        Dim byteOffset As UInt32 = CType(UInt32, px) * 3
+                        rawRow(byteOffset) = b0
+                        rawRow(byteOffset + 1) = b1
+                        rawRow(byteOffset + 2) = b2
+                        px = px + 1
+                    Wend
+                    py = py + 1
                 Wend
-                py = py + 1
-            Wend
+            Else
+                Dim pitchPixels As UInt32 = surf.Pitch / 4
+                py = y0
+                While py < y1
+                    Dim rowPtr As Pointer To UInt32 = surf.Pixels + (CType(UInt32, py) * pitchPixels)
+                    px = x0
+                    While px < x1
+                        rowPtr(px) = color
+                        px = px + 1
+                    Wend
+                    py = py + 1
+                Wend
+            End If
         End Sub
 
         ''
-        ' @brief Fast 32bpp block transfer (blit) from source surface to destination.
+        ' @brief Fast 24/32bpp block transfer (blit) from source surface to destination.
         ''
         Public Unsafe Sub Blit(ByRef dst As Surface, ByVal dx As Int32, ByVal dy As Int32, _
                                ByRef src As Surface, ByVal sx As Int32, ByVal sy As Int32, _
@@ -68,29 +90,61 @@ Namespace Pros.Gui
             If w <= 0 Or h <= 0 Then Exit Sub
             If dst.Pixels = 0 Or src.Pixels = 0 Then Exit Sub
 
-            Dim dstPitchPixels As UInt32 = dst.Pitch / 4
-            Dim srcPitchPixels As UInt32 = src.Pitch / 4
-
             Dim row As Int32 = 0
-            While row < h
-                Dim curDy As Int32 = dy + row
-                Dim curSy As Int32 = sy + row
-                If curDy >= 0 And curDy < CType(Int32, dst.Height) And curSy >= 0 And curSy < CType(Int32, src.Height) Then
-                    Dim dstRow As Pointer To UInt32 = dst.Pixels + (CType(UInt32, curDy) * dstPitchPixels)
-                    Dim srcRow As Pointer To UInt32 = src.Pixels + (CType(UInt32, curSy) * srcPitchPixels)
+            Dim col As Int32 = 0
+            Dim curDy As Int32 = 0
+            Dim curSy As Int32 = 0
+            Dim curDx As Int32 = 0
+            Dim curSx As Int32 = 0
 
-                    Dim col As Int32 = 0
-                    While col < w
-                        Dim curDx As Int32 = dx + col
-                        Dim curSx As Int32 = sx + col
-                        If curDx >= 0 And curDx < CType(Int32, dst.Width) And curSx >= 0 And curSx < CType(Int32, src.Width) Then
-                            dstRow(curDx) = srcRow(curSx)
-                        End If
-                        col = col + 1
-                    Wend
-                End If
-                row = row + 1
-            Wend
+            If dst.Bpp = 24 And src.Bpp = 24 Then
+                row = 0
+                While row < h
+                    curDy = dy + row
+                    curSy = sy + row
+                    If curDy >= 0 And curDy < CType(Int32, dst.Height) And curSy >= 0 And curSy < CType(Int32, src.Height) Then
+                        Dim dstRaw As Pointer To Byte = CPtr(Pointer To Byte, dst.Pixels) + (CType(UInt32, curDy) * dst.Pitch)
+                        Dim srcRaw As Pointer To Byte = CPtr(Pointer To Byte, src.Pixels) + (CType(UInt32, curSy) * src.Pitch)
+                        col = 0
+                        While col < w
+                            curDx = dx + col
+                            curSx = sx + col
+                            If curDx >= 0 And curDx < CType(Int32, dst.Width) And curSx >= 0 And curSx < CType(Int32, src.Width) Then
+                                Dim dOff As UInt32 = CType(UInt32, curDx) * 3
+                                Dim sOff As UInt32 = CType(UInt32, curSx) * 3
+                                dstRaw(dOff) = srcRaw(sOff)
+                                dstRaw(dOff + 1) = srcRaw(sOff + 1)
+                                dstRaw(dOff + 2) = srcRaw(sOff + 2)
+                            End If
+                            col = col + 1
+                        Wend
+                    End If
+                    row = row + 1
+                Wend
+            Else
+                Dim dstPitchPixels As UInt32 = dst.Pitch / 4
+                Dim srcPitchPixels As UInt32 = src.Pitch / 4
+
+                row = 0
+                While row < h
+                    curDy = dy + row
+                    curSy = sy + row
+                    If curDy >= 0 And curDy < CType(Int32, dst.Height) And curSy >= 0 And curSy < CType(Int32, src.Height) Then
+                        Dim dstRow As Pointer To UInt32 = dst.Pixels + (CType(UInt32, curDy) * dstPitchPixels)
+                        Dim srcRow As Pointer To UInt32 = src.Pixels + (CType(UInt32, curSy) * srcPitchPixels)
+                        col = 0
+                        While col < w
+                            curDx = dx + col
+                            curSx = sx + col
+                            If curDx >= 0 And curDx < CType(Int32, dst.Width) And curSx >= 0 And curSx < CType(Int32, src.Width) Then
+                                dstRow(curDx) = srcRow(curSx)
+                            End If
+                            col = col + 1
+                        Wend
+                    End If
+                    row = row + 1
+                Wend
+            End If
         End Sub
 
     End Module

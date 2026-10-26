@@ -157,6 +157,8 @@ Namespace Drivers
             ' dynamically transition VGA text mode to Graphics Mode via BGA!
             If physAddr = 0 Or physAddr = &HB8000 Or width = 0 Or height = 0 Then
                 SetFallbackMode
+            ElseIf bpp < 32 And IsBgaAvailable() Then
+                SetVideoMode 1024, 768, 32
             End If
 
             Serial.PrintF "[FB] Linear Framebuffer Online: 0x%x (%ux%u, %u BPP, Pitch: %u bytes)\r\n", _

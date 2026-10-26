@@ -55,23 +55,23 @@ insmod font
 
 if loadfont unicode ; then
     insmod gfxterm
-    set gfxmode=1920x1080x32,1366x768x32,1280x720x32,1024x768x32,auto
-    set gfxpayload=keep
+    set gfxmode=1024x768x32,1920x1080x32,1366x768x32,1280x720x32,auto
+    set gfxpayload=1024x768x32,auto,keep
     terminal_output gfxterm
 fi
 
-set gfxmode=1920x1080x32,1366x768x32,1280x720x32,1024x768x32,auto
-set gfxpayload=keep
+set gfxmode=1024x768x32,1920x1080x32,1366x768x32,1280x720x32,auto
+set gfxpayload=1024x768x32,auto,keep
 
-menuentry "Low-Level Basic Kernel (PRK/LLB) [Native UEFI GOP]" {
-    set gfxpayload=keep
+menuentry "Low-Level Basic Kernel (PROS/LLB) [1024x768 Standard Desktop]" {
+    set gfxpayload=1024x768x32,auto,keep
     multiboot2 /boot/kernel.elf
     module2 /boot/initrd.tar "initrd"
     boot
 }
 
-menuentry "Low-Level Basic Kernel (PRK/LLB) [Safe 1024x768]" {
-    set gfxpayload=1024x768x32,auto,keep
+menuentry "Low-Level Basic Kernel (PROS/LLB) [Native UEFI GOP Resolution]" {
+    set gfxpayload=keep
     multiboot2 /boot/kernel.elf
     module2 /boot/initrd.tar "initrd"
     boot

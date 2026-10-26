@@ -84,7 +84,7 @@ Module KernelMain
         ' Initialize COM1 line control & Serial UART driver with hardware probing
         Serial.Initialize
         If Serial.IsAvailable() Then
-            Serial.PrintF "\r\n[PRK] Booting Low-Level Basic Kernel [REV: 2026.10.26-r22]!\r\n"
+            Serial.PrintF "\r\n[PRK] Booting Low-Level Basic Kernel [REV: 2026.10.26-r23]!\r\n"
             Serial.PrintF "[PRK] Multiboot Verified. Long mode active.\r\n"
             Serial.PrintF "[UART] COM1 16550 UART Online!\r\n"
         End If
@@ -109,14 +109,14 @@ Module KernelMain
         If hasVgaText Then
             Serial.PrintF "[PRK] VGA Text Mode Terminal active (&HB8000).\r\n"
             Term.WriteLine CPtr(Pointer To Byte, "=========================================")
-            Term.WriteLine CPtr(Pointer To Byte, " PRK - LOW-LEVEL BASIC [REV: 2026.10.26-r22] ")
+            Term.WriteLine CPtr(Pointer To Byte, " PRK - LOW-LEVEL BASIC [REV: 2026.10.26-r23] ")
             Term.WriteLine CPtr(Pointer To Byte, "=========================================")
             Term.WriteChar 10
         ElseIf hasGopFb Then
             Serial.PrintF "[PRK] UEFI GOP Linear Framebuffer active (0x%x).\r\n", CType(UInt32, FB.GetFramebufferPhys() And &HFFFFFFFF)
             FB.ClearScreen &H00181824
             FB.DrawString 20, 20, CPtr(Pointer To Byte, "========================================="), &H0088C0D0, 1
-            FB.DrawString 20, 36, CPtr(Pointer To Byte, " PRK - LOW-LEVEL BASIC [REV: 2026.10.26-r22] "), &H008FBCBB, 1
+            FB.DrawString 20, 36, CPtr(Pointer To Byte, " PRK - LOW-LEVEL BASIC [REV: 2026.10.26-r23] "), &H008FBCBB, 1
             FB.DrawString 20, 52, CPtr(Pointer To Byte, "========================================="), &H0088C0D0, 1
         End If
 
@@ -262,16 +262,16 @@ Module KernelMain
         Serial.PrintF "DEBUG - [APIC] Local APIC Core ID: 0x%x\r\n", lapicCoreId
         Term.PrintF "[APIC] Local APIC online (Core ID: 0x%x).\n", lapicCoreId
 
+        ' Initialize PS/2 Keyboard and Mouse hardware before unmasking I/O APIC interrupts
+        Kbd.Initialize
+        Serial.PrintF "[PRK] PS/2 Keyboard controller initialized.\r\n"
+        MouseDriver.Initialize
+
         Serial.PrintF "[PRK] Initializing I/O APIC Redirection Engine...\r\n"
         Arch.X86_64.IoApic.Initialize
         Arch.X86_64.IoApic.EnableKeyboard
         Arch.X86_64.IoApic.EnableMouse
         Serial.PrintF "[PRK] I/O APIC online. Keyboard IRQ 1 -> Vec 33, Mouse IRQ 12 -> Vec 44.\r\n"
-
-        ' Initialize PS/2 Keyboard and Mouse hardware after routing is active
-        Kbd.Initialize
-        Serial.PrintF "[PRK] PS/2 Keyboard controller initialized.\r\n"
-        MouseDriver.Initialize
 
         ' Initialize Periodic LAPIC Timer (Vector 32) matching PRK kernel/apic.c
         Serial.PrintF "[PRK] Initializing Local APIC Timer (Vector 32, count: 0x100000)...\r\n"

@@ -166,18 +166,22 @@ Namespace Drivers
         ''
         Public Unsafe Sub HandleInterrupt()
             Dim status As Byte = Arch.X86_64.PortIO.InB(MOUSE_STATUS_PORT)
-            ' Exit if output buffer is empty or byte is not from auxiliary device (Bit 5 = 0)
-            If (status And &H01) = 0 Or (status And &H20) = 0 Then Exit Sub
+            ' Exit if output buffer is empty
+            If (status And &H01) = 0 Then Exit Sub
+
+            ' Always consume port 0x60 to prevent 8042 buffer locking
+            Dim data As Byte = Arch.X86_64.PortIO.InB(MOUSE_DATA_PORT)
+
+            ' If byte is not marked auxiliary device in controller status, ignore it
+            If (status And &H20) = 0 Then Exit Sub
 
             irqCount = irqCount + 1
-            Dim data As Byte = Arch.X86_64.PortIO.InB(MOUSE_DATA_PORT)
             Dim flags As UInt64 = Sync.SpinlockOps.AcquireIrqSave(mouseLock)
 
             Select Case mouseCycle
                 Case 0
-                    ' Byte 0: Bit 3 must be 1 in standard PS/2 packet.
-                    ' Discard corrupted or out-of-sync bytes until a valid packet header arrives.
-                    If (data And &H08) = 0 Then
+                    ' Byte 0: Bit 3 must be 1. Overflow bits 6 and 7 must be 0.
+                    If (data And &H08) = 0 Or (data And &HC0) <> 0 Then
                         Sync.SpinlockOps.ReleaseIrqRestore mouseLock, flags
                         Exit Sub
                     End If
@@ -195,43 +199,35 @@ Namespace Drivers
                     Dim flagsByte As Byte = mouseBytes(0)
                     currentButtons = flagsByte And &H07
 
-                    ' Validate no hardware overflow occurred on deltas (Bits 6 and 7)
-                    If (flagsByte And &HC0) = 0 Then
-                        ' Hardware sign-extension per rule llb-patch-author.md (Bit 4: X sign, Bit 5: Y sign)
-                        Dim rawDx As Int32 = CType(Int32, mouseBytes(1))
-                        If (flagsByte And &H10) <> 0 Then
-                            rawDx = CType(Int32, CType(UInt32, rawDx) Or &HFFFFFF00)
-                        End If
+                    ' Standard Linux 9-bit signed delta formula:
+                    ' dx = packet[1] - ((packet[0] << 4) & 0x100)
+                    ' dy = packet[2] - ((packet[0] << 3) & 0x100)
+                    Dim rawDx As Int32 = CType(Int32, mouseBytes(1)) - CType(Int32, (CType(UInt32, flagsByte) LShift 4) And &H100)
+                    Dim rawDy As Int32 = CType(Int32, mouseBytes(2)) - CType(Int32, (CType(UInt32, flagsByte) LShift 3) And &H100)
 
-                        Dim rawDy As Int32 = CType(Int32, mouseBytes(2))
-                        If (flagsByte And &H20) <> 0 Then
-                            rawDy = CType(Int32, CType(UInt32, rawDy) Or &HFFFFFF00)
-                        End If
+                    ' Sanity filter: ignore impossible delta spikes (> 250 px in one burst)
+                    If rawDx >= -250 And rawDx <= 250 And rawDy >= -250 And rawDy <= 250 Then
+                        Dim newX As Int32 = currentX + rawDx
+                        Dim newY As Int32 = currentY - rawDy
 
-                        ' Sanity filter: ignore impossible delta spikes (> 200 px in one burst)
-                        If rawDx >= -200 And rawDx <= 200 And rawDy >= -200 And rawDy <= 200 Then
-                            Dim newX As Int32 = currentX + rawDx
-                            Dim newY As Int32 = currentY - rawDy
+                        ' Clamp to dynamic screen bounds
+                        If newX < 0 Then newX = 0
+                        If newX > maxBoundX Then newX = maxBoundX
+                        If newY < 0 Then newY = 0
+                        If newY > maxBoundY Then newY = maxBoundY
 
-                            ' Clamp to dynamic screen bounds
-                            If newX < 0 Then newX = 0
-                            If newX > maxBoundX Then newX = maxBoundX
-                            If newY < 0 Then newY = 0
-                            If newY > maxBoundY Then newY = maxBoundY
+                        currentX = newX
+                        currentY = newY
 
-                            currentX = newX
-                            currentY = newY
-
-                            ' Enqueue into ring buffer
-                            Dim nextHead As UInt32 = (queueHead + 1) Mod MOUSE_QUEUE_SIZE
-                            If nextHead <> queueTail Then
-                                packetButtons(queueHead) = currentButtons
-                                packetDx(queueHead) = rawDx
-                                packetDy(queueHead) = rawDy
-                                packetPosX(queueHead) = currentX
-                                packetPosY(queueHead) = currentY
-                                queueHead = nextHead
-                            End If
+                        ' Enqueue into ring buffer
+                        Dim nextHead As UInt32 = (queueHead + 1) Mod MOUSE_QUEUE_SIZE
+                        If nextHead <> queueTail Then
+                            packetButtons(queueHead) = currentButtons
+                            packetDx(queueHead) = rawDx
+                            packetDy(queueHead) = rawDy
+                            packetPosX(queueHead) = currentX
+                            packetPosY(queueHead) = currentY
+                            queueHead = nextHead
                         End If
                     End If
             End Select

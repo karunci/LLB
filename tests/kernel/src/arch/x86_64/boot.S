@@ -25,7 +25,7 @@ header_start:
     /* Multiboot2 Framebuffer Request Tag (Type 5) */
     .align 8
     .short 5     /* type = MULTIBOOT_HEADER_TAG_FRAMEBUFFER */
-    .short 0     /* flags = 0 */
+    .short 1     /* flags = MULTIBOOT_HEADER_TAG_OPTIONAL (allows bootloader fallback) */
     .long  20    /* size = 20 bytes (exact struct size per multiboot2 spec) */
     .long  1024  /* preferred width */
     .long  768   /* preferred height */
@@ -49,6 +49,13 @@ multiboot1_header:
     .long MULTIBOOT1_HEADER_MAGIC
     .long MULTIBOOT1_HEADER_FLAGS
     .long -(MULTIBOOT1_HEADER_MAGIC + MULTIBOOT1_HEADER_FLAGS)
+    /* Required 5 address fields preceding video fields per Multiboot 1 spec */
+    .long 0     /* header_addr (unused for ELF, must be present) */
+    .long 0     /* load_addr */
+    .long 0     /* load_end_addr */
+    .long 0     /* bss_end_addr */
+    .long 0     /* entry_addr */
+    /* Video mode fields at offset 32 */
     .long 0     /* mode_type: 0 = linear graphics */
     .long 1024  /* width */
     .long 768   /* height */

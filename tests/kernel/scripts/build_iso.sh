@@ -52,6 +52,8 @@ set default=0
 insmod all_video
 insmod efi_gop
 insmod font
+insmod multiboot
+insmod multiboot2
 
 if loadfont unicode ; then
     insmod gfxterm

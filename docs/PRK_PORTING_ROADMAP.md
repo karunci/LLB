@@ -722,6 +722,25 @@ tests/kernel/
 - [x] **Mandatory Revision Bumping:**
   - Bumped build revision to `REV: 2026.10.26-r26` across kernel boot banner, serial logs, top desktop menu bar, and system monitor window.
 
+---
+
+## Phase 21: Multiboot 1 Offset 32 Video Alignment, Multiboot 2 Optional Fallback & Zero-Poll Mouse (`REV: 2026.10.26-r27`)
+
+- [x] **Elimination of GRUB `unsupported graphical mode type 1392533312`:**
+  - In `tests/kernel/src/arch/x86_64/boot.S`, restored the 5 unused address fields (`header_addr`, `load_addr`, `load_end_addr`, `bss_end_addr`, `entry_addr`) at offsets 12–28 of the Multiboot 1 header.
+  - Per the Multiboot 1 specification, video mode fields (`mode_type`, `width`, `height`, `depth`) reside strictly at offset 32 onwards. Previously, omitting offsets 12–28 caused GRUB to read the machine code of `_start` (`0x53005f40` = `1392533312`) as `mode_type`, aborting boot with `error: unsupported graphical mode type 1392533312`.
+  - Added explicit `insmod multiboot` and `insmod multiboot2` directives to `grub.cfg` in `tests/kernel/scripts/build_iso.sh`.
+- [x] **Multiboot 2 Optional Framebuffer Tag Fallback:**
+  - In `boot.S`, set the flags field of the Multiboot 2 Framebuffer Tag (Type 5) to `1` (`MULTIBOOT_HEADER_TAG_OPTIONAL`).
+  - Guarantees that if a specific hypervisor (VirtualBox BIOS/EFI) or bare-metal laptop firmware does not support an exact 1024x768 request, GRUB falls back to native GOP/VBE display modes without failing kernel loading.
+- [x] **Elimination of 70% VirtualBox VMM Load & Dropped Mouse Packets:**
+  - In `Drivers.Mouse.cls`, completely removed the `pollWait = 4000` busy-waiting loop and the `While True` multi-byte polling loop from `HandleInterrupt()`.
+  - Every `InB(0x64)` in VirtualBox triggers a VM-exit to the hypervisor VMM. Doing 4000 reads per packet was generating over 240,000 VM-exits per second, causing 70% VMM load and prematurely timing out and dropping valid mouse packets.
+  - Refactored `HandleInterrupt()` to consume exactly one byte per call with zero wait. `DispatchPs2` drains available bytes in a tight 64-limit loop when data is actually ready, dropping VMM load to near 0%.
+  - Added `TickIdle()` with 250ms silence detection to safely reset `mouseCycle = 0` if packet desynchronization occurs.
+- [x] **Mandatory Revision Bumping:**
+  - Bumped build revision to `REV: 2026.10.26-r27` across kernel boot banner, serial logs, top desktop menu bar, and system monitor window.
+
 
 
 

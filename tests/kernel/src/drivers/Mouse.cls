@@ -27,6 +27,7 @@ Namespace Drivers
         Private maxBoundX      As Int32
         Private maxBoundY      As Int32
         Private irqCount       As UInt32
+        Private idleTicks      As UInt32
 
         ' Structure of Arrays (SoA) for lock-free ring buffer
         Private packetButtons(64) As Byte
@@ -159,98 +160,93 @@ Namespace Drivers
         ' @brief Hardware interrupt handler called from IDT Vector 44 (IRQ 12).
         '        Collects 3-byte packets, decodes deltas, and updates the ring buffer.
         ''
+        Public Sub TickIdle()
+            If mouseCycle > 0 Then
+                idleTicks = idleTicks + 1
+                If idleTicks > 25 Then
+                    mouseCycle = 0
+                    idleTicks = 0
+                End If
+            Else
+                idleTicks = 0
+            End If
+        End Sub
+
         ''
-        ' @brief Hardware interrupt handler called from IDT Vector 44 (IRQ 12).
-        '        Collects 3-byte packets, decodes deltas, and updates the coordinates.
-        '        Mirrors PRK mouse_handler(): exactly one byte consumed per interrupt.
+        ' @brief Hardware interrupt handler called from IDT Vector 44 (IRQ 12) or DispatchPs2.
+        '        Consumes exactly one byte per call, decodes 3-byte packets, and updates coordinates.
+        '        Zero-polling, zero-VM-exit overhead.
         ''
         Public Unsafe Sub HandleInterrupt()
-            While True
-                Dim status As Byte = Arch.X86_64.PortIO.InB(MOUSE_STATUS_PORT)
-                ' Exit if output buffer is empty or byte is not from auxiliary device (Bit 5 = 0)
-                If (status And &H01) = 0 Or (status And &H20) = 0 Then
-                    ' If in the middle of a 3-byte burst (mouseCycle > 0), briefly poll for the remaining bytes
-                    If mouseCycle > 0 Then
-                        Dim pollWait As UInt32 = 4000
-                        While pollWait > 0
-                            status = Arch.X86_64.PortIO.InB(MOUSE_STATUS_PORT)
-                            If (status And &H01) <> 0 Then Exit While
-                            pollWait = pollWait - 1
-                        Wend
+            Dim status As Byte = Arch.X86_64.PortIO.InB(MOUSE_STATUS_PORT)
+            ' Exit if output buffer is empty or byte is not from auxiliary device (Bit 5 = 0)
+            If (status And &H01) = 0 Or (status And &H20) = 0 Then
+                Exit Sub
+            End If
 
-                        ' If still empty or not auxiliary mouse, timeout and reset cycle to prevent desync
-                        If (status And &H01) = 0 Or (status And &H20) = 0 Then
-                            mouseCycle = 0
-                            Exit Sub
-                        End If
-                    Else
-                        Exit Sub
-                    End If
-                End If
+            irqCount = irqCount + 1
+            idleTicks = 0
 
-                irqCount = irqCount + 1
+            ' Read byte from 8042 data port
+            Dim data As Byte = Arch.X86_64.PortIO.InB(MOUSE_DATA_PORT)
+            Dim flags As UInt64 = Sync.SpinlockOps.AcquireIrqSave(mouseLock)
 
-                ' Read byte from 8042 data port
-                Dim data As Byte = Arch.X86_64.PortIO.InB(MOUSE_DATA_PORT)
-                Dim flags As UInt64 = Sync.SpinlockOps.AcquireIrqSave(mouseLock)
-
-                If mouseCycle = 0 Then
-                    ' Bit 3 must be 1 for valid packet alignment; drop corrupt or overflow packets
-                    If (data And &H08) = 0 Or (data And &HC0) <> 0 Then
-                        mouseCycle = 0
-                        Sync.SpinlockOps.ReleaseIrqRestore mouseLock, flags
-                        Exit Sub
-                    End If
-                    mouseBytes(0) = data
-                    mouseCycle = 1
-                ElseIf mouseCycle = 1 Then
-                    mouseBytes(1) = data
-                    mouseCycle = 2
-                ElseIf mouseCycle = 2 Then
-                    mouseBytes(2) = data
+            If mouseCycle = 0 Then
+                ' Bit 3 must be 1 for valid packet alignment; drop corrupt or overflow packets
+                If (data And &H08) = 0 Or (data And &HC0) <> 0 Then
                     mouseCycle = 0
+                    Sync.SpinlockOps.ReleaseIrqRestore mouseLock, flags
+                    Exit Sub
+                End If
+                mouseBytes(0) = data
+                mouseCycle = 1
+            ElseIf mouseCycle = 1 Then
+                mouseBytes(1) = data
+                mouseCycle = 2
+            ElseIf mouseCycle = 2 Then
+                mouseBytes(2) = data
+                mouseCycle = 0
 
-                    Dim flagsByte As Byte = mouseBytes(0)
-                    currentButtons = flagsByte And &H07
+                Dim flagsByte As Byte = mouseBytes(0)
+                currentButtons = flagsByte And &H07
 
-                    ' Validate no hardware overflow occurred on deltas
-                    If (flagsByte And &HC0) = 0 Then
-                        ' Standard Linux 9-bit signed delta formula:
-                        ' dx = packet[1] - ((packet[0] << 4) & 0x100)
-                        ' dy = packet[2] - ((packet[0] << 3) & 0x100)
-                        Dim rawDx As Int32 = CType(Int32, mouseBytes(1)) - CType(Int32, (CType(UInt32, flagsByte) LShift 4) And &H100)
-                        Dim rawDy As Int32 = CType(Int32, mouseBytes(2)) - CType(Int32, (CType(UInt32, flagsByte) LShift 3) And &H100)
+                ' Validate no hardware overflow occurred on deltas
+                If (flagsByte And &HC0) = 0 Then
+                    ' Standard Linux 9-bit signed delta formula:
+                    ' dx = packet[1] - ((packet[0] << 4) & 0x100)
+                    ' dy = packet[2] - ((packet[0] << 3) & 0x100)
+                    Dim rawDx As Int32 = CType(Int32, mouseBytes(1)) - CType(Int32, (CType(UInt32, flagsByte) LShift 4) And &H100)
+                    Dim rawDy As Int32 = CType(Int32, mouseBytes(2)) - CType(Int32, (CType(UInt32, flagsByte) LShift 3) And &H100)
 
-                        ' Sanity filter: ignore impossible delta spikes (> 250 px in one burst)
-                        If rawDx >= -250 And rawDx <= 250 And rawDy >= -250 And rawDy <= 250 Then
-                            Dim newX As Int32 = currentX + rawDx
-                            Dim newY As Int32 = currentY - rawDy
+                    ' Sanity filter: ignore impossible delta spikes (> 250 px in one burst)
+                    If rawDx >= -250 And rawDx <= 250 And rawDy >= -250 And rawDy <= 250 Then
+                        Dim newX As Int32 = currentX + rawDx
+                        Dim newY As Int32 = currentY - rawDy
 
-                            ' Clamp to dynamic screen bounds
-                            If newX < 0 Then newX = 0
-                            If newX > maxBoundX Then newX = maxBoundX
-                            If newY < 0 Then newY = 0
-                            If newY > maxBoundY Then newY = maxBoundY
+                        ' Clamp to dynamic screen bounds
+                        If newX < 0 Then newX = 0
+                        If newX > maxBoundX Then newX = maxBoundX
+                        If newY < 0 Then newY = 0
+                        If newY > maxBoundY Then newY = maxBoundY
 
-                            currentX = newX
-                            currentY = newY
+                        currentX = newX
+                        currentY = newY
 
-                            ' Enqueue into ring buffer
-                            Dim nextHead As UInt32 = (queueHead + 1) Mod MOUSE_QUEUE_SIZE
-                            If nextHead <> queueTail Then
-                                packetButtons(queueHead) = currentButtons
-                                packetDx(queueHead) = rawDx
-                                packetDy(queueHead) = rawDy
-                                packetPosX(queueHead) = currentX
-                                packetPosY(queueHead) = currentY
-                                queueHead = nextHead
-                            End If
+                        ' Enqueue into ring buffer
+                        Dim nextHead As UInt32 = (queueHead + 1) Mod MOUSE_QUEUE_SIZE
+                        If nextHead <> queueTail Then
+                            packetButtons(queueHead) = currentButtons
+                            packetDx(queueHead) = rawDx
+                            packetDy(queueHead) = rawDy
+                            packetPosX(queueHead) = currentX
+                            packetPosY(queueHead) = currentY
+                            queueHead = nextHead
                         End If
                     End If
                 End If
+            End If
 
-                Sync.SpinlockOps.ReleaseIrqRestore mouseLock, flags
-            Wend
+            Sync.SpinlockOps.ReleaseIrqRestore mouseLock, flags
         End Sub
 
         ''

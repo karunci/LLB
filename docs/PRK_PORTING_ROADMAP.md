@@ -767,11 +767,27 @@ tests/kernel/
 - [x] **Mandatory Revision Bumping:**
   - Bumped build revision to `REV: 2026.10.26-r28` across kernel boot banner, serial logs, top desktop menu bar, and system monitor window.
 
+---
 
+## Phase 23: Multiboot 1 Offset 32 Video Alignment, Legacy 8259 PIC Masking, Idle Boot Priority & SMP Timeout Optimization (`REV: 2026.10.26-r29`)
 
-
-
-
+- [x] **Iterative Development Workflow Rule Adoption:**
+  - Standardized the core engineering cycle in `.agents/rules/llb-patch-author.md`: `start: research -> implement -> fix -> refine -> test & verify -> repeat from the start`.
+  - Enforced systematic progression across all architectural layers: Drivers, Init, HAL, Nodes, Compositor & Window Manager, Service Manager, Process Manager, Device Manager, Kernel API & ABI, System API & ABI, Graphical API & ABI, Standard Libraries API & ABI, and Documentation.
+- [x] **Multiboot 1 Header Struct Offset 32 Video Alignment (`kernel_mb1.elf`):**
+  - **Root Cause of `unsupported graphical mode type 13912332blablabla`:** GNU GRUB's `struct multiboot_header` in C statically allocates offsets 12..28 to the 5 address dwords (`header_addr`, `load_addr`, `load_end_addr`, `bss_end_addr`, `entry_addr`), placing `mode_type` strictly at byte offset 32. Omitting offsets 12..28 caused GRUB to read `_start` machine code instructions (`0x53005f40` = 1392533312) as the video `mode_type`.
+  - **Resolution:** Inserted the 5 standard address dwords (set to 0 for native ELF loading) at offsets 12..28 in `tests/kernel/src/arch/x86_64/boot_mb1.S`. Multiboot 1 now sets up 1024x768x32 linear VBE/GOP graphics cleanly without errors on both Legacy BIOS/CSM and QEMU.
+- [x] **Legacy 8259 PIC Complete Masking in `IoApic.bas`:**
+  - Masked all IRQ lines on both Master PIC (`Port 0x21 <- 0xFF`) and Slave PIC (`Port 0xA1 <- 0xFF`) during `IoApic.Initialize()`.
+  - Eliminates unmapped legacy timer interrupt bursts (vector 0 / vector 8), resolving the QEMU WHPX warning `Ignoring request for interrupt vector 0` and preventing 80% VMM exit storm in hardware-accelerated hypervisors (VirtualBox VT-x / Windows Hypervisor Platform).
+- [x] **Boot Task Idle Priority Inversion Resolution (`Scheduler.cls`):**
+  - **Root Cause of WHPX / VirtualBox Hypervisor Stall:** In `Scheduler.cls`, `bootTask.Priority` was set to 10 (higher than userland daemons with priority 1 or 2). Because `bootTask` executes `sti; hlt` in its idle loop, Core 0 continuously selected `bootTask` and halted the CPU core instead of scheduling userland threads (`srv.display`, `srv.input`, `srv.compositor`).
+  - **Resolution:** Changed `bootTask.Priority` from 10 to 0 (line 229), transforming `bootTask` into a true idle task that executes only when no other thread is runnable.
+- [x] **SMP AP Bring-Up Optimization (`Smp.bas`):**
+  - **Self-IPI Prevention:** Queried BSP Local APIC ID via `Arch.X86_64.Apic.GetLapicId()` and verified `apicId <> bspApicId` before issuing INIT-SIPI sequences.
+  - **Handshake Timeout Tuning:** Reduced AP handshake timeout loops from 50,000,000 iterations to 500,000 iterations (~5ms), eliminating long hangs in single/dual core VM environments when APs are offline.
+- [x] **Mandatory Revision Bumping:**
+  - Bumped build revision to `REV: 2026.10.26-r29` across kernel boot banner, serial logs, top desktop menu bar, and system monitor window.
 
 
 

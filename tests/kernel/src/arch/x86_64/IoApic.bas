@@ -4,6 +4,8 @@
 
 Module Arch.X86_64.IoApic
 
+    Import Arch.X86_64.PortIO
+
     ' Standard Physical MMIO Base Address for I/O APIC
     Public Const IOAPIC_BASE_PHYS As UInt64 = &HFEC00000
 
@@ -70,11 +72,15 @@ Module Arch.X86_64.IoApic
         WriteReg regOffset, regLow
     End Sub
 
-    ' Initialize I/O APIC by masking all 24 hardware redirection table entries
+    ' Initialize I/O APIC by disabling legacy 8259 PIC and masking all 24 hardware redirection table entries
     Public Unsafe Sub Initialize()
+        ' 1. Completely disable legacy 8259 PIC by masking all IRQs on Master (0x21) and Slave (0xA1)
+        Arch.X86_64.PortIO.OutB &H21, &HFF
+        Arch.X86_64.PortIO.OutB &HA1, &HFF
+
+        ' 2. Mask all 24 I/O APIC hardware redirection table entries with dummy vector 255
         Dim i As Byte
         For i = 0 To 23
-            ' Set dummy vector 255 (0xFF) while masked to prevent ghost vector 0 warnings in hypervisors
             Dim regOffset As UInt32 = &H10 + (CType(UInt32, i) * 2)
             WriteReg regOffset, &H100FF ' Masked (bit 16) | Vector 255
             WriteReg regOffset + 1, 0

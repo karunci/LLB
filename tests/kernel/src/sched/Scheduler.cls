@@ -226,7 +226,7 @@ Public Class Scheduler
         bootTask.ParentId = 0
         bootTask.State = Sched.ThreadState.STATE_RUNNING
         bootTask.TaskType = Sched.ThreadType.TYPE_GPOS
-        bootTask.Priority = 10
+        bootTask.Priority = 0
         bootTask.WakeUptime = 0
         bootTask.CpuTicks = 0
         bootTask.PendingSignals = 0

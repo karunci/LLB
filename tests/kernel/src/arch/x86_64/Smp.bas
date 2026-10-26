@@ -100,58 +100,66 @@ Module Arch.Smp
         ' Memory fence before sending IPIs
         Asm "mfence" : : : "memory"
 
+        ' Query BSP Local APIC ID to avoid self-IPI
+        Dim bspApicId As UInt32 = Arch.X86_64.Apic.GetLapicId()
+
         ' Bring up each AP (logical IDs 1..totalCores-1)
         Dim logicalId As UInt32 = 1
         While logicalId < totalCores
             Dim apicId As UInt32 = CType(UInt32, Arch.Acpi.GetApicId(logicalId))
 
-            Serial.PrintF "[SMP] Booting AP Core #%d (APIC ID: %d)...\r\n", logicalId, apicId
-
-            ' Allocate bootstrap stack for this AP (16KB)
-            Dim apBootStack As UInt64 = KHeap.KMalloc(16384)
-            If apBootStack = 0 Then
-                Serial.PrintF "[SMP] Error: Failed to allocate bootstrap stack for AP core #%d\r\n", logicalId
+            If apicId = bspApicId Then
+                Serial.PrintF "[SMP] Core #%d is BSP (APIC ID: %d). Skipping self-IPI.\r\n", logicalId, apicId
+                logicalId = logicalId + 1
             Else
-                ' 16-byte aligned top of stack
-                Dim stackTop As UInt64 = (apBootStack + 16384 - 16) And (Not CType(UInt64, 15))
-                stackSlotPtr(0) = stackTop
+                Serial.PrintF "[SMP] Booting AP Core #%d (APIC ID: %d)...\r\n", logicalId, apicId
 
-                ' Reset handshake flag and publish target logical CPU ID
-                apHandshake = 0
-                apCurrentId = logicalId
-                Asm "mfence" : : : "memory"
+                ' Allocate bootstrap stack for this AP (16KB)
+                Dim apBootStack As UInt64 = KHeap.KMalloc(16384)
+                If apBootStack = 0 Then
+                    Serial.PrintF "[SMP] Error: Failed to allocate bootstrap stack for AP core #%d\r\n", logicalId
+                Else
+                    ' 16-byte aligned top of stack
+                    Dim stackTop As UInt64 = (apBootStack + 16384 - 16) And (Not CType(UInt64, 15))
+                    stackSlotPtr(0) = stackTop
 
-                Dim initialCounter As UInt32 = apJoinCounter
+                    ' Reset handshake flag and publish target logical CPU ID
+                    apHandshake = 0
+                    apCurrentId = logicalId
+                    Asm "mfence" : : : "memory"
 
-                ' INIT IPI: Delivery mode 5 (INIT), level assert (bit 14)
-                SendIpi apicId, &H00004500
-                BusyWait 1000000  ' ~10ms delay
+                    Dim initialCounter As UInt32 = apJoinCounter
 
-                ' SIPI x2: Vector = 0x08 (trampoline at 0x8000 = 0x08 << 12)
-                SendIpi apicId, &H00004608
-                BusyWait 100000
-                SendIpi apicId, &H00004608
+                    ' INIT IPI: Delivery mode 5 (INIT), level assert (bit 14)
+                    SendIpi apicId, &H00004500
+                    BusyWait 1000000  ' ~10ms delay
 
-                ' Wait for AP to acknowledge capture of cpu_id (apHandshake = 1)
-                Dim waitCount As UInt64 = 50000000
-                While apHandshake = 0 And waitCount > 0
-                    Asm "pause" : : : "memory"
-                    waitCount = waitCount - 1
-                Wend
+                    ' SIPI x2: Vector = 0x08 (trampoline at 0x8000 = 0x08 << 12)
+                    SendIpi apicId, &H00004608
+                    BusyWait 100000
+                    SendIpi apicId, &H00004608
 
-                ' Wait for AP to complete initialization (apJoinCounter incremented)
-                waitCount = 50000000
-                While apJoinCounter = initialCounter And waitCount > 0
-                    Asm "pause" : : : "memory"
-                    waitCount = waitCount - 1
-                Wend
+                    ' Wait for AP to acknowledge capture of cpu_id (apHandshake = 1)
+                    Dim waitCount As UInt64 = 500000
+                    While apHandshake = 0 And waitCount > 0
+                        Asm "pause" : : : "memory"
+                        waitCount = waitCount - 1
+                    Wend
 
-                If apJoinCounter = initialCounter Then
-                    Serial.PrintF "[SMP] WARNING: AP Core #%d (APIC ID: %d) did not respond.\r\n", logicalId, apicId
+                    ' Wait for AP to complete initialization (apJoinCounter incremented)
+                    waitCount = 500000
+                    While apJoinCounter = initialCounter And waitCount > 0
+                        Asm "pause" : : : "memory"
+                        waitCount = waitCount - 1
+                    Wend
+
+                    If apJoinCounter = initialCounter Then
+                        Serial.PrintF "[SMP] WARNING: AP Core #%d (APIC ID: %d) did not respond.\r\n", logicalId, apicId
+                    End If
                 End If
-            End If
 
-            logicalId = logicalId + 1
+                logicalId = logicalId + 1
+            End If
         Wend
 
         Serial.PrintF "[SMP] All AP cores initialized. Online: %d/%d\r\n", apJoinCounter, totalCores

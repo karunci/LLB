@@ -19,7 +19,13 @@ multiboot1_header:
     .long MULTIBOOT1_HEADER_MAGIC
     .long MULTIBOOT1_HEADER_FLAGS
     .long -(MULTIBOOT1_HEADER_MAGIC + MULTIBOOT1_HEADER_FLAGS)
-    /* Since bit 16 is NOT set, video mode table immediately follows checksum at offset 12 */
+    /* 5 address dwords at offsets 12-28 so video fields reside at struct offset 32 per GRUB struct multiboot_header */
+    .long 0     /* header_addr */
+    .long 0     /* load_addr */
+    .long 0     /* load_end_addr */
+    .long 0     /* bss_end_addr */
+    .long 0     /* entry_addr */
+    /* Video mode fields at struct offset 32 */
     .long 0     /* mode_type: 0 = linear graphics */
     .long 1024  /* width */
     .long 768   /* height */

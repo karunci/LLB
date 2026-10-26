@@ -140,14 +140,14 @@ Module Arch.Smp
                     SendIpi apicId, &H00004608
 
                     ' Wait for AP to acknowledge capture of cpu_id (apHandshake = 1)
-                    Dim waitCount As UInt64 = 10000000
+                    Dim waitCount As UInt64 = 100000
                     While apHandshake = 0 And waitCount > 0
                         Asm "pause" : : : "memory"
                         waitCount = waitCount - 1
                     Wend
 
                     ' Wait for AP to complete initialization (apJoinCounter incremented)
-                    waitCount = 10000000
+                    waitCount = 100000
                     While apJoinCounter = initialCounter And waitCount > 0
                         Asm "pause" : : : "memory"
                         waitCount = waitCount - 1

@@ -45,6 +45,16 @@ Module PlexusMgrMain
             ConsolePrintWithUInt "[PLEXUS_MGR] Monitoring Service 'srv.compositor' (Node #", srvCompId, ")\r\n"
         End If
 
+        Dim srvWmId As UInt64 = NodeLookup(CPtr(Pointer To Byte, "srv.wm"))
+        If srvWmId <> 0 Then
+            ConsolePrintWithUInt "[PLEXUS_MGR] Monitoring Service 'srv.wm' (Node #", srvWmId, ")\r\n"
+        End If
+
+        Dim srvVfsId As UInt64 = NodeLookup(CPtr(Pointer To Byte, "srv.vfs"))
+        If srvVfsId <> 0 Then
+            ConsolePrintWithUInt "[PLEXUS_MGR] Monitoring Service 'srv.vfs' (Node #", srvVfsId, ")\r\n"
+        End If
+
         ConsoleWriteLine "[PLEXUS_MGR] Service supervision online. Entering active heartbeat monitor loop..."
         ConsoleWriteLine "[PLEXUS_MGR] ======================================================="
 

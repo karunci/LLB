@@ -30,9 +30,13 @@ switch_context:
     /* 2. Atomically store old stack pointer */
     movq %rsp, (%rdi)
 
-    /* 3. Load new stack pointer and CR3 */
+    /* 3. Load new stack pointer and CR3 (conditional reload avoids TLB flushes) */
     movq %rsi, %rsp
+    movq %cr3, %rax
+    cmpq %rdx, %rax
+    je 1f
     movq %rdx, %cr3
+1:
 
     /* 4. Release Runqueue Lock ONLY AFTER stack pointer is securely saved */
     testq %rcx, %rcx

@@ -29,12 +29,22 @@ Module VfsMain
             ConsoleWriteLine "[VFS] WARN: Failed to register 'srv.vfs' node!"
         End If
 
-        ' 3. Mount in-memory root filesystem
+        ' 3. Connect to System Supervisor
+        Dim plexusNodeId As UInt64 = NodeLookup(CPtr(Pointer To Byte, "srv.plexus_mgr"))
+        Dim synPlexus As UInt64 = 0
+        If plexusNodeId <> 0 Then
+            synPlexus = SynapseConnect(vfsNodeId, plexusNodeId, 7)
+            If synPlexus <> 0 Then
+                ConsolePrintWithUInt "[VFS] Established Supervisor Synapse -> Channel #", synPlexus, "\r\n"
+            End If
+        End If
+
+        ' 4. Mount in-memory root filesystem
         ConsoleWriteLine "[VFS] Mounted root filesystem: '/system' (USTAR Ramdisk)"
         ConsoleWriteLine "[VFS] Storage Arbiter online. Entering file request loop..."
         ConsoleWriteLine "[VFS] ======================================================="
 
-        ' 4. Active file service loop (Zero idle CPU via ProcessSleep)
+        ' 5. Active file service loop (Zero idle CPU via ProcessSleep)
         Do
             ProcessSleep 1000
         Loop

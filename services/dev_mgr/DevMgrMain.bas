@@ -45,6 +45,11 @@ Module DevMgrMain
             ConsolePrintWithUInt "[DEV_MGR] Attached Raw HID Hardware -> Node #", rawHwInputId, "\r\n"
         End If
 
+        Dim vfsNodeId As UInt64 = NodeLookup(CPtr(Pointer To Byte, "srv.vfs"))
+        If vfsNodeId <> 0 Then
+            ConsolePrintWithUInt "[DEV_MGR] Attached Storage Controller -> Node #", vfsNodeId, "\r\n"
+        End If
+
         ConsoleWriteLine "[DEV_MGR] Hardware topology discovery completed."
         ConsoleWriteLine "[DEV_MGR] Entering active device arbitration loop..."
         ConsoleWriteLine "[DEV_MGR] ======================================================="

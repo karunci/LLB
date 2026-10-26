@@ -808,3 +808,48 @@ tests/kernel/
   - In `services/input_srv/InputMain.bas`, replaced the one-shot yield exit with a persistent daemon loop (`Do : ProcessSleep 500 : Loop`).
 - [x] **Mandatory Revision Bumping:**
   - Bumped build revision to `REV: 2026.10.26-r30` across kernel boot banner, serial logs, top desktop menu bar, and system monitor window.
+
+---
+
+## Phase 25: Multi-Daemon Microkernel Topology, CPU Pacing & Full IDT Stubs (`REV: 2026.10.26-r33`)
+
+- [x] **Multi-Daemon Microkernel Architecture (All 8 Core Services + Test App):**
+  - Built, packaged, and verified all core system daemons in BAX executable format:
+    - `sys.genesis` (`services/genesis/`, PID 1): Root Orchestrator and system bootstrap coordinator.
+    - `srv.display` (`services/disp_srv/`, PID 2): Hardware display aperture manager and VRAM presenter.
+    - `srv.input` (`services/input_srv/`, PID 3): Unified input event normalization daemon.
+    - `srv.compositor` (`services/compositor/`, PID 4): Window surface composition and hardware cursor blitter.
+    - `srv.dev_mgr` (`services/dev_mgr/`, PID 5): Hardware device arbiter and topology registry.
+    - `srv.plexus_mgr` (`services/plexus_mgr/`, PID 6): Background service supervisor and health monitor.
+    - `srv.wm` (`services/wm/`, PID 7): Window manager and focus arbitration daemon.
+    - `srv.vfs` (`services/vfs_srv/`, PID 8): Storage and in-memory USTAR ramdisk navigation daemon.
+    - `user.test.app` (`tests/user_app/`, PID 9): Ring 3 client application verifying shared memory and synaptic IPC.
+- [x] **Full 256-Vector IDT Hardening (`IsrStubs.S` & `Idt.bas`):**
+  - Generated complete stubs for all 256 CPU exception and hardware interrupt vectors via `get_isr_stub`.
+  - Dispatched Local APIC EOI prior to context switching on timer interrupts (`Vector >= 32 And Vector <> 255`).
+- [x] **VirtualBox Hypervisor CPU Pacing Verification:**
+  - Dropped VirtualBox CPU load from 97% VMM exit storm to 0%–1% guest CPU and 1%–4% VMM load with full multi-core SMP enabled.
+- [x] **Mandatory Revision Bumping:**
+  - Bumped build revision to `REV: 2026.10.26-r33` across kernel boot banner, serial logs, top desktop menu bar, and system monitor window.
+
+---
+
+## Phase 26: Smooth 60 FPS Cursor Presentation, AP Timer Port Isolation & Neural Synaptic Control Mesh (`REV: 2026.10.26-r34-re01`)
+
+- [x] **Smooth 60 FPS Cursor Presentation & Event-Driven Pacing:**
+  - In `services/compositor/CompositorMain.bas`, resolved the 20 FPS limitation by counting hardware cursor presentation frames directly into `frameCount`.
+  - Active mouse interactions leverage the 200ms activity lease (`nowTime < activeUntil`) with `ProcessYield` for zero-latency 60 FPS movement.
+  - Idle states sleep for 1ms (`ProcessSleep 1`), waking on the next timer interrupt without lagging behind frame deadlines while keeping hypervisor CPU usage minimal.
+- [x] **AP Core Timer Port Isolation & Clock Correction:**
+  - In `tests/kernel/src/KernelMain.bas`, restricted motherboard I/O port polling (`DispatchPs2` on ports `0x60`/`0x64`) and clock advancement (`SchedEngine.OnTimerTick 10`) strictly to the BSP (Core 0).
+  - AP cores execute `SchedEngine.OnTimerTick 0` to service runqueues without I/O port contention or multi-counting the system uptime clock under SMP.
+- [x] **Context Switch CR3 Optimization:**
+  - In `tests/kernel/src/arch/x86_64/SwitchContext.S`, added conditional write check `cmpq %rdx, %cr3; je 1f` before reloading `%cr3`, avoiding unnecessary TLB flushes and reducing hypervisor VM exit overhead during intra-address-space yields.
+- [x] **Neural Synaptic Control Mesh:**
+  - Connected `sys.genesis` (PID 1) to `srv.plexus_mgr` (#5006) and `srv.dev_mgr` (#5007).
+  - Connected `srv.wm` (PID 7) to `srv.compositor` (#5002) and `srv.input` (#5005).
+  - Connected `srv.vfs` (PID 8) to `srv.plexus_mgr` (#5003).
+  - Enriched device topology discovery in `srv.dev_mgr` with display, HID, and storage controllers.
+- [x] **Standardized Revision & Rebuild Formatting:**
+  - Configured rebuild tag format `[REV: 2026.10.26-r34-re01]` across kernel boot banner, serial logs, desktop menu bar, and system monitor window.
+

@@ -31,13 +31,23 @@ Module WmMain
 
         ' 3. Connect to Compositor and Input Services
         Dim compNodeId As UInt64 = NodeLookup(CPtr(Pointer To Byte, "srv.compositor"))
+        Dim synComp As UInt64 = 0
         If compNodeId <> 0 Then
             ConsolePrintWithUInt "[WM] Attached to Display Compositor -> Node #", compNodeId, "\r\n"
+            synComp = SynapseConnect(wmNodeId, compNodeId, 7)
+            If synComp <> 0 Then
+                ConsolePrintWithUInt "[WM] Established Compositor Control Synapse -> Channel #", synComp, "\r\n"
+            End If
         End If
 
         Dim inputNodeId As UInt64 = NodeLookup(CPtr(Pointer To Byte, "srv.input"))
+        Dim synInput As UInt64 = 0
         If inputNodeId <> 0 Then
             ConsolePrintWithUInt "[WM] Attached to Input Subsystem -> Node #", inputNodeId, "\r\n"
+            synInput = SynapseConnect(wmNodeId, inputNodeId, 7)
+            If synInput <> 0 Then
+                ConsolePrintWithUInt "[WM] Established Input Event Synapse -> Channel #", synInput, "\r\n"
+            End If
         End If
 
         ConsoleWriteLine "[WM] Window arbitration active. Entering event loop..."

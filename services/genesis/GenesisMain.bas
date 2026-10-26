@@ -84,8 +84,13 @@ Module GenesisMain
         plexusName(13) = 114 ' 'r'
         plexusName(14) = 0
         Dim plexusNodeId As UInt64 = NodeLookup(@plexusName(0))
+        Dim synPlexus As UInt64 = 0
         If plexusNodeId <> 0 Then
             ConsolePrintWithUInt "[GENESIS] Connected to Service Supervisor -> Node #", plexusNodeId, "\r\n"
+            synPlexus = SynapseConnect(rootNodeId, plexusNodeId, 7)
+            If synPlexus <> 0 Then
+                ConsolePrintWithUInt "[GENESIS] Established Synapse Channel to Plexus Mgr -> Channel #", synPlexus, "\r\n"
+            End If
         End If
 
         ' 4. Discover Device Arbiter: 'srv.dev_mgr'
@@ -103,8 +108,13 @@ Module GenesisMain
         devMgrName(10) = 114 ' 'r'
         devMgrName(11) = 0
         Dim devMgrNodeId As UInt64 = NodeLookup(@devMgrName(0))
+        Dim synDevMgr As UInt64 = 0
         If devMgrNodeId <> 0 Then
             ConsolePrintWithUInt "[GENESIS] Connected to Device Arbiter -> Node #", devMgrNodeId, "\r\n"
+            synDevMgr = SynapseConnect(rootNodeId, devMgrNodeId, 7)
+            If synDevMgr <> 0 Then
+                ConsolePrintWithUInt "[GENESIS] Established Synapse Channel to Device Arbiter -> Channel #", synDevMgr, "\r\n"
+            End If
         End If
 
         ' 5. Root Orchestration Loop

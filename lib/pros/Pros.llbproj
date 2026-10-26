@@ -32,5 +32,9 @@ Files = [
     "src/Shmem.bas",
     "src/Input.bas",
     "src/Gui.bas",
-    "src/Display.bas"
+    "src/Display.bas",
+    "src/Vfs.bas",
+    "src/Wm.bas",
+    "src/DevMgr.bas",
+    "src/Plexus.bas"
 ]

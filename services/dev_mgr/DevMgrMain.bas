@@ -7,6 +7,59 @@ Import "../../include/pros.bas"
 
 Module DevMgrMain
 
+    Public Const DEV_CMD_GET_TREE As UInt32 = 30
+    Public Const DEV_CMD_QUERY    As UInt32 = 31
+    Public Const DEV_RESP_OK      As UInt32 = 300
+
+    <Packed>
+    Structure DeviceItem
+        Public Id        As UInt32
+        Public Name      As Pointer To Byte
+        Public Kind      As UInt32
+        Public BaseAddr  As UInt64
+        Public Status    As UInt32
+    End Structure
+
+    Private devices(7) As DeviceItem
+    Private devCount As UInt32
+
+    ''
+    ' @brief Initialize static discovered hardware devices.
+    ''
+    Private Unsafe Sub InitDevices()
+        devCount = 0
+
+        ' Device 0: SMP Processor Topology
+        devices(0).Id = 1
+        devices(0).Name = CPtr(Pointer To Byte, "cpu.smp.quad")
+        devices(0).Kind = 1 ' CPU
+        devices(0).BaseAddr = 0
+        devices(0).Status = 1 ' Active
+
+        ' Device 1: Primary PCI Display Adapter
+        devices(1).Id = 2
+        devices(1).Name = CPtr(Pointer To Byte, "pci.disp.lfb")
+        devices(1).Kind = 2 ' Display
+        devices(1).BaseAddr = &HFD000000
+        devices(1).Status = 1 ' Active
+
+        ' Device 2: PS/2 Keyboard and Mouse Controller
+        devices(2).Id = 3
+        devices(2).Name = CPtr(Pointer To Byte, "hid.ps2.controller")
+        devices(2).Kind = 3 ' HID
+        devices(2).BaseAddr = &H60
+        devices(2).Status = 1 ' Active
+
+        ' Device 3: Storage Controller & USTAR Ramdisk
+        devices(3).Id = 4
+        devices(3).Name = CPtr(Pointer To Byte, "storage.ustar.ramdisk")
+        devices(3).Kind = 4 ' Storage
+        devices(3).BaseAddr = &H6000000
+        devices(3).Status = 1 ' Mounted
+
+        devCount = 4
+    End Sub
+
     ''
     ' @brief Application entry point for dev_mgr daemon (Ring 3 CPL=3).
     ' @param argc Argument count.
@@ -50,13 +103,19 @@ Module DevMgrMain
             ConsolePrintWithUInt "[DEV_MGR] Attached Storage Controller -> Node #", vfsNodeId, "\r\n"
         End If
 
-        ConsoleWriteLine "[DEV_MGR] Hardware topology discovery completed."
+        ' 4. Initialize Hardware Topology
+        InitDevices
+        ConsolePrintWithUInt "[DEV_MGR] Hardware topology discovery completed: ", CType(UInt64, devCount), " Devices\r\n"
         ConsoleWriteLine "[DEV_MGR] Entering active device arbitration loop..."
         ConsoleWriteLine "[DEV_MGR] ======================================================="
 
-        ' 4. Active daemon event loop (Zero idle CPU via ProcessSleep)
+        ' 5. Active daemon event loop (Zero idle CPU via ProcessSleep)
+        Dim reqPkt As AxonPacket
+        Dim respPkt As AxonPacket
+        Dim devReqCount As UInt64 = 0
+
         Do
-            ProcessSleep 1000
+            ProcessSleep 500
         Loop
 
         user_main = 0

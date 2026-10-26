@@ -146,5 +146,32 @@ Module ProsApi
     ' Hardware Input APIs
     Public Declare Function GetMouseState Lib "libpros" Alias "Pros_Inputs_DeviceInput_GetMouseState" (ByRef state As MouseState) As Boolean
 
+    ' Virtual File System (VFS) APIs
+    <Packed>
+    Public Structure FileStat
+        Public SizeBytes As UInt32
+        Public Kind      As UInt32
+        Public Perms     As UInt32
+        Public Status    As UInt32
+    End Structure
+    Public Declare Function VfsStat Lib "libpros" Alias "Pros_Storage_VfsClient_Stat" (ByVal pathPtr As Pointer To Byte, ByRef outStat As FileStat) As Boolean
+
+    ' Window Management APIs
+    Public Declare Function WmRequestFocus Lib "libpros" Alias "Pros_Gui_WindowManagerClient_RequestFocus" (ByVal winId As UInt32) As Boolean
+
+    ' Device Management APIs
+    <Packed>
+    Public Structure DeviceInfo
+        Public Id        As UInt32
+        Public Kind      As UInt32
+        Public Status    As UInt32
+        Public Reserved  As UInt32
+        Public BaseAddr  As UInt64
+    End Structure
+    Public Declare Function DevQueryDevice Lib "libpros" Alias "Pros_Devices_DeviceClient_QueryDevice" (ByVal namePtr As Pointer To Byte, ByRef outInfo As DeviceInfo) As Boolean
+
+    ' Service Supervision APIs
+    Public Declare Function PlexusIsServiceActive Lib "libpros" Alias "Pros_Services_ServiceSupervisorClient_IsServiceActive" (ByVal serviceName As Pointer To Byte) As Boolean
+
 End Module
 

@@ -547,7 +547,7 @@ Module CompositorMain
 
         DrawText5x7 frontSurf, 16, 10, CPtr(Pointer To Byte, "PROS WORKSTATION  |  APPLICATIONS  NODES  SERVICES"), &HFFECEFF4
         RenderMouseCoordinates
-        DrawText5x7 frontSurf, CType(Int32, dispInfo.Width) - 360, 10, CPtr(Pointer To Byte, "REV: 2026.10.26-r34-re01"), &HFF88C0D0
+        DrawText5x7 frontSurf, CType(Int32, dispInfo.Width) - 360, 10, CPtr(Pointer To Byte, "REV: 2026.10.26-r34-re02"), &HFF88C0D0
         DrawText5x7 frontSurf, CType(Int32, dispInfo.Width) - 170, 10, CPtr(Pointer To Byte, "SMP 4 CORES  ONLINE"), &HFFA3BE8C
 
         ' 3. Render Floating Desktop Window: "PROS System Monitor"
@@ -579,7 +579,7 @@ Module CompositorMain
         ' Card 1: Microkernel Architecture
         FillRect frontSurf, wx + 16, wy + 40, ww - 32, 42, &HFF1E222A
         FillRect frontSurf, wx + 16, wy + 40, 3, 42, &HFF81A1C1
-        DrawText5x7 frontSurf, wx + 26, wy + 48, CPtr(Pointer To Byte, "KERNEL : PRK-LLB MICROKERNEL [REV: 2026.10.26-r34-re01]"), &HFF81A1C1
+        DrawText5x7 frontSurf, wx + 26, wy + 48, CPtr(Pointer To Byte, "KERNEL : PRK-LLB MICROKERNEL [REV: 2026.10.26-r34-re02]"), &HFF81A1C1
         DrawText5x7 frontSurf, wx + 26, wy + 64, CPtr(Pointer To Byte, "MODEL  : DUAL-PLANE NEURAL SYNAPSE ROUTING"), &HFFD8DEE9
 
         ' Card 2: Compositor Status
@@ -703,19 +703,20 @@ Module CompositorMain
         RenderMouseCoordinates
         ConsoleWriteLine "[COMPOSITOR] Hardware software cursor plane initialized at screen center."
 
-        ' 7. Active Presentation & Event Loop
+        ' 7. Active Presentation & Event Loop (Strictly Paced 60 FPS)
         ConsoleWriteLine "[COMPOSITOR] Compositor online. Entering presentation loop..."
 
         Dim mState As MouseState
-        lastFpsTime = GetUptime()
-        nextAnimTime = lastFpsTime
-        Dim activeUntil As UInt64 = 0
+        Dim targetMx As Int32 = cursorX
+        Dim targetMy As Int32 = cursorY
+        Dim mouseDirty As Boolean = False
+        Dim nextFrameTime As UInt64 = GetUptime()
+        lastFpsTime = nextFrameTime
 
         Do
-            Dim mouseMoved As Boolean = False
             Dim nowTime As UInt64 = GetUptime()
 
-            ' A. Read live hardware PS/2 mouse state and update cursor position with zero lag
+            ' A. Poll live hardware PS/2 mouse state (pure state update, zero VRAM blitting)
             If GetMouseState(mState) Then
                 Dim newMx As Int32 = mState.X
                 Dim newMy As Int32 = mState.Y
@@ -726,26 +727,31 @@ Module CompositorMain
                 If newMy < 0 Then newMy = 0
                 If newMy >= CType(Int32, dispInfo.Height) Then newMy = CType(Int32, dispInfo.Height) - 1
 
-                If newMx <> cursorX Or newMy <> cursorY Then
-                    RestoreCursorBackground cursorX, cursorY
-                    cursorX = newMx
-                    cursorY = newMy
-                    SaveCursorBackground cursorX, cursorY
-                    DrawCursorArrow cursorX, cursorY
-                    mouseMoved = True
-                    activeUntil = nowTime + 200
-                    frameCount = frameCount + 1
+                If newMx <> targetMx Or newMy <> targetMy Then
+                    targetMx = newMx
+                    targetMy = newMy
+                    mouseDirty = True
                 End If
             End If
 
-            ' B. Update telemetry animation and dynamic FPS counter on timer ticks (~60 FPS pace)
-            If nowTime >= nextAnimTime Then
+            ' B. 60 FPS Presentation Gate (strictly paced to 16ms intervals)
+            If nowTime >= nextFrameTime Then
+                If mouseDirty Then
+                    RestoreCursorBackground cursorX, cursorY
+                    cursorX = targetMx
+                    cursorY = targetMy
+                    SaveCursorBackground cursorX, cursorY
+                    DrawCursorArrow cursorX, cursorY
+                    mouseDirty = False
+                End If
+
                 RenderTelemetryBadge
                 RenderMouseCoordinates
-                If (nowTime - nextAnimTime) > 32 Then
-                    nextAnimTime = nowTime + 16
+
+                If (nowTime - nextFrameTime) > 32 Then
+                    nextFrameTime = nowTime + 16
                 Else
-                    nextAnimTime = nextAnimTime + 16
+                    nextFrameTime = nextFrameTime + 16
                 End If
                 frameCount = frameCount + 1
             End If
@@ -760,22 +766,17 @@ Module CompositorMain
                 lastFpsTime = nowTime
             End If
 
-            ' Adaptive Pacing Strategy (Smooth 60 FPS presentation with zero idle CPU):
-            ' When mouse is actively moving or within active lease window: immediate ProcessYield for responsive 60 FPS.
-            ' When idle: sleep 1 ms to allow CPU core to halt (sti; hlt) without missing animation frames.
-            If mouseMoved Or nowTime < activeUntil Then
-                ProcessYield
-            Else
-                Dim waitRemaining As UInt64 = 0
-                If nextAnimTime > nowTime Then
-                    waitRemaining = nextAnimTime - nowTime
-                End If
-
+            ' D. Pacing: Sleep until the next 16ms presentation deadline (0% idle CPU)
+            nowTime = GetUptime()
+            If nextFrameTime > nowTime Then
+                Dim waitRemaining As UInt64 = nextFrameTime - nowTime
                 If waitRemaining >= 2 Then
                     ProcessSleep 1
                 Else
                     ProcessYield
                 End If
+            Else
+                ProcessYield
             End If
         Loop
 

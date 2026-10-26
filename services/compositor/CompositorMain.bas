@@ -547,7 +547,7 @@ Module CompositorMain
 
         DrawText5x7 frontSurf, 16, 10, CPtr(Pointer To Byte, "PROS WORKSTATION  |  APPLICATIONS  NODES  SERVICES"), &HFFECEFF4
         RenderMouseCoordinates
-        DrawText5x7 frontSurf, CType(Int32, dispInfo.Width) - 340, 10, CPtr(Pointer To Byte, "REV: 2026.10.26-r23"), &HFF88C0D0
+        DrawText5x7 frontSurf, CType(Int32, dispInfo.Width) - 340, 10, CPtr(Pointer To Byte, "REV: 2026.10.26-r24"), &HFF88C0D0
         DrawText5x7 frontSurf, CType(Int32, dispInfo.Width) - 170, 10, CPtr(Pointer To Byte, "SMP 4 CORES  ONLINE"), &HFFA3BE8C
 
         ' 3. Render Floating Desktop Window: "PROS System Monitor"
@@ -579,7 +579,7 @@ Module CompositorMain
         ' Card 1: Microkernel Architecture
         FillRect frontSurf, wx + 16, wy + 40, ww - 32, 42, &HFF1E222A
         FillRect frontSurf, wx + 16, wy + 40, 3, 42, &HFF81A1C1
-        DrawText5x7 frontSurf, wx + 26, wy + 48, CPtr(Pointer To Byte, "KERNEL : PRK-LLB MICROKERNEL [REV: 2026.10.26-r23]"), &HFF81A1C1
+        DrawText5x7 frontSurf, wx + 26, wy + 48, CPtr(Pointer To Byte, "KERNEL : PRK-LLB MICROKERNEL [REV: 2026.10.26-r24]"), &HFF81A1C1
         DrawText5x7 frontSurf, wx + 26, wy + 64, CPtr(Pointer To Byte, "MODEL  : DUAL-PLANE NEURAL SYNAPSE ROUTING"), &HFFD8DEE9
 
         ' Card 2: Compositor Status
@@ -709,9 +709,11 @@ Module CompositorMain
         Dim mState As MouseState
         lastFpsTime = GetUptime()
         nextAnimTime = lastFpsTime
+        Dim activeUntil As UInt64 = 0
 
         Do
             Dim mouseMoved As Boolean = False
+            Dim nowTime As UInt64 = GetUptime()
 
             ' A. Read live hardware PS/2 mouse state and update cursor position with zero lag
             If GetMouseState(mState) Then
@@ -731,11 +733,11 @@ Module CompositorMain
                     SaveCursorBackground cursorX, cursorY
                     DrawCursorArrow cursorX, cursorY
                     mouseMoved = True
+                    activeUntil = nowTime + 200
                 End If
             End If
 
             ' B. Update telemetry animation and dynamic FPS counter on timer ticks (~60 FPS pace)
-            Dim nowTime As UInt64 = GetUptime()
             If nowTime >= nextAnimTime Then
                 RenderTelemetryBadge
                 RenderMouseCoordinates
@@ -758,12 +760,13 @@ Module CompositorMain
             End If
 
             ' Adaptive Event-Driven Pacing:
-            ' When mouse is actively moving, yield immediately for high responsiveness.
-            ' When idle, sleep briefly (4 ms) to allow CPU idle halt (sti; hlt), eliminating VMM load!
-            If Not mouseMoved Then
-                ProcessSleep 4
-            Else
+            ' Maintain a 200ms burst lease whenever interactive motion is detected.
+            ' During the active window, yield cooperatively (ProcessYield) for immediate 60 FPS responsiveness.
+            ' When truly idle (>200ms without input), sleep (ProcessSleep 4) to let the CPU idle task halt (sti; hlt).
+            If nowTime < activeUntil Then
                 ProcessYield
+            Else
+                ProcessSleep 4
             End If
         Loop
 

@@ -670,6 +670,23 @@ tests/kernel/
 - [x] **Mandatory Revision Bumping:**
   - Bumped revision tag to `REV: 2026.10.26-r23` across boot banners, serial logs, desktop menu bar, and system monitor window.
 
+---
+
+## Phase 18: LAPIC Pre-Yield EOI Dispatch, Burst-Leased Interactive Pacing & VirtualBox Mouse Restoration (`REV: 2026.10.26-r24`)
+
+- [x] **LAPIC Pre-Yield EOI Dispatch (VirtualBox Mouse Fix):**
+  - In `tests/kernel/src/arch/x86_64/Idt.bas`, Vector 32 (Timer Interrupt) previously called `handlerFunc(frame)` (`SchedEngine.OnTimerTick`), which invoked `Yield()` -> `switch_context()`, switching CPU execution stacks away and never returning to the end of `IsrDispatcher`.
+  - This left the LAPIC In-Service Register (ISR) bit asserted for Vector 32 across all task switches. Because Vector 44 (PS/2 Mouse IRQ 12) is in the same priority class (Priority Class 2, vectors 32–47), VirtualBox strictly hardware-masked all incoming mouse interrupts according to Intel SDM Processor Priority Register (PPR) rules.
+  - Resolved by dispatching `Arch.X86_64.Apic.SendEoi` for Vector 32 *immediately before* invoking `handlerFunc(frame)`. This clears the LAPIC ISR bit and drops the PPR before context switching, enabling uninterrupted delivery of Vector 44 on VirtualBox and bare-metal LAPIC hardware.
+- [x] **Burst-Leased Interactive Pacing (Smooth 60 FPS Cursor & Low VMM Load):**
+  - In `services/compositor/CompositorMain.bas`, resolved the 20–35 FPS fluctuation and cursor lag caused by blind `If Not mouseMoved Then ProcessSleep 4` calls between 10ms mouse packet intervals.
+  - Implemented an interactive activity lease window (`activeUntil = nowTime + 200`):
+    - During interactive mouse motion, the compositor runs cooperatively with `ProcessYield`, processing 100 Hz mouse packets at a rock-solid 60 FPS with zero sleep lag.
+    - When the user stops moving the mouse for >200ms, the compositor enters adaptive sleep (`ProcessSleep 4`), allowing the scheduler to halt the CPU core via `CpuIdleLoop` (`sti; hlt`) and keeping VirtualBox VMM load low without sacrificing responsiveness.
+- [x] **Mandatory Revision Bumping:**
+  - Bumped build revision to `REV: 2026.10.26-r24` in kernel boot banner, serial logs, top desktop menu bar, and system monitor window.
+
+
 
 
 

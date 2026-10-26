@@ -327,6 +327,15 @@ Module Arch.Acpi
                 ' Type 1: I/O APIC - MMIO address at byte offset 4
                 Dim ioapicPtr As Volatile Pointer To UInt32 = CPtr(Volatile Pointer To UInt32, offset + 4)
                 ioapicAddress = ioapicPtr(0)
+            ElseIf entryType = 2 Then
+                ' Type 2: Interrupt Source Override (ISO)
+                Dim bus As Byte = entryPtr(2)
+                Dim src As Byte = entryPtr(3)
+                Dim gsiPtr As Volatile Pointer To UInt32 = CPtr(Volatile Pointer To UInt32, offset + 4)
+                Dim gsi As UInt32 = gsiPtr(0)
+                Dim flagsPtr As Volatile Pointer To UInt16 = CPtr(Volatile Pointer To UInt16, offset + 8)
+                Dim isoFlags As UInt16 = flagsPtr(0)
+                Serial.PrintF "[ACPI] MADT ISO: Bus=%d, Source IRQ=%d -> GSI=%d, Flags=0x%x\r\n", CType(UInt32, bus), CType(UInt32, src), gsi, CType(UInt32, isoFlags)
             End If
 
             offset = offset + CType(UInt64, entryLen)

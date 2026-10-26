@@ -105,6 +105,7 @@ Module ProsApi
     Public Declare Function GetPid Lib "libpros" Alias "Pros_Sys_Process_GetPid" () As UInt64
     Public Declare Sub TerminateProcess Lib "libpros" Alias "Pros_Sys_Process_ExitProcess" (ByVal exitCode As UInt64)
     Public Declare Function GetCoreCount Lib "libpros" Alias "Pros_Sys_Process_GetCoreCount" () As UInt64
+    Public Declare Function GetUptime Lib "libpros" Alias "Pros_Sys_Process_GetUptime" () As UInt64
 
     ' Console I/O
     Public Declare Sub ConsoleWrite Lib "libpros" Alias "Pros_IO_Console_Write" (ByVal strPtr As Pointer To Byte)
@@ -127,8 +128,22 @@ Module ProsApi
     Public Declare Sub FillRect Lib "libpros" Alias "Pros_Gui_Graphics_FillRect" (ByRef surf As Surface, ByVal rx As Int32, ByVal ry As Int32, ByVal rw As Int32, ByVal rh As Int32, ByVal color As UInt32)
     Public Declare Sub Blit Lib "libpros" Alias "Pros_Gui_Graphics_Blit" (ByRef dst As Surface, ByVal dx As Int32, ByVal dy As Int32, ByRef src As Surface, ByVal sx As Int32, ByVal sy As Int32, ByVal w As Int32, ByVal h As Int32)
 
+    <Packed>
+    Public Structure MouseState
+        Public X As Int32
+        Public Y As Int32
+        Public Buttons As Byte
+        Public Reserved1 As Byte
+        Public Reserved2 As Byte
+        Public Reserved3 As Byte
+    End Structure
+
     ' Hardware Display Driver APIs
     Public Declare Function GetDisplayInfo Lib "libpros" Alias "Pros_Driver_Display_GetInfo" (ByRef info As DisplayInfo) As Boolean
     Public Declare Function MapFramebuffer Lib "libpros" Alias "Pros_Driver_Display_Map" (ByVal targetVaddr As UInt64) As Pointer To UInt32
 
+    ' Hardware Input APIs
+    Public Declare Function GetMouseState Lib "libpros" Alias "Pros_Inputs_DeviceInput_GetMouseState" (ByRef state As MouseState) As Boolean
+
 End Module
+

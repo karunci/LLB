@@ -11,10 +11,14 @@ SECTIONS
     /* Load Kernel at physical memory address 1MB */
     . = 1M;
 
+    .boot : {
+        KEEP(*(.text._start))
+        KEEP(*(.multiboot_header))
+        *(.boot.*)
+    }
+
     .text : ALIGN(4K)
     {
-        /* Ensure Multiboot header is placed first */
-        KEEP(*(.multiboot_header))
         *(.text*)
     }
 

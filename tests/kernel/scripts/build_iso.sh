@@ -50,26 +50,30 @@ set timeout=3
 set default=0
 
 insmod all_video
-insmod gfxterm
-set gfxmode=1024x768x32,1024x768,auto
-terminal_output gfxterm
+insmod efi_gop
+insmod font
+
+if loadfont unicode ; then
+    insmod gfxterm
+    set gfxmode=1920x1080x32,1366x768x32,1280x720x32,1024x768x32,auto
+    set gfxpayload=keep
+    terminal_output gfxterm
+fi
+
+set gfxmode=1920x1080x32,1366x768x32,1280x720x32,1024x768x32,auto
 set gfxpayload=keep
 
-menuentry "Low-Level Basic Kernel (PRK/LLB)" {
-    insmod part_msdos
-    insmod iso9660
+menuentry "Low-Level Basic Kernel (PRK/LLB) [Native UEFI GOP]" {
     set gfxpayload=keep
-    multiboot /boot/kernel.elf
-    module /boot/initrd.tar
+    multiboot2 /boot/kernel.elf
+    module2 /boot/initrd.tar "initrd"
     boot
 }
 
-menuentry "Low-Level Basic Kernel (PRK/LLB) - Multiboot 2" {
-    insmod part_msdos
-    insmod iso9660
-    set gfxpayload=keep
+menuentry "Low-Level Basic Kernel (PRK/LLB) [Safe 1024x768]" {
+    set gfxpayload=1024x768x32,auto,keep
     multiboot2 /boot/kernel.elf
-    module2 /boot/initrd.tar
+    module2 /boot/initrd.tar "initrd"
     boot
 }
 EOF

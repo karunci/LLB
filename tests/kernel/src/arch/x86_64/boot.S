@@ -5,32 +5,11 @@
  */
 
 .code32
-.section .multiboot_header
+.section .text._start
 .align 8
 
 /* ============================================================================
- * MULTIBOOT 1 HEADER (For QEMU -kernel direct boot)
- * ============================================================================ */
-#define MULTIBOOT_HEADER_MAGIC      0x1BADB002
-#define MULTIBOOT_HEADER_FLAGS      0x00010007 /* ALIGN + MEMINFO + VIDEO + AOUT_KLUDGE */
-
-.align 4
-multiboot1_header:
-    .long MULTIBOOT_HEADER_MAGIC
-    .long MULTIBOOT_HEADER_FLAGS
-    .long -(MULTIBOOT_HEADER_MAGIC + MULTIBOOT_HEADER_FLAGS)
-    .long multiboot1_header /* header_addr */
-    .long 0x100000          /* load_addr */
-    .long 0                 /* load_end_addr */
-    .long 0                 /* bss_end_addr */
-    .long _start            /* entry_addr */
-    .long 0                 /* mode_type: 0 = linear graphics */
-    .long 1024              /* width */
-    .long 768               /* height */
-    .long 32                /* depth */
-
-/* ============================================================================
- * MULTIBOOT 2 HEADER SPECIFICATION
+ * MULTIBOOT 2 HEADER SPECIFICATION (Offset 0 of .text._start / 1MB Physical)
  * ============================================================================ */
 #define MULTIBOOT2_HEADER_MAGIC     0xe85250d6
 #define MULTIBOOT_ARCHITECTURE_I386 0
@@ -46,10 +25,10 @@ header_start:
     /* Multiboot2 Framebuffer Request Tag (Type 5) */
     .align 8
     .short 5     /* type = MULTIBOOT_HEADER_TAG_FRAMEBUFFER */
-    .short 0     /* flags = 0 */
-    .long  20    /* size = 20 bytes (exact struct size per multiboot2 spec!) */
-    .long  1024  /* preferred width */
-    .long  768   /* preferred height */
+    .short 0     /* flags = 0 (optional preference) */
+    .long  24    /* size = 24 bytes */
+    .long  0     /* preferred width: 0 = keep bootloader native GOP resolution */
+    .long  0     /* preferred height: 0 = keep bootloader native GOP resolution */
     .long  32    /* preferred depth (bpp) */
     .long  0     /* padding to 8-byte boundary */
 
@@ -61,68 +40,62 @@ header_start:
 header_end:
 
 /* ============================================================================
- * EARLY BSS BOOTSTACK & PAGE TABLES (IDENTITY MAPPED FIRST 2MB)
- * ============================================================================ */
-.section .bss
-.align 4096
-page_table_l4:
-    .skip 4096
-page_table_l3:
-    .skip 4096
-page_table_l2_0:
-    .skip 4096
-page_table_l2_1:
-    .skip 4096
-page_table_l2_2:
-    .skip 4096
-page_table_l2_3:
-    .skip 4096
-
-.align 16
-stack_bottom:
-    .skip 16384 /* 16 KiB Kernel Boot Stack */
-stack_top:
-
-/* ============================================================================
  * 32-BIT PROTECTED MODE ENTRY POINT
  * ============================================================================ */
 .code32
-.section .text
 .global _start
 .type _start, @function
 
 _start:
     /* Disable Interrupts and Setup Temporary 32-bit Stack */
     cli
+    cld
+
+    /* Store Multiboot Magic Number (%eax) and Information Structure (%ebx) safely */
+    movl %eax, boot_magic
+    movl %ebx, boot_mbi
     mov $stack_top, %esp
 
-    /* Store Multiboot Magic Number (%eax) and Information Structure (%ebx) on stack */
-    push %ebx
-    push %eax
-
-    /* 1. Setup Early Paging structures (Zeroes 16KB and identity maps) */
+    /* 1. Setup Early Paging structures (Identity maps full 0 - 16GB physical RAM) */
     call setup_page_tables
     call enable_paging
 
-    /* 2. Load 64-bit Global Descriptor Table (GDT) */
-    mov $gdt64_pointer, %eax
+    /* 2. Load 64-bit Global Descriptor Table (GDT) via 6-byte 32-bit descriptor pointer */
+    mov $gdt64_pointer_32, %eax
     lgdt (%eax)
 
-    /* Restore Multiboot arguments for long mode (%edi = magic, %esi = mbi) */
-    pop %edi
-    pop %esi
+    /* 3. Canonical x86_64 far jump to enter 64-bit long mode */
+    ljmp $0x08, $long_mode_entry
 
-    /* 3. Far jump to 64-bit code segment using 32-bit far return (lret) */
-    push $0x08
-    push $long_mode_entry
-    lret
+/* ============================================================================
+ * EARLY BSS BOOTSTACK & PAGE TABLES (IDENTITY MAPPED FULL 16GB)
+ * ============================================================================ */
+.section .bss
+.align 8
+boot_magic: .quad 0
+boot_mbi:   .quad 0
 
-/* Setup 4-level Page Tables */
+.align 4096
+page_table_l4:
+    .skip 4096
+page_table_l3:
+    .skip 4096
+page_table_l2:
+    .skip 65536 /* 16 x 4096 = 64KB for 16GB identity space using 2MB pages */
+
+.align 16
+stack_bottom:
+    .skip 16384 /* 16 KiB Kernel Boot Stack */
+stack_top:
+
+.section .text
+
+/* Setup 4-level Page Tables (Full 0 - 16GB Identity Mapped) */
 setup_page_tables:
-    /* Zero out all early boot page tables (24KB: L4, L3, and 4x L2 tables) */
+    /* Zero out all early boot page tables (72KB: L4 (4KB), L3 (4KB), and 16x L2 tables (64KB)) */
     mov $page_table_l4, %edi
     xor %eax, %eax
-    mov $6144, %ecx       /* 6144 dwords = 24576 bytes */
+    mov $18432, %ecx      /* 18432 dwords = 73728 bytes (72KB) */
     cld
     rep stosl
 
@@ -133,51 +106,28 @@ setup_page_tables:
     mov %eax, (%ebx)
     movl $0, 4(%ebx)
 
-    /* Map L3[0] -> page_table_l2_0 (Identity map 0 - 1GB: Kernel code, BSS, stack, buddy pool) */
-    mov $page_table_l2_0, %eax
+    /* Map L3[0..15] -> page_table_l2 (Identity map 0 - 16GB) */
+    mov $page_table_l2, %eax
     or $0x3, %eax
-    mov %eax, page_table_l3 + 0
-    movl $0,  page_table_l3 + 4
-
-    /* Map L3[1] -> page_table_l2_1 (Identity map 1GB - 2GB: RAM up to 2GB and ACPI tables) */
-    mov $page_table_l2_1, %eax
-    or $0x3, %eax
-    mov %eax, page_table_l3 + 8
-    movl $0,  page_table_l3 + 12
-
-    /* L3[2] (2GB - 3GB: 0x80000000 - 0xC0000000) is left UNMAPPED (0)
-     * VMM dynamic 4KB page allocator manages this range for Kernel Heap (0x81000000).
-     */
-    movl $0,  page_table_l3 + 16
-    movl $0,  page_table_l3 + 20
-
-    /* Map L3[3] -> page_table_l2_3 (Identity map 3GB - 4GB: MMIO, VRAM, LAPIC, IOAPIC) */
-    mov $page_table_l2_3, %eax
-    or $0x3, %eax
-    mov %eax, page_table_l3 + 24
-    movl $0,  page_table_l3 + 28
-
-    /* Identity map 0 - 2GB across page_table_l2_0 and page_table_l2_1 (1024 entries * 2MB = 2048MB) */
-    mov $page_table_l2_0, %ebx
-    mov $1024, %ecx       /* 1024 entries = 2GB */
-    mov $0x83, %eax       /* Physical 0x0 | Present (1) | Writable (2) | HugePage (0x80) */
+    mov $page_table_l3, %ebx
+    mov $16, %ecx
 1:
+    mov %eax, (%ebx)
+    movl $0, 4(%ebx)
+    add $4096, %eax
+    add $8, %ebx
+    sub $1, %ecx
+    jnz 1b
+
+    /* Identity map 0 - 16GB across all 16 contiguous L2 tables (8192 entries * 2MB = 16384MB) */
+    mov $page_table_l2, %ebx
+    mov $8192, %ecx       /* 8192 entries = 16GB */
+    mov $0x83, %eax       /* Physical 0x0 | Present (1) | Writable (2) | HugePage (0x80) */
+2:
     mov %eax, (%ebx)
     movl $0, 4(%ebx)
     add $0x200000, %eax   /* Next 2MB physical frame */
     add $8, %ebx          /* Next PTE entry */
-    sub $1, %ecx
-    jnz 1b
-
-    /* Identity map 3GB - 4GB across page_table_l2_3 (512 entries * 2MB = 1024MB: 0xC0000000 - 0x100000000) */
-    mov $page_table_l2_3, %ebx
-    mov $512, %ecx        /* 512 entries = 1GB */
-    mov $0xC0000083, %eax /* Physical 0xC0000000 | Present (1) | Writable (2) | HugePage (0x80) */
-2:
-    mov %eax, (%ebx)
-    movl $0, 4(%ebx)
-    add $0x200000, %eax
-    add $8, %ebx
     sub $1, %ecx
     jnz 2b
     ret
@@ -223,8 +173,8 @@ long_mode_entry:
     mov $stack_top, %rsp
 
     /* Pass Multiboot2 arguments (%rdi = magic, %rsi = multiboot_info_ptr) */
-    mov %edi, %edi
-    mov %esi, %esi
+    movq boot_magic, %rdi
+    movq boot_mbi,   %rsi
 
     /* Call LLB Kernel Entrypoint generated by llbc */
     .extern KernelEntry
@@ -245,6 +195,10 @@ gdt64:
     .quad (1 << 43) | (1 << 44) | (1 << 47) | (1 << 53) /* 0x08: Kernel Code (Executable/Readable/64-bit) */
     .quad (1 << 41) | (1 << 44) | (1 << 47)             /* 0x10: Kernel Data (Writable) */
 gdt64_end:
+
+gdt64_pointer_32:
+    .word gdt64_end - gdt64 - 1
+    .long gdt64
 
 gdt64_pointer:
     .word gdt64_end - gdt64 - 1

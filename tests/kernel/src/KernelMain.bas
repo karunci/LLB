@@ -41,6 +41,25 @@ Module KernelMain
     Public Declare Function SprintF Lib "libllb_metal" (ByVal outBuf As Pointer To Byte, ByVal maxLen As UInt32, ByVal fmt As Pointer To Byte, ParamArray args() As Pointer To Int64) As UInt32
 
     ''
+    ' @brief Central unified PS/2 controller dispatcher.
+    '        Inspects port 0x64 status and routes pending bytes to Keyboard or Mouse.
+    '        Drains pending bytes to prevent unhandled scancodes from blocking the 8042 buffer.
+    ''
+    Public Unsafe Sub DispatchPs2()
+        Dim loopLimit As UInt32 = 64
+        While loopLimit > 0
+            Dim status As Byte = Arch.X86_64.PortIO.InB(&H64)
+            If (status And &H01) = 0 Then Exit While
+            If (status And &H20) <> 0 Then
+                MouseDriver.HandleInterrupt
+            Else
+                Kbd.HandleInterrupt
+            End If
+            loopLimit = loopLimit - 1
+        Wend
+    End Sub
+
+    ''
     ' @brief System Timer Interrupt Service Routine (Vector 32 / IRQ 0).
     ''
     Public Unsafe Sub OnTimerInterrupt(ByRef frame As Arch.Idt.InterruptFrame)
@@ -62,11 +81,18 @@ Module KernelMain
     End Sub
 
     Public Unsafe Sub KernelEntry(ByVal magic As UInt32, ByVal mbAddress As Pointer To Byte)
-        ' Initialize COM1 line control & Serial UART driver
+        ' Initialize COM1 line control & Serial UART driver with hardware probing
         Serial.Initialize
-        Serial.PrintF "\r\n[PRK] Booting Low-Level Basic Kernel in QEMU!\r\n"
-        Serial.PrintF "[PRK] Multiboot Verified. Long mode active.\r\n"
-        Serial.PrintF "[UART] COM1 Driver Online!\n"
+        If Serial.IsAvailable() Then
+            Serial.PrintF "\r\n[PRK] Booting Low-Level Basic Kernel [REV: 2026.10.26-r22]!\r\n"
+            Serial.PrintF "[PRK] Multiboot Verified. Long mode active.\r\n"
+            Serial.PrintF "[UART] COM1 16550 UART Online!\r\n"
+        End If
+
+        ' Early Display & Framebuffer Discovery
+        FB.Initialize magic, CType(UInt64, mbAddress)
+        Dim hasGopFb As Boolean = (FB.GetFramebufferPhys() <> 0 And FB.GetFramebufferPhys() <> &HB8000)
+        Dim hasVgaText As Boolean = (Not hasGopFb) And (magic = &H2BADB002)
 
         ' Initialize Physical Memory Manager (PMM) and relocate initrd module immediately
         Serial.PrintF "[PRK] Initializing Physical Memory Manager (PMM)...\r\n"
@@ -78,19 +104,21 @@ Module KernelMain
         Arch.X86_64.Gdt.Initialize
         Serial.PrintF "[PRK] GDT & TSS initialized successfully.\r\n"
 
-        ' Initialize PS/2 Keyboard and Mouse controllers
-        Kbd.Initialize
-        Serial.PrintF "[PRK] PS/2 Keyboard controller initialized.\r\n"
-        MouseDriver.Initialize
-
-        ' Initialize VGA Terminal Driver
-        Term.Initialize Term.COLOR_LIGHT_GREEN, Term.COLOR_BLACK
-        Serial.PrintF "[PRK] VGA Terminal Driver initialized (&HB8000).\r\n"
-
-        Term.WriteLine CPtr(Pointer To Byte, "=========================================")
-        Term.WriteLine CPtr(Pointer To Byte, "      PRK - LOW-LEVEL BASIC KERNEL       ")
-        Term.WriteLine CPtr(Pointer To Byte, "=========================================")
-        Term.WriteChar 10
+        ' Initialize VGA Terminal Driver (safe on UEFI: if hasVgaText is False, 0xB8000 is NEVER accessed)
+        Term.Initialize hasVgaText, Term.COLOR_LIGHT_GREEN, Term.COLOR_BLACK
+        If hasVgaText Then
+            Serial.PrintF "[PRK] VGA Text Mode Terminal active (&HB8000).\r\n"
+            Term.WriteLine CPtr(Pointer To Byte, "=========================================")
+            Term.WriteLine CPtr(Pointer To Byte, " PRK - LOW-LEVEL BASIC [REV: 2026.10.26-r22] ")
+            Term.WriteLine CPtr(Pointer To Byte, "=========================================")
+            Term.WriteChar 10
+        ElseIf hasGopFb Then
+            Serial.PrintF "[PRK] UEFI GOP Linear Framebuffer active (0x%x).\r\n", CType(UInt32, FB.GetFramebufferPhys() And &HFFFFFFFF)
+            FB.ClearScreen &H00181824
+            FB.DrawString 20, 20, CPtr(Pointer To Byte, "========================================="), &H0088C0D0, 1
+            FB.DrawString 20, 36, CPtr(Pointer To Byte, " PRK - LOW-LEVEL BASIC [REV: 2026.10.26-r22] "), &H008FBCBB, 1
+            FB.DrawString 20, 52, CPtr(Pointer To Byte, "========================================="), &H0088C0D0, 1
+        End If
 
         ' Initialize multiple MultiUse CpuContext instances on the kernel stack
         Dim bspContext As Arch.X86_64.CpuContext
@@ -240,9 +268,14 @@ Module KernelMain
         Arch.X86_64.IoApic.EnableMouse
         Serial.PrintF "[PRK] I/O APIC online. Keyboard IRQ 1 -> Vec 33, Mouse IRQ 12 -> Vec 44.\r\n"
 
-        ' Initialize Periodic LAPIC Timer (Vector 32)
-        Serial.PrintF "[PRK] Calibrating Local APIC Timer (Vector 32)...\r\n"
-        Arch.X86_64.Apic.InitializeTimer 3, &H200000
+        ' Initialize PS/2 Keyboard and Mouse hardware after routing is active
+        Kbd.Initialize
+        Serial.PrintF "[PRK] PS/2 Keyboard controller initialized.\r\n"
+        MouseDriver.Initialize
+
+        ' Initialize Periodic LAPIC Timer (Vector 32) matching PRK kernel/apic.c
+        Serial.PrintF "[PRK] Initializing Local APIC Timer (Vector 32, count: 0x100000)...\r\n"
+        Arch.X86_64.Apic.InitializeTimer 3, &H100000
         Serial.PrintF "[PRK] Local APIC Timer active.\r\n"
 
         ' Initialize Preemptive Scheduler & Core Runqueues
@@ -264,6 +297,9 @@ Module KernelMain
         If scrW = 0 Then scrW = 1024
         If scrH = 0 Then scrH = 768
         If scrBpp = 0 Then scrBpp = 32
+
+        MouseDriver.SetScreenBounds CType(Int32, scrW), CType(Int32, scrH)
+        Serial.PrintF "[PRK] Mouse screen bounds configured: %ux%u\r\n", scrW, scrH
 
         Dim fullCardW As UInt32 = scrW - 40
         Dim colGap As UInt32 = 16

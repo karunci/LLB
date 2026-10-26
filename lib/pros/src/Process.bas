@@ -50,6 +50,14 @@ Namespace Pros.Sys
             GetCoreCount = Pros.Sys.RawSyscall.Call0(SYS_SMP_CORE_COUNT)
         End Function
 
+        ''
+        ' @brief Get system uptime in milliseconds from kernel timer.
+        ' @return Uptime in milliseconds.
+        ''
+        Public Unsafe Function GetUptime() As UInt64
+            GetUptime = Pros.Sys.RawSyscall.Call0(SYS_TIME_UPTIME)
+        End Function
+
     End Module
 
 End Namespace

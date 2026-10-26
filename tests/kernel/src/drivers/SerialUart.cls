@@ -26,9 +26,15 @@ Namespace Drivers
             ' Disable interrupts
             Arch.X86_64.PortIO.OutB portBase + 1, 0
 
-            ' Probe UART scratchpad register (portBase + 7) to verify hardware presence
+            ' Probe UART scratchpad register (portBase + 7) with dual test patterns to verify real 16550 silicon
             Arch.X86_64.PortIO.OutB portBase + 7, &H5A
             If Arch.X86_64.PortIO.InB(portBase + 7) <> &H5A Then
+                isPortAvailable = False
+                Exit Sub
+            End If
+
+            Arch.X86_64.PortIO.OutB portBase + 7, &HA5
+            If Arch.X86_64.PortIO.InB(portBase + 7) <> &HA5 Then
                 isPortAvailable = False
                 Exit Sub
             End If
@@ -49,6 +55,11 @@ Namespace Drivers
             ' IRQs enabled, RTS/DSR set
             Arch.X86_64.PortIO.OutB portBase + 4, &H0B
         End Sub
+
+        ' Check if hardware serial port is detected and usable
+        Public Function IsAvailable() As Boolean
+            IsAvailable = isPortAvailable
+        End Function
 
         ' Check if Transmit Holding Register Empty (bit 5 of Line Status Register)
         Public Function IsTransmitEmpty() As Boolean
@@ -80,6 +91,7 @@ Namespace Drivers
 
         ' Write a single character (thread-safe, acquires uartLock)
         Public Unsafe Sub WriteChar(ByVal ch As Byte)
+            If Not isPortAvailable Then Exit Sub
             Dim flags As UInt64 = Sync.SpinlockOps.AcquireIrqSave(uartLock)
             Me.WriteCharRaw ch
             Sync.SpinlockOps.ReleaseIrqRestore uartLock, flags
@@ -87,7 +99,7 @@ Namespace Drivers
 
         ' Write a raw buffer of bytes of given length atomically (thread-safe, acquires uartLock)
         Public Unsafe Sub WriteBuffer(ByVal bufPtr As Pointer To Byte, ByVal length As UInt64)
-            If bufPtr = 0 Or length = 0 Then Exit Sub
+            If Not isPortAvailable Or bufPtr = 0 Or length = 0 Then Exit Sub
             Dim flags As UInt64 = Sync.SpinlockOps.AcquireIrqSave(uartLock)
             Dim i As UInt64 = 0
             Do While i < length
@@ -102,7 +114,7 @@ Namespace Drivers
 
         ' Write a null-terminated ASCII string (thread-safe, acquires uartLock)
         Public Unsafe Sub WriteString(ByVal strPtr As Pointer To Byte)
-            If strPtr = 0 Then Exit Sub
+            If Not isPortAvailable Or strPtr = 0 Then Exit Sub
             Dim flags As UInt64 = Sync.SpinlockOps.AcquireIrqSave(uartLock)
             Dim i As UInt64 = 0
             Do While strPtr(i) <> 0
@@ -117,7 +129,7 @@ Namespace Drivers
 
         ' Write a line of text followed by newline (thread-safe, acquires uartLock across whole line)
         Public Unsafe Sub WriteLine(ByVal str As Pointer To Byte)
-            If str = 0 Then Exit Sub
+            If Not isPortAvailable Or str = 0 Then Exit Sub
             Dim flags As UInt64 = Sync.SpinlockOps.AcquireIrqSave(uartLock)
             Dim i As UInt64 = 0
             Do While str(i) <> 0
@@ -134,6 +146,7 @@ Namespace Drivers
 
         ' Write a 64-bit integer formatted in hexadecimal (thread-safe, acquires uartLock)
         Public Unsafe Sub WriteHex(ByVal value As UInt64)
+            If Not isPortAvailable Then Exit Sub
             Dim flags As UInt64 = Sync.SpinlockOps.AcquireIrqSave(uartLock)
             Me.WriteCharRaw 48 ' '0'
             Me.WriteCharRaw 120 ' 'x'
@@ -162,6 +175,7 @@ Namespace Drivers
 
         ' Write a formatted string (printf-style %s, %u, %d, %x, %c, %%)
         Public Unsafe Sub PrintF(ByVal fmt As Pointer To Byte, ParamArray args() As Pointer To Int64)
+            If Not isPortAvailable Then Exit Sub
             Dim buffer(256) As Byte
             Dim bufPtr As Pointer To Byte = CPtr(Pointer To Byte, buffer)
             SprintF bufPtr, 256, fmt, args

@@ -209,15 +209,18 @@ Module Arch.X86_64.Apic
         LapicWrite LAPIC_LVT_ERROR,   &H10000
     End Sub
 
-    ' Initialize Local APIC Periodic Timer (Vector 32)
+    ''
+    ' @brief Initialize Local APIC Periodic Timer (Vector 32).
+    '        Matches PRK apic_timer_init(): divide by 16, periodic vector 32, count 0x100000.
+    ''
     Public Unsafe Sub InitializeTimer(ByVal divideVal As UInt32, ByVal initCount As UInt32)
-        ' Set timer divide configuration
+        ' Set timer divide configuration (3 = divide by 16)
         LapicWrite LAPIC_TIMER_DIV, divideVal
 
         ' Vector 32 (0x20) in periodic mode (bit 17 = 0x20000)
         LapicWrite LAPIC_TIMER_LVT, 32 Or &H20000
 
-        ' Initial tick counter
+        ' Initial tick counter (0x100000 matches PRK kernel/apic.c)
         LapicWrite LAPIC_TIMER_INIT, initCount
     End Sub
 

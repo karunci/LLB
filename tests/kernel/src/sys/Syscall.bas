@@ -13,8 +13,20 @@ Use Sched.Scheduler As SchedEngine
 Use Mem.SharedMemoryManager As Shmem
 Use Drivers.Framebuffer As FbDriver
 Use Mem.VirtualMemoryManager As VmmEngine
+Use Drivers.Mouse As MouseDriver
+Use Drivers.Keyboard As Kbd
 
 Namespace Sys
+
+    <Packed>
+    Public Structure MouseState
+        Public X As Int32
+        Public Y As Int32
+        Public Buttons As Byte
+        Public Reserved1 As Byte
+        Public Reserved2 As Byte
+        Public Reserved3 As Byte
+    End Structure
 
     <Packed>
     Public Structure DisplayInfo
@@ -33,6 +45,7 @@ Namespace Sys
         Public Const SYS_PROCESS_SLEEP   As UInt64 = 3
         Public Const SYS_PROCESS_GETPID  As UInt64 = 6
         Public Const SYS_PROCESS_EXIT    As UInt64 = 16
+        Public Const SYS_GET_MOUSE       As UInt64 = 19
         Public Const SYS_MEM_ALLOC_PAGES As UInt64 = 26
         Public Const SYS_TIME_UPTIME     As UInt64 = 28
         Public Const SYS_SYSTEM_INFO     As UInt64 = 33
@@ -172,6 +185,22 @@ Namespace Sys
                 Case SYS_PROCESS_EXIT
                     SchedEngine.ExitCurrentTask CType(UInt32, arg1)
                     Dispatch = 0
+
+                Case SYS_GET_MOUSE
+                    ' arg1 = userPtr (Pointer To MouseState, 12 bytes)
+                    If ValidateUserBuffer(arg1, SizeOf(MouseState)) Then
+                        Dim mPtr As Pointer To MouseState = CPtr(Pointer To MouseState, arg1)
+                        Dim mx As Int32 = 0
+                        Dim my As Int32 = 0
+                        Dim mb As Byte = 0
+                        MouseDriver.GetState mx, my, mb
+                        mPtr.X = mx
+                        mPtr.Y = my
+                        mPtr.Buttons = mb
+                        Dispatch = 0
+                    Else
+                        Dispatch = CType(UInt64, -1)
+                    End If
 
                 Case SYS_TIME_UPTIME
                     Dispatch = SchedEngine.GetUptime()

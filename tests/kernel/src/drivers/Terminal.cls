@@ -39,6 +39,7 @@ Namespace Drivers
         Private cursorX As UInt32
         Private cursorY As UInt32
         Private currentAttribute As Byte
+        Private isAvailable As Boolean
 
         ' Helper to pack foreground and background colors into a single VGA attribute byte
         Private Function MakeAttribute(ByVal fg As Byte, ByVal bg As Byte) As Byte
@@ -50,12 +51,25 @@ Namespace Drivers
             MakeVgaEntry = CType(UInt16, ch) Or (CType(UInt16, attr) LShift 8)
         End Function
 
-        ' Initialize Terminal state and clear screen
-        Public Unsafe Sub Initialize(Optional ByVal fg As Byte = COLOR_WHITE, Optional ByVal bg As Byte = COLOR_BLACK)
+        ' Initialize Terminal state and clear screen if hardware VGA text mode is available
+        Public Unsafe Sub Initialize(Optional ByVal available As Boolean = True, Optional ByVal fg As Byte = COLOR_WHITE, Optional ByVal bg As Byte = COLOR_BLACK)
+            isAvailable = available
             cursorX = 0
             cursorY = 0
             currentAttribute = MakeAttribute(fg, bg)
-            Me.Clear
+            If isAvailable Then
+                Me.Clear
+            End If
+        End Sub
+
+        ' Check if VGA text mode buffer (&HB8000) is physically present and mapped
+        Public Function IsAvailable() As Boolean
+            IsAvailable = isAvailable
+        End Function
+
+        ' Explicitly enable or disable VGA text mode rendering
+        Public Sub SetAvailable(ByVal avail As Boolean)
+            isAvailable = avail
         End Sub
 
         ' Set active foreground and background color for subsequent text output
@@ -65,6 +79,7 @@ Namespace Drivers
 
         ' Clear the entire screen with the active background color and reset cursor
         Public Unsafe Sub Clear()
+            If Not isAvailable Then Exit Sub
             Dim vgaBuf As Volatile Pointer To UInt16
             vgaBuf = CPtr(Volatile Pointer To UInt16, VGA_MEMORY_ADDRESS)
 
@@ -82,6 +97,7 @@ Namespace Drivers
 
         ' Scroll the screen up by one row when the cursor reaches the bottom line
         Public Unsafe Private Sub Scroll()
+            If Not isAvailable Then Exit Sub
             Dim vgaBuf As Volatile Pointer To UInt16
             vgaBuf = CPtr(Volatile Pointer To UInt16, VGA_MEMORY_ADDRESS)
 
@@ -114,6 +130,7 @@ Namespace Drivers
 
         ' Write a single character to the terminal
         Public Unsafe Sub WriteChar(ByVal ch As Byte)
+            If Not isAvailable Then Exit Sub
             Dim vgaBuf As Volatile Pointer To UInt16
             vgaBuf = CPtr(Volatile Pointer To UInt16, VGA_MEMORY_ADDRESS)
 
@@ -154,6 +171,7 @@ Namespace Drivers
 
         ' Write a null-terminated string to the terminal
         Public Unsafe Sub WriteString(ByVal strPtr As Pointer To Byte)
+            If Not isAvailable Or strPtr = 0 Then Exit Sub
             Dim i As UInt64
             i = 0
             Do While strPtr(i) <> 0
@@ -164,12 +182,14 @@ Namespace Drivers
 
         ' Write a line of text followed by a newline character
         Public Unsafe Sub WriteLine(ByVal strPtr As Pointer To Byte)
+            If Not isAvailable Then Exit Sub
             Me.WriteString strPtr
             Me.WriteChar 10 ' Newline
         End Sub
 
         ' Render an unsigned 64-bit integer as a Hexadecimal string (e.g., 0x00200000)
         Public Unsafe Sub WriteHex(ByVal value As UInt64)
+            If Not isAvailable Then Exit Sub
             Me.WriteString CPtr(Pointer To Byte, "0x")
             
             If value = 0 Then
@@ -199,6 +219,7 @@ Namespace Drivers
 
         ' Render an unsigned 64-bit integer as a base-10 decimal string
         Public Unsafe Sub WriteUInt(ByVal value As UInt64)
+            If Not isAvailable Then Exit Sub
             If value = 0 Then
                 Me.WriteChar 48 ' ASCII '0'
                 Exit Sub
@@ -223,6 +244,7 @@ Namespace Drivers
 
         ' Write a formatted string (printf-style %s, %u, %d, %x, %c, %%)
         Public Unsafe Sub PrintF(ByVal fmt As Pointer To Byte, ParamArray args() As Pointer To Int64)
+            If Not isAvailable Then Exit Sub
             Dim buffer(256) As Byte
             Dim bufPtr As Pointer To Byte = CPtr(Pointer To Byte, buffer)
             SprintF bufPtr, 256, fmt, args

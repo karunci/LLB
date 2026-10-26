@@ -187,7 +187,7 @@ Namespace Mem
             pdTable = CPtr(Volatile Pointer To UInt64, pdPhys)
 
             Dim ptPhys As UInt64 = 0
-            If (pdTable(l2Idx) And VmmFlags.PTE_PRESENT) = 0 Then
+            If (pdTable(l2Idx) And VmmFlags.PTE_PRESENT) = 0 Or (pdTable(l2Idx) And VmmFlags.PTE_HUGE) <> 0 Then
                 ptPhys = Me.AllocTableFrame()
                 If ptPhys = 0 Then
                     MapPage = False

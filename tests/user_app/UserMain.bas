@@ -30,11 +30,9 @@ Module UserApplication
     Public Structure AxonPacket
         Public Sequence      As UInt64
         Public PacketType    As UInt32
-        Public Flags         As UInt32
+        Public PayloadLength As UInt32
         Public SourceNode    As UInt64
         Public TargetNode    As UInt64
-        Public PayloadLength As UInt32
-        Public Reserved      As UInt32
         Public Payload(255)  As Byte
     End Structure
 
@@ -193,7 +191,6 @@ Module UserApplication
         Dim pkt As AxonPacket
         pkt.Sequence = 101
         pkt.PacketType = 1
-        pkt.Flags = 0
         pkt.SourceNode = userNodeId
         pkt.TargetNode = 1000
         pkt.PayloadLength = 5
@@ -299,7 +296,6 @@ Module UserApplication
                 Dim vfsReq As AxonPacket
                 vfsReq.Sequence = 201
                 vfsReq.PacketType = 11 ' VFS_CMD_STAT
-                vfsReq.Flags = 0
                 vfsReq.SourceNode = userNodeId
                 vfsReq.TargetNode = vfsTargetId
                 Dim testPath As Pointer To Byte = CPtr(Pointer To Byte, "/system/bin/genesis.bax")
@@ -313,18 +309,12 @@ Module UserApplication
                 Syscall2 SYS_SYNAPSE_PUSH, vfsSynId, CType(UInt64, @vfsReq)
 
                 Dim vfsResp As AxonPacket
-                Dim vLoop As UInt32 = 0
-                While vLoop < 10
-                    If Syscall3(SYS_SYNAPSE_POP, userNodeId, CType(UInt64, @vfsResp), 0) = 1 Then
-                        If vfsResp.PacketType = 100 Then ' VFS_RESP_OK
-                            Dim pSize As Pointer To UInt32 = CPtr(Pointer To UInt32, @vfsResp.Payload(4))
-                            PrintMessageWithUInt "[USER-APP] VFS Metadata verified: '/system/bin/genesis.bax' (Size: ", CType(UInt64, pSize(0)), " bytes)\r\n"
-                        End If
-                        Exit While
+                If Syscall3(SYS_SYNAPSE_POP, userNodeId, CType(UInt64, @vfsResp), 1) = 1 Then
+                    If vfsResp.PacketType = 100 Then ' VFS_RESP_OK
+                        Dim pSize As Pointer To UInt32 = CPtr(Pointer To UInt32, @vfsResp.Payload(4))
+                        PrintMessageWithUInt CPtr(Pointer To Byte, "[USER-APP] VFS Metadata verified: '/system/bin/genesis.bax' (Size: "), CType(UInt64, pSize(0)), CPtr(Pointer To Byte, " bytes)\r\n")
                     End If
-                    Syscall1 SYS_PROCESS_SLEEP, 10
-                    vLoop = vLoop + 1
-                Wend
+                End If
             End If
         End If
 
@@ -349,7 +339,6 @@ Module UserApplication
                 Dim devReq As AxonPacket
                 devReq.Sequence = 202
                 devReq.PacketType = 31 ' DEV_CMD_QUERY
-                devReq.Flags = 0
                 devReq.SourceNode = userNodeId
                 devReq.TargetNode = devTargetId
                 Dim devNamePtr As Pointer To Byte = CPtr(Pointer To Byte, "pci.disp.lfb")
@@ -363,18 +352,12 @@ Module UserApplication
                 Syscall2 SYS_SYNAPSE_PUSH, devSynId, CType(UInt64, @devReq)
 
                 Dim devResp As AxonPacket
-                Dim dLoop As UInt32 = 0
-                While dLoop < 10
-                    If Syscall3(SYS_SYNAPSE_POP, userNodeId, CType(UInt64, @devResp), 0) = 1 Then
-                        If devResp.PacketType = 300 Then ' DEV_RESP_OK
-                            Dim pBase As Pointer To UInt64 = CPtr(Pointer To UInt64, @devResp.Payload(16))
-                            PrintMessageWithUInt "[USER-APP] Device Manager verified: 'pci.disp.lfb' (Aperture: 0x", pBase(0), ")\r\n"
-                        End If
-                        Exit While
+                If Syscall3(SYS_SYNAPSE_POP, userNodeId, CType(UInt64, @devResp), 1) = 1 Then
+                    If devResp.PacketType = 300 Then ' DEV_RESP_OK
+                        Dim pBase As Pointer To UInt64 = CPtr(Pointer To UInt64, @devResp.Payload(16))
+                        PrintMessageWithUInt CPtr(Pointer To Byte, "[USER-APP] Device Manager verified: 'pci.disp.lfb' (Aperture: 0x"), pBase(0), CPtr(Pointer To Byte, ")\r\n")
                     End If
-                    Syscall1 SYS_PROCESS_SLEEP, 10
-                    dLoop = dLoop + 1
-                Wend
+                End If
             End If
         End If
 
@@ -402,7 +385,6 @@ Module UserApplication
                 Dim plexReq As AxonPacket
                 plexReq.Sequence = 203
                 plexReq.PacketType = 40 ' PLEXUS_CMD_STATUS
-                plexReq.Flags = 0
                 plexReq.SourceNode = userNodeId
                 plexReq.TargetNode = plexTargetId
                 Dim srvCompName As Pointer To Byte = CPtr(Pointer To Byte, "srv.compositor")
@@ -416,22 +398,16 @@ Module UserApplication
                 Syscall2 SYS_SYNAPSE_PUSH, plexSynId, CType(UInt64, @plexReq)
 
                 Dim plexResp As AxonPacket
-                Dim pLoop As UInt32 = 0
-                While pLoop < 10
-                    If Syscall3(SYS_SYNAPSE_POP, userNodeId, CType(UInt64, @plexResp), 0) = 1 Then
-                        If plexResp.PacketType = 400 Then ' PLEXUS_RESP_OK
-                            PrintString "[USER-APP] Plexus Supervisor verified: 'srv.compositor' is supervised & active\r\n"
-                        End If
-                        Exit While
+                If Syscall3(SYS_SYNAPSE_POP, userNodeId, CType(UInt64, @plexResp), 1) = 1 Then
+                    If plexResp.PacketType = 400 Then ' PLEXUS_RESP_OK
+                        PrintString CPtr(Pointer To Byte, "[USER-APP] Plexus Supervisor verified: 'srv.compositor' is supervised & active\r\n")
                     End If
-                    Syscall1 SYS_PROCESS_SLEEP, 10
-                    pLoop = pLoop + 1
-                Wend
+                End If
             End If
         End If
 
-        PrintString "[BRT0] user_main completed successfully. Returning exit code 0.\r\n"
-        PrintString "[BRT0] =======================================================\r\n"
+        PrintString CPtr(Pointer To Byte, "[BRT0] user_main completed successfully. Returning exit code 0.\r\n")
+        PrintString CPtr(Pointer To Byte, "[BRT0] =======================================================\r\n")
 
         user_main = 0
     End Function

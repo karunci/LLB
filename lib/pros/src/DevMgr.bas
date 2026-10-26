@@ -69,6 +69,8 @@ Namespace Pros.Devices
             Dim reqPkt As Pros.Nodes.AxonPacket
             reqPkt.Sequence = 1
             reqPkt.PacketType = DEV_CMD_QUERY
+            reqPkt.SourceNode = clientNodeId
+            reqPkt.TargetNode = devMgrId
 
             Dim pIdx As UInt32 = 0
             While pIdx < 31 And namePtr(pIdx) <> 0

@@ -76,8 +76,19 @@ Namespace Pros.Nodes
         ' @return True if packet received, False if empty.
         ''
         Public Unsafe Function Pop(ByVal synId As UInt64, ByRef pkt As AxonPacket) As Boolean
-            Dim ret As UInt64 = Pros.Sys.RawSyscall.Call2(Pros.Sys.SYS_SYNAPSE_POP, synId, CType(UInt64, AddressOf pkt))
+            Dim ret As UInt64 = Pros.Sys.RawSyscall.Call3(Pros.Sys.SYS_SYNAPSE_POP, synId, CType(UInt64, AddressOf pkt), 0)
             Pop = (ret = 1)
+        End Function
+
+        ''
+        ' @brief Block and receive an Axonal Data Plane packet from a Synapse channel or Node.
+        ' @param synId Active synapse channel handle or node ID.
+        ' @param pkt Reference to packet structure to populate.
+        ' @return True if packet received.
+        ''
+        Public Unsafe Function PopWait(ByVal synId As UInt64, ByRef pkt As AxonPacket) As Boolean
+            Dim ret As UInt64 = Pros.Sys.RawSyscall.Call3(Pros.Sys.SYS_SYNAPSE_POP, synId, CType(UInt64, AddressOf pkt), 1)
+            PopWait = (ret = 1)
         End Function
 
     End Module

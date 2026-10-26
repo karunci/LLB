@@ -73,6 +73,8 @@ Namespace Pros.Storage
             Dim reqPkt As Pros.Nodes.AxonPacket
             reqPkt.Sequence = 1
             reqPkt.PacketType = VFS_CMD_STAT
+            reqPkt.SourceNode = clientNodeId
+            reqPkt.TargetNode = vfsNodeId
 
             Dim pIdx As UInt32 = 0
             While pIdx < 31 And pathPtr(pIdx) <> 0

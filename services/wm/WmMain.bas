@@ -135,7 +135,7 @@ Module WmMain
 
         Do
             ' Service incoming window manager requests from compositor / client applications
-            If SynapsePop(wmNodeId, reqPkt) Then
+            If SynapsePopWait(wmNodeId, reqPkt) Then
                 If reqPkt.PacketType = WM_CMD_SET_FOCUS Then
                     Dim pWinId As Pointer To UInt32 = CPtr(Pointer To UInt32, @reqPkt.Payload(0))
                     Dim ok As Boolean = SetFocus(pWinId(0))
@@ -156,8 +156,6 @@ Module WmMain
                     wmReqCount = wmReqCount + 1
                 End If
             End If
-
-            ProcessSleep 50
         Loop
 
         user_main = 0

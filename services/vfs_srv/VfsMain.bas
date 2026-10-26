@@ -320,8 +320,9 @@ Module VfsMain
         Dim reqCount As UInt64 = 0
 
         Do
-            ' Poll for incoming requests directed to srv.vfs node
-            If SynapsePop(vfsNodeId, reqPkt) Then
+            ' Block on incoming requests directed to srv.vfs node (Zero idle CPU)
+            If SynapsePopWait(vfsNodeId, reqPkt) Then
+                ConsolePrintWithUInt "[VFS] Received request type: ", CType(UInt64, reqPkt.PacketType), "\r\n"
                 If reqPkt.PacketType = VFS_CMD_LOOKUP Or reqPkt.PacketType = VFS_CMD_STAT Then
                     Dim nodeIdx As Int32 = ResolvePath(@reqPkt.Payload(0))
                     respPkt.Sequence = reqCount
@@ -350,8 +351,6 @@ Module VfsMain
                     reqCount = reqCount + 1
                 End If
             End If
-
-            ProcessSleep 50
         Loop
 
         user_main = 0

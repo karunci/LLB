@@ -55,6 +55,8 @@ Namespace Pros.Gui
             Dim reqPkt As Pros.Nodes.AxonPacket
             reqPkt.Sequence = 1
             reqPkt.PacketType = WM_CMD_SET_FOCUS
+            reqPkt.SourceNode = clientNodeId
+            reqPkt.TargetNode = wmNodeId
             Dim pWinId As Pointer To UInt32 = CPtr(Pointer To UInt32, @reqPkt.Payload(0))
             pWinId(0) = winId
             reqPkt.PayloadLength = 4

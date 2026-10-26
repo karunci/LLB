@@ -59,6 +59,8 @@ Namespace Pros.Services
             Dim reqPkt As Pros.Nodes.AxonPacket
             reqPkt.Sequence = 1
             reqPkt.PacketType = PLEXUS_CMD_STATUS
+            reqPkt.SourceNode = clientNodeId
+            reqPkt.TargetNode = mgrNodeId
 
             Dim pIdx As UInt32 = 0
             While pIdx < 31 And serviceName(pIdx) <> 0

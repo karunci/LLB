@@ -125,7 +125,7 @@ Module PlexusMgrMain
         Dim pReqCount As UInt64 = 0
 
         Do
-            If SynapsePop(mgrNodeId, reqPkt) Then
+            If SynapsePopWait(mgrNodeId, reqPkt) Then
                 If reqPkt.PacketType = PLEXUS_CMD_STATUS Then
                     Dim targetName As Pointer To Byte = @reqPkt.Payload(0)
                     Dim foundIdx As Int32 = -1
@@ -162,8 +162,6 @@ Module PlexusMgrMain
                     pReqCount = pReqCount + 1
                 End If
             End If
-
-            ProcessSleep 50
         Loop
 
         user_main = 0

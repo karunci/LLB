@@ -134,7 +134,7 @@ Module DevMgrMain
         Dim devReqCount As UInt64 = 0
 
         Do
-            If SynapsePop(devNodeId, reqPkt) Then
+            If SynapsePopWait(devNodeId, reqPkt) Then
                 If reqPkt.PacketType = DEV_CMD_QUERY Then
                     Dim targetName As Pointer To Byte = @reqPkt.Payload(0)
                     Dim foundIdx As Int32 = -1
@@ -175,8 +175,6 @@ Module DevMgrMain
                     devReqCount = devReqCount + 1
                 End If
             End If
-
-            ProcessSleep 50
         Loop
 
         user_main = 0

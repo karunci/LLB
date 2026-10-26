@@ -118,6 +118,7 @@ Module ProsApi
     Public Declare Function SynapseConnect Lib "libpros" Alias "Pros_Nodes_NodeRegistry_Connect" (ByVal srcNodeId As UInt64, ByVal targetNodeId As UInt64, ByVal caps As UInt32) As UInt64
     Public Declare Function SynapsePush Lib "libpros" Alias "Pros_Nodes_NodeRegistry_Push" (ByVal synId As UInt64, ByRef pkt As AxonPacket) As Boolean
     Public Declare Function SynapsePop Lib "libpros" Alias "Pros_Nodes_NodeRegistry_Pop" (ByVal synId As UInt64, ByRef pkt As AxonPacket) As Boolean
+    Public Declare Function SynapsePopWait Lib "libpros" Alias "Pros_Nodes_NodeRegistry_PopWait" (ByVal synId As UInt64, ByRef pkt As AxonPacket) As Boolean
 
     ' Zero-Copy Shared Memory
     Public Declare Function ShmemCreate Lib "libpros" Alias "Pros_Memory_Shmem_Create" (ByVal sizeBytes As UInt64, ByVal targetVaddr As UInt64) As UInt64

@@ -686,6 +686,26 @@ tests/kernel/
 - [x] **Mandatory Revision Bumping:**
   - Bumped build revision to `REV: 2026.10.26-r24` in kernel boot banner, serial logs, top desktop menu bar, and system monitor window.
 
+---
+
+## Phase 19: Dual Multiboot1/2 Bare-Metal Restoration & Clean EOI Dispatch Stabilization (`REV: 2026.10.26-r25`)
+
+- [x] **Dual Multiboot 1 & 2 Header Restoration:**
+  - Restored the 32-bit Multiboot 1 header (`0x1BADB002`) with `1024x768x32` linear framebuffer request alongside the Multiboot 2 header in `tests/kernel/src/arch/x86_64/boot.S`.
+  - Updated `tests/kernel/scripts/build_iso.sh` with dual GRUB boot menu entries:
+    - Entry 0: `multiboot /boot/kernel.elf` (Standard / Bare-Metal Safe), verified to boot cleanly across physical PC hardware, Ventoy, and legacy/CSM BIOS.
+    - Entry 1: `multiboot2 /boot/kernel.elf` (Native UEFI GOP).
+  - Validates both `grub-file --is-x86-multiboot` and `--is-x86-multiboot2` in the ISO generation pipeline.
+- [x] **Stack-Safe 32-to-64 Bit Transition (Eliminated Uninitialized BSS Corruption):**
+  - Eliminated `.bss` storage variables (`boot_magic`, `boot_mbi`) in `boot.S`, which left upper 32 bits dirty on bare metal.
+  - Replaced with stack push/pop: `_start` pushes `%ebx` and `%eax` onto the temporary stack, enables paging, loads 64-bit GDT, pops into `%edi` and `%esi` (which hardware-zeroes bits 63:32), and executes `push $0x08; push $long_mode_entry; lret`.
+- [x] **Interrupt Dispatch Stabilization (Eliminated VirtualBox Boot Hang & VMM 82% Load):**
+  - Restored single clean EOI dispatch (`If vector >= 32 Then Arch.X86_64.Apic.SendEoi`) at the conclusion of `IsrDispatcher` in `tests/kernel/src/arch/x86_64/Idt.bas`.
+  - Removed early EOI dispatch on Vector 32, which caused re-entrant interrupt storms on periodic timers and froze VirtualBox on the boot splash.
+- [x] **Mandatory Revision Bumping:**
+  - Bumped build revision to `REV: 2026.10.26-r25` in kernel boot banner, serial logs, top desktop menu bar, and system monitor window.
+
+
 
 
 

@@ -93,31 +93,15 @@ Module Arch.Idt
         Dim vector As UInt64
         vector = frame.Vector
 
-        ' For timer interrupts (Vector 32) which trigger preemptive rescheduling and context switches,
-        ' send EOI to the Local APIC immediately before the handler executes. This ensures the APIC
-        ' In-Service Register (ISR) bit and Processor Priority Register (PPR) are cleared, preventing
-        ' keyboard (Vector 33) and mouse (Vector 44) interrupts from being hardware-blocked!
-        If vector = 32 Then
-            Arch.X86_64.Apic.SendEoi
-        End If
-
         ' Check if a handler is registered for this vector
         If isrHandlers(vector) <> CPtr(Pointer To Byte, 0) Then
             Dim handlerFunc As InterruptHandler
             handlerFunc = CType(InterruptHandler, isrHandlers(vector))
             handlerFunc(frame)
-        Else
-            ' Unhandled Interrupt Warning output to VGA Memory
-            Dim vga As Pointer To UInt16
-            vga = CPtr(Pointer To UInt16, &HB8000)
-            
-            ' Render "UNHANDLED INT" indicator at top right corner
-            vga(78) = CType(UInt16, 85) Or CType(UInt16, &H4F00) ' 'U' in Red
-            vga(79) = CType(UInt16, 73) Or CType(UInt16, &H4F00) ' 'I' in Red
         End If
 
-        ' Send End of Interrupt (EOI) for all other hardware interrupts (Vectors > 32)
-        If vector > 32 Then
+        ' Send End of Interrupt (EOI) for all hardware interrupts (Vectors >= 32)
+        If vector >= 32 Then
             Arch.X86_64.Apic.SendEoi
         End If
     End Sub

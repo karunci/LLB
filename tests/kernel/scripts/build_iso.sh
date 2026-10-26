@@ -63,15 +63,17 @@ fi
 set gfxmode=1024x768x32,1920x1080x32,1366x768x32,1280x720x32,auto
 set gfxpayload=1024x768x32,auto,keep
 
-menuentry "Low-Level Basic Kernel (PROS/LLB) [1024x768 Standard Desktop]" {
+menuentry "Low-Level Basic Kernel (PROS/LLB) [Multiboot 1 - Standard / Bare-Metal Safe]" {
+    insmod part_msdos
+    insmod iso9660
     set gfxpayload=1024x768x32,auto,keep
-    multiboot2 /boot/kernel.elf
-    module2 /boot/initrd.tar "initrd"
+    multiboot /boot/kernel.elf
+    module /boot/initrd.tar "initrd"
     boot
 }
 
-menuentry "Low-Level Basic Kernel (PROS/LLB) [Native UEFI GOP Resolution]" {
-    set gfxpayload=keep
+menuentry "Low-Level Basic Kernel (PROS/LLB) [Multiboot 2 - Native UEFI GOP]" {
+    set gfxpayload=1024x768x32,auto,keep
     multiboot2 /boot/kernel.elf
     module2 /boot/initrd.tar "initrd"
     boot
@@ -79,6 +81,7 @@ menuentry "Low-Level Basic Kernel (PROS/LLB) [Native UEFI GOP Resolution]" {
 EOF
 
 echo "[+] Validating Multiboot headers via proot-distro grub-file..."
+proot-distro login ubuntu --minimal --shared-tmp -b "$HOME:$HOME" -- grub-file --is-x86-multiboot "${ISO_DIR}/boot/kernel.elf"
 proot-distro login ubuntu --minimal --shared-tmp -b "$HOME:$HOME" -- grub-file --is-x86-multiboot2 "${ISO_DIR}/boot/kernel.elf"
 
 echo "[+] Generating Hybrid BIOS/UEFI bootable ISO with grub-mkrescue..."

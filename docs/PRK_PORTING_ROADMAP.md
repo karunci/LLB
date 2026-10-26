@@ -702,8 +702,25 @@ tests/kernel/
 - [x] **Interrupt Dispatch Stabilization (Eliminated VirtualBox Boot Hang & VMM 82% Load):**
   - Restored single clean EOI dispatch (`If vector >= 32 Then Arch.X86_64.Apic.SendEoi`) at the conclusion of `IsrDispatcher` in `tests/kernel/src/arch/x86_64/Idt.bas`.
   - Removed early EOI dispatch on Vector 32, which caused re-entrant interrupt storms on periodic timers and froze VirtualBox on the boot splash.
+---
+
+## Phase 20: Unified PS/2 Failsafe Dispatch Restoration & UEFI Default GRUB Invariant (`REV: 2026.10.26-r26`)
+
+- [x] **Restoration of Proven r18 Unified PS/2 Controller Dispatcher (`DispatchPs2`):**
+  - Traced exact session transcript history back to r18 where VirtualBox mouse movement was fully functional at ~60 FPS.
+  - In `tests/kernel/src/KernelMain.bas`, re-wired `DispatchPs2` into `OnTimerInterrupt` (Vector 32 / IRQ 0), `OnKeyboardInterrupt` (Vector 33 / IRQ 1), and `OnMouseInterrupt` (Vector 44 / IRQ 12).
+  - Every 10ms timer tick and every hardware interrupt edge automatically checks port `0x64` status. If auxiliary mouse data is present (bit 5 set), it dispatches to `MouseDriver.HandleInterrupt`; if keyboard scancode is present (bit 5 clear), it dispatches to `Kbd.HandleInterrupt`.
+- [x] **Restoration of Hypervisor PS/2 Failsafe Drain in `Syscall.bas` (`SYS_GET_MOUSE`):**
+  - In `tests/kernel/src/sys/Syscall.bas`, restored the loop draining pending 8042 port `0x60` data before reading cursor coordinates.
+  - Resolves VirtualBox mouse paralysis: when VirtualBox delivers mouse packets in bursts and the edge-triggered I/O APIC misses an interrupt edge, the unread byte in port 0x60 previously kept the IRQ line asserted, preventing any further interrupts from ever firing. Draining the controller on every `SYS_GET_MOUSE` syscall guarantees that VirtualBox FIFO never deadlocks.
+- [x] **Dual Multiboot Header Re-alignment & Native ELF Loading:**
+  - In `tests/kernel/src/arch/x86_64/boot.S`, placed the 64-bit Multiboot 2 header at offset 0 (8-byte aligned at `0x100000`).
+  - Placed the 32-bit Multiboot 1 header immediately following, using standard ELF native flags (`0x00000007`: Page Align + Memory Info + Linear Graphics) and completely eliminating the broken `AOUT_KLUDGE` fields (`load_end_addr = 0, bss_end_addr = 0`) that corrupted bare-metal boots.
+- [x] **UEFI Default GRUB Boot Invariant (`workspace-build-tools.md`):**
+  - In `tests/kernel/scripts/build_iso.sh`, configured Entry 0 as `multiboot2 /boot/kernel.elf` (`Native UEFI GOP`), ensuring modern 64-bit UEFI hardware (Intel Core i5-10310U) executes native Multiboot 2 by default without failing on legacy 32-bit BIOS commands.
+  - Provided Entry 1 (`multiboot /boot/kernel.elf`) for legacy BIOS and CSM environments.
 - [x] **Mandatory Revision Bumping:**
-  - Bumped build revision to `REV: 2026.10.26-r25` in kernel boot banner, serial logs, top desktop menu bar, and system monitor window.
+  - Bumped build revision to `REV: 2026.10.26-r26` across kernel boot banner, serial logs, top desktop menu bar, and system monitor window.
 
 
 

@@ -547,7 +547,7 @@ Module CompositorMain
 
         DrawText5x7 frontSurf, 16, 10, CPtr(Pointer To Byte, "PROS WORKSTATION  |  APPLICATIONS  NODES  SERVICES"), &HFFECEFF4
         RenderMouseCoordinates
-        DrawText5x7 frontSurf, CType(Int32, dispInfo.Width) - 340, 10, CPtr(Pointer To Byte, "REV: 2026.10.26-r25"), &HFF88C0D0
+        DrawText5x7 frontSurf, CType(Int32, dispInfo.Width) - 340, 10, CPtr(Pointer To Byte, "REV: 2026.10.26-r26"), &HFF88C0D0
         DrawText5x7 frontSurf, CType(Int32, dispInfo.Width) - 170, 10, CPtr(Pointer To Byte, "SMP 4 CORES  ONLINE"), &HFFA3BE8C
 
         ' 3. Render Floating Desktop Window: "PROS System Monitor"
@@ -579,7 +579,7 @@ Module CompositorMain
         ' Card 1: Microkernel Architecture
         FillRect frontSurf, wx + 16, wy + 40, ww - 32, 42, &HFF1E222A
         FillRect frontSurf, wx + 16, wy + 40, 3, 42, &HFF81A1C1
-        DrawText5x7 frontSurf, wx + 26, wy + 48, CPtr(Pointer To Byte, "KERNEL : PRK-LLB MICROKERNEL [REV: 2026.10.26-r25]"), &HFF81A1C1
+        DrawText5x7 frontSurf, wx + 26, wy + 48, CPtr(Pointer To Byte, "KERNEL : PRK-LLB MICROKERNEL [REV: 2026.10.26-r26]"), &HFF81A1C1
         DrawText5x7 frontSurf, wx + 26, wy + 64, CPtr(Pointer To Byte, "MODEL  : DUAL-PLANE NEURAL SYNAPSE ROUTING"), &HFFD8DEE9
 
         ' Card 2: Compositor Status
@@ -759,14 +759,22 @@ Module CompositorMain
                 lastFpsTime = nowTime
             End If
 
-            ' Adaptive Event-Driven Pacing:
-            ' Maintain a 200ms burst lease whenever interactive motion is detected.
-            ' During the active window, yield cooperatively (ProcessYield) for immediate 60 FPS responsiveness.
-            ' When truly idle (>200ms without input), sleep (ProcessSleep 4) to let the CPU idle task halt (sti; hlt).
-            If nowTime < activeUntil Then
+            ' Adaptive Pacing Strategy (Proven r18 Configuration):
+            ' When mouse is actively moving: immediate ProcessYield for zero-latency smooth 60 FPS tracking.
+            ' When idle and waiting for next animation frame: brief ProcessSleep 1 allows CPU core to halt (sti; hlt).
+            If mouseMoved Then
                 ProcessYield
             Else
-                ProcessSleep 4
+                Dim waitRemaining As UInt64 = 0
+                If nextAnimTime > nowTime Then
+                    waitRemaining = nextAnimTime - nowTime
+                End If
+
+                If waitRemaining >= 15 Then
+                    ProcessSleep 1
+                Else
+                    ProcessYield
+                End If
             End If
         Loop
 

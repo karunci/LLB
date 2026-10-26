@@ -187,6 +187,19 @@ Namespace Sys
                     Dispatch = 0
 
                 Case SYS_GET_MOUSE
+                    ' Hypervisor failsafe: drain pending PS/2 keyboard/mouse data
+                    Dim ps2Limit As UInt32 = 16
+                    While ps2Limit > 0
+                        Dim ps2Status As Byte = Arch.X86_64.PortIO.InB(&H64)
+                        If (ps2Status And &H01) = 0 Then Exit While
+                        If (ps2Status And &H20) <> 0 Then
+                            MouseDriver.HandleInterrupt
+                        Else
+                            Kbd.HandleInterrupt
+                        End If
+                        ps2Limit = ps2Limit - 1
+                    Wend
+
                     ' arg1 = userPtr (Pointer To MouseState, 12 bytes)
                     If ValidateUserBuffer(arg1, SizeOf(MouseState)) Then
                         Dim mPtr As Pointer To MouseState = CPtr(Pointer To MouseState, arg1)

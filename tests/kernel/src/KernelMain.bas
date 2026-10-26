@@ -63,6 +63,9 @@ Module KernelMain
     ' @brief System Timer Interrupt Service Routine (Vector 32 / IRQ 0).
     ''
     Public Unsafe Sub OnTimerInterrupt(ByRef frame As Arch.Idt.InterruptFrame)
+        ' Hypervisor failsafe: drain pending PS/2 keyboard/mouse data
+        DispatchPs2
+
         SchedEngine.OnTimerTick 10
     End Sub
 
@@ -70,21 +73,21 @@ Module KernelMain
     ' @brief PS/2 Keyboard Interrupt Service Routine (Vector 33 / IRQ 1).
     ''
     Public Unsafe Sub OnKeyboardInterrupt(ByRef frame As Arch.Idt.InterruptFrame)
-        Kbd.HandleInterrupt
+        DispatchPs2
     End Sub
 
     ''
     ' @brief PS/2 Mouse Interrupt Service Routine (Vector 44 / IRQ 12).
     ''
     Public Unsafe Sub OnMouseInterrupt(ByRef frame As Arch.Idt.InterruptFrame)
-        MouseDriver.HandleInterrupt
+        DispatchPs2
     End Sub
 
     Public Unsafe Sub KernelEntry(ByVal magic As UInt32, ByVal mbAddress As Pointer To Byte)
         ' Initialize COM1 line control & Serial UART driver with hardware probing
         Serial.Initialize
         If Serial.IsAvailable() Then
-            Serial.PrintF "\r\n[PRK] Booting Low-Level Basic Kernel [REV: 2026.10.26-r25]!\r\n"
+            Serial.PrintF "\r\n[PRK] Booting Low-Level Basic Kernel [REV: 2026.10.26-r26]!\r\n"
             Serial.PrintF "[PRK] Multiboot Verified. Long mode active.\r\n"
             Serial.PrintF "[UART] COM1 16550 UART Online!\r\n"
         End If
@@ -109,14 +112,14 @@ Module KernelMain
         If hasVgaText Then
             Serial.PrintF "[PRK] VGA Text Mode Terminal active (&HB8000).\r\n"
             Term.WriteLine CPtr(Pointer To Byte, "=========================================")
-            Term.WriteLine CPtr(Pointer To Byte, " PRK - LOW-LEVEL BASIC [REV: 2026.10.26-r25] ")
+            Term.WriteLine CPtr(Pointer To Byte, " PRK - LOW-LEVEL BASIC [REV: 2026.10.26-r26] ")
             Term.WriteLine CPtr(Pointer To Byte, "=========================================")
             Term.WriteChar 10
         ElseIf hasGopFb Then
             Serial.PrintF "[PRK] UEFI GOP Linear Framebuffer active (0x%x).\r\n", CType(UInt32, FB.GetFramebufferPhys() And &HFFFFFFFF)
             FB.ClearScreen &H00181824
             FB.DrawString 20, 20, CPtr(Pointer To Byte, "========================================="), &H0088C0D0, 1
-            FB.DrawString 20, 36, CPtr(Pointer To Byte, " PRK - LOW-LEVEL BASIC [REV: 2026.10.26-r25] "), &H008FBCBB, 1
+            FB.DrawString 20, 36, CPtr(Pointer To Byte, " PRK - LOW-LEVEL BASIC [REV: 2026.10.26-r26] "), &H008FBCBB, 1
             FB.DrawString 20, 52, CPtr(Pointer To Byte, "========================================="), &H0088C0D0, 1
         End If
 

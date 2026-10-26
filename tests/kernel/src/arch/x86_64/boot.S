@@ -9,27 +9,6 @@
 .align 8
 
 /* ============================================================================
- * MULTIBOOT 1 HEADER (For Legacy BIOS / GRUB multiboot command / QEMU -kernel)
- * ============================================================================ */
-#define MULTIBOOT1_HEADER_MAGIC      0x1BADB002
-#define MULTIBOOT1_HEADER_FLAGS      0x00010007 /* ALIGN + MEMINFO + VIDEO + AOUT_KLUDGE */
-
-.align 4
-multiboot1_header:
-    .long MULTIBOOT1_HEADER_MAGIC
-    .long MULTIBOOT1_HEADER_FLAGS
-    .long -(MULTIBOOT1_HEADER_MAGIC + MULTIBOOT1_HEADER_FLAGS)
-    .long multiboot1_header /* header_addr */
-    .long 0x100000          /* load_addr */
-    .long 0                 /* load_end_addr */
-    .long 0                 /* bss_end_addr */
-    .long _start            /* entry_addr */
-    .long 0                 /* mode_type: 0 = linear graphics */
-    .long 1024              /* width */
-    .long 768               /* height */
-    .long 32                /* depth */
-
-/* ============================================================================
  * MULTIBOOT 2 HEADER SPECIFICATION (Offset 0 of .text._start / 1MB Physical)
  * ============================================================================ */
 #define MULTIBOOT2_HEADER_MAGIC     0xe85250d6
@@ -58,6 +37,22 @@ header_start:
     .short 0
     .long 8
 header_end:
+
+/* ============================================================================
+ * MULTIBOOT 1 HEADER (For Legacy BIOS / CSM / QEMU -kernel direct boot)
+ * ============================================================================ */
+#define MULTIBOOT1_HEADER_MAGIC      0x1BADB002
+#define MULTIBOOT1_HEADER_FLAGS      0x00000007 /* ALIGN + MEMINFO + VIDEO (Native ELF loading) */
+
+.align 4
+multiboot1_header:
+    .long MULTIBOOT1_HEADER_MAGIC
+    .long MULTIBOOT1_HEADER_FLAGS
+    .long -(MULTIBOOT1_HEADER_MAGIC + MULTIBOOT1_HEADER_FLAGS)
+    .long 0     /* mode_type: 0 = linear graphics */
+    .long 1024  /* width */
+    .long 768   /* height */
+    .long 32    /* depth */
 
 /* ============================================================================
  * 32-BIT PROTECTED MODE ENTRY POINT

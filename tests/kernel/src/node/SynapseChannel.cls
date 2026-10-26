@@ -167,8 +167,8 @@ Namespace Core.Nodes
                 waitingPid = SchedEngine.GetCurrentPid()
                 Sync.SpinlockOps.ReleaseIrqRestore channelLock, flags
 
-                ' Yield CPU to scheduler until packet producer wakes us
-                SchedEngine.BlockCurrentTask
+                ' Yield CPU to scheduler with bounded 10ms wait so lost wakeups never hang
+                SchedEngine.Sleep 10
             Loop
         End Function
 

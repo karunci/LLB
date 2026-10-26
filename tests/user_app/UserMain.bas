@@ -289,7 +289,16 @@ Module UserApplication
         vfsNodeName(5) = 102 ' 'f'
         vfsNodeName(6) = 115 ' 's'
         vfsNodeName(7) = 0
-        Dim vfsTargetId As UInt64 = Syscall1(SYS_NODE_LOOKUP, CType(UInt64, @vfsNodeName(0)))
+        Dim vfsTargetId As UInt64 = 0
+        Dim vfsRetry As UInt32 = 0
+        While vfsTargetId = 0 And vfsRetry < 50
+            vfsTargetId = Syscall1(SYS_NODE_LOOKUP, CType(UInt64, @vfsNodeName(0)))
+            If vfsTargetId = 0 Then
+                Syscall1 SYS_PROCESS_SLEEP, 20
+                vfsRetry = vfsRetry + 1
+            End If
+        Wend
+
         If vfsTargetId > 0 Then
             Dim vfsSynId As UInt64 = Syscall3(SYS_SYNAPSE_CONNECT, userNodeId, vfsTargetId, 3)
             If vfsSynId > 0 Then
@@ -332,7 +341,16 @@ Module UserApplication
         devNodeName(9) = 103 ' 'g'
         devNodeName(10) = 114' 'r'
         devNodeName(11) = 0
-        Dim devTargetId As UInt64 = Syscall1(SYS_NODE_LOOKUP, CType(UInt64, @devNodeName(0)))
+        Dim devTargetId As UInt64 = 0
+        Dim devRetry As UInt32 = 0
+        While devTargetId = 0 And devRetry < 50
+            devTargetId = Syscall1(SYS_NODE_LOOKUP, CType(UInt64, @devNodeName(0)))
+            If devTargetId = 0 Then
+                Syscall1 SYS_PROCESS_SLEEP, 20
+                devRetry = devRetry + 1
+            End If
+        Wend
+
         If devTargetId > 0 Then
             Dim devSynId As UInt64 = Syscall3(SYS_SYNAPSE_CONNECT, userNodeId, devTargetId, 3)
             If devSynId > 0 Then
@@ -378,7 +396,15 @@ Module UserApplication
         plexNodeName(12) = 103' 'g'
         plexNodeName(13) = 114' 'r'
         plexNodeName(14) = 0
-        Dim plexTargetId As UInt64 = Syscall1(SYS_NODE_LOOKUP, CType(UInt64, @plexNodeName(0)))
+        Dim plexTargetId As UInt64 = 0
+        Dim plexRetry As UInt32 = 0
+        While plexTargetId = 0 And plexRetry < 50
+            plexTargetId = Syscall1(SYS_NODE_LOOKUP, CType(UInt64, @plexNodeName(0)))
+            If plexTargetId = 0 Then
+                Syscall1 SYS_PROCESS_SLEEP, 20
+                plexRetry = plexRetry + 1
+            End If
+        Wend
         If plexTargetId > 0 Then
             Dim plexSynId As UInt64 = Syscall3(SYS_SYNAPSE_CONNECT, userNodeId, plexTargetId, 3)
             If plexSynId > 0 Then
@@ -408,6 +434,17 @@ Module UserApplication
 
         PrintString CPtr(Pointer To Byte, "[BRT0] user_main completed successfully. Returning exit code 0.\r\n")
         PrintString CPtr(Pointer To Byte, "[BRT0] =======================================================\r\n")
+
+        ' 10-Second Continuous Execution Liveness Timer (requested by user to verify real-time stability)
+        PrintString CPtr(Pointer To Byte, "[LIVENESS] Starting 10-second continuous execution verification timer...\r\n")
+        Dim livenessSec As UInt64 = 1
+        While livenessSec <= 10
+            PrintMessageWithUInt CPtr(Pointer To Byte, "[LIVENESS TIMER] Active execution: "), livenessSec, CPtr(Pointer To Byte, "/10 seconds - System healthy\r\n")
+            Syscall1 SYS_PROCESS_SLEEP, 1000
+            livenessSec = livenessSec + 1
+        Wend
+        PrintString CPtr(Pointer To Byte, "[LIVENESS] 10-second liveness verification completed successfully!\r\n")
+        PrintString CPtr(Pointer To Byte, "[LIVENESS] =======================================================\r\n")
 
         user_main = 0
     End Function

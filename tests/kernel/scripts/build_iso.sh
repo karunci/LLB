@@ -79,13 +79,21 @@ cp "${INITRD_TAR}" "${ISO_DIR}/boot/initrd.tar"
 
 cat << 'EOF' > "${ISO_DIR}/boot/grub/grub.cfg"
 set timeout=3
-set default=0
 
 insmod all_video
-insmod efi_gop
 insmod font
 insmod multiboot
 insmod multiboot2
+
+# Firmware auto-selection: Multiboot 2 for UEFI GOP, Multiboot 1 for Legacy BIOS / VirtualBox CSM
+if [ "$grub_platform" = "efi" ]; then
+    insmod efi_gop
+    set default=0
+else
+    insmod vbe
+    insmod vga
+    set default=1
+fi
 
 if loadfont unicode ; then
     insmod gfxterm

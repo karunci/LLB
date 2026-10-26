@@ -228,11 +228,13 @@ Namespace Core.Nodes
         ' @param targetNodeId Destination node ID.
         ''
         Public Unsafe Sub WakeNodeWaiter(ByVal targetNodeId As UInt64)
+            Dim flags As UInt64 = Sync.SpinlockOps.AcquireIrqSave(registryLock)
             Dim i As UInt32 = 0
             While i < SynapseCaps.MAX_NODES
                 If (nodes(i).Flags And SynapseCaps.NODE_FLAG_ACTIVE) <> 0 And nodes(i).NodeId = targetNodeId Then
                     Dim wPid As UInt64 = nodes(i).WaitingPid
                     nodes(i).WaitingPid = 0
+                    Sync.SpinlockOps.ReleaseIrqRestore registryLock, flags
                     If wPid <> 0 Then
                         SchedEngine.WakeTask wPid
                     End If
@@ -240,6 +242,7 @@ Namespace Core.Nodes
                 End If
                 i = i + 1
             Wend
+            Sync.SpinlockOps.ReleaseIrqRestore registryLock, flags
         End Sub
 
         ''
@@ -248,14 +251,17 @@ Namespace Core.Nodes
         ' @param pid Task ID waiting for incoming messages.
         ''
         Public Unsafe Sub SetNodeWaitingPid(ByVal targetNodeId As UInt64, ByVal pid As UInt64)
+            Dim flags As UInt64 = Sync.SpinlockOps.AcquireIrqSave(registryLock)
             Dim i As UInt32 = 0
             While i < SynapseCaps.MAX_NODES
                 If (nodes(i).Flags And SynapseCaps.NODE_FLAG_ACTIVE) <> 0 And nodes(i).NodeId = targetNodeId Then
                     nodes(i).WaitingPid = pid
+                    Sync.SpinlockOps.ReleaseIrqRestore registryLock, flags
                     Exit Sub
                 End If
                 i = i + 1
             Wend
+            Sync.SpinlockOps.ReleaseIrqRestore registryLock, flags
         End Sub
 
     End Class

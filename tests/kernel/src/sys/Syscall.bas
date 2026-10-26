@@ -264,6 +264,7 @@ Namespace Sys
                                 Dim chanIn As Pointer To SynapseChannel = Registry.GetInboundChannel(arg1)
                                 If chanIn <> 0 Then
                                     If chanIn.PopPacket(outPktPtr(0), False) Then
+                                        Registry.SetNodeWaitingPid arg1, 0
                                         Dispatch = 1
                                         Exit Do
                                     End If
@@ -275,7 +276,19 @@ Namespace Sys
                                 End If
 
                                 Registry.SetNodeWaitingPid arg1, SchedEngine.GetCurrentPid()
-                                SchedEngine.BlockCurrentTask
+
+                                ' Immediate recheck: catch packets queued during window before sleep
+                                Dim recheckChan As Pointer To SynapseChannel = Registry.GetInboundChannel(arg1)
+                                If recheckChan <> 0 Then
+                                    If recheckChan.PopPacket(outPktPtr(0), False) Then
+                                        Registry.SetNodeWaitingPid arg1, 0
+                                        Dispatch = 1
+                                        Exit Do
+                                    End If
+                                End If
+
+                                ' Bounded sleep: wake up either via WakeNodeWaiter / WakeTask OR timeout after 10ms
+                                SchedEngine.Sleep 10
                             Loop
                         Else
                             ' Channel-specific pop

@@ -553,7 +553,7 @@ Public Class Scheduler
                         bestPrevUrgency = urgency
                     End If
                 Else
-                    If bestOtherAddr = 0 Or urgency > bestOtherUrgency Then
+                    If bestOtherAddr = 0 Or urgency >= bestOtherUrgency Then
                         bestOtherAddr = iterAddr
                         bestOtherUrgency = urgency
                     End If
@@ -812,7 +812,8 @@ Public Class Scheduler
     ' @brief Transition current task to STATE_BLOCKED and immediately yield CPU.
     ''
     Public Unsafe Sub BlockCurrentTask()
-        SchedYieldInternal Sched.ThreadState.STATE_BLOCKED, 0
+        ' Guarantee 10ms safety fallback in case WakeTask was called before thread completed state switch
+        SchedYieldInternal Sched.ThreadState.STATE_BLOCKED, 10
     End Sub
 
     ''
@@ -826,6 +827,8 @@ Public Class Scheduler
             WakeTask = False
             Exit Function
         End If
+
+        Dim flags As UInt64 = Sync.SpinlockOps.AcquireIrqSave(schedLock)
 
         Dim onlineCores As UInt32 = Arch.Acpi.GetCpuCount()
         If onlineCores = 0 Or onlineCores > MAX_SCHED_CPUS Then onlineCores = 1
@@ -842,6 +845,7 @@ Public Class Scheduler
                         If iter.State = Sched.ThreadState.STATE_BLOCKED Then
                             iter.State = Sched.ThreadState.STATE_READY
                             iter.WakeUptime = 0
+                            Sync.SpinlockOps.ReleaseIrqRestore schedLock, flags
                             WakeTask = True
                             Exit Function
                         End If
@@ -860,6 +864,7 @@ Public Class Scheduler
                         If iterRtos.State = Sched.ThreadState.STATE_BLOCKED Then
                             iterRtos.State = Sched.ThreadState.STATE_READY
                             iterRtos.WakeUptime = 0
+                            Sync.SpinlockOps.ReleaseIrqRestore schedLock, flags
                             WakeTask = True
                             Exit Function
                         End If
@@ -871,6 +876,7 @@ Public Class Scheduler
             coreIdx = coreIdx + 1
         Wend
 
+        Sync.SpinlockOps.ReleaseIrqRestore schedLock, flags
         WakeTask = False
     End Function
 

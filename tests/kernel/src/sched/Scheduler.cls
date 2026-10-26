@@ -55,9 +55,9 @@ Public Class Scheduler
         stack = stack - 1
         stack(0) = &H10
 
-        ' RSP placeholder
+        ' RSP placeholder (16-byte aligned kernel stack top)
         stack = stack - 1
-        stack(0) = CType(UInt64, stack + 1)
+        stack(0) = stackTop
 
         ' RFLAGS (0x202 = Interrupts Enabled)
         stack = stack - 1
@@ -290,7 +290,7 @@ Public Class Scheduler
         Arch.X86_64.PortIO.Sti
         Do
             Yield
-            Asm "sti\n\thlt" : : : "memory"
+            Asm "sti\n\tnop\n\thlt" : : : "memory"
         Loop
     End Sub
 

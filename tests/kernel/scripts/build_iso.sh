@@ -19,22 +19,37 @@ INITRD_TAR="${PROJECT_ROOT}/tests/user_app/build/initrd.tar"
 echo "[+] Building and packaging Userland Services and Applications..."
 cd "${PROJECT_ROOT}"
 ./build/llbc-stage0 lib/pros/Pros.llbproj
+./build/llbc-stage0 services/genesis/Genesis.llbproj
 ./build/llbc-stage0 services/disp_srv/DispService.llbproj
 ./build/llbc-stage0 services/input_srv/InputService.llbproj
 ./build/llbc-stage0 services/compositor/Compositor.llbproj
+./build/llbc-stage0 services/dev_mgr/DevMgr.llbproj
+./build/llbc-stage0 services/plexus_mgr/PlexusMgr.llbproj
+./build/llbc-stage0 services/wm/WmService.llbproj
+./build/llbc-stage0 services/vfs_srv/VfsService.llbproj
 ./build/llbc-stage0 tests/user_app/UserApp.llbproj
 
+python3 tools/bax_pack.py services/genesis/build/genesis.elf -o services/genesis/build/genesis.bax --manifest services/genesis/manifest.json
 python3 tools/bax_pack.py services/disp_srv/build/disp_srv.elf -o services/disp_srv/build/disp_srv.bax --manifest services/disp_srv/manifest.json
 python3 tools/bax_pack.py services/input_srv/build/input_srv.elf -o services/input_srv/build/input_srv.bax --manifest services/input_srv/manifest.json
 python3 tools/bax_pack.py services/compositor/build/compositor.elf -o services/compositor/build/compositor.bax --manifest services/compositor/manifest.json
+python3 tools/bax_pack.py services/dev_mgr/build/dev_mgr.elf -o services/dev_mgr/build/dev_mgr.bax --manifest services/dev_mgr/manifest.json
+python3 tools/bax_pack.py services/plexus_mgr/build/plexus_mgr.elf -o services/plexus_mgr/build/plexus_mgr.bax --manifest services/plexus_mgr/manifest.json
+python3 tools/bax_pack.py services/wm/build/wm.elf -o services/wm/build/wm.bax --manifest services/wm/manifest.json
+python3 tools/bax_pack.py services/vfs_srv/build/vfs_srv.elf -o services/vfs_srv/build/vfs_srv.bax --manifest services/vfs_srv/manifest.json
 python3 tools/bax_pack.py tests/user_app/build/user_app.elf -o tests/user_app/build/user_app.bax --manifest tests/user_app/manifest.json
 
 mkdir -p tests/user_app/build
 tar -cf "${INITRD_TAR}" \
     -C tests/user_app/build user_app.bax \
+    -C "${PROJECT_ROOT}/services/genesis/build" genesis.bax \
     -C "${PROJECT_ROOT}/services/disp_srv/build" disp_srv.bax \
     -C "${PROJECT_ROOT}/services/input_srv/build" input_srv.bax \
-    -C "${PROJECT_ROOT}/services/compositor/build" compositor.bax
+    -C "${PROJECT_ROOT}/services/compositor/build" compositor.bax \
+    -C "${PROJECT_ROOT}/services/dev_mgr/build" dev_mgr.bax \
+    -C "${PROJECT_ROOT}/services/plexus_mgr/build" plexus_mgr.bax \
+    -C "${PROJECT_ROOT}/services/wm/build" wm.bax \
+    -C "${PROJECT_ROOT}/services/vfs_srv/build" vfs_srv.bax
 
 echo "[+] Building Dedicated Kernel ELFs (MB2 and MB1)..."
 ./build/llbc-stage0 tests/kernel/Kernel_MB2.llbproj

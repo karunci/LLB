@@ -88,7 +88,7 @@ Module KernelMain
         ' Initialize COM1 line control & Serial UART driver with hardware probing
         Serial.Initialize
         If Serial.IsAvailable() Then
-            Serial.PrintF "\r\n[PRK] Booting Low-Level Basic Kernel [REV: 2026.10.26-r30]!\r\n"
+            Serial.PrintF "\r\n[PRK] Booting Low-Level Basic Kernel [REV: 2026.10.26-r33]!\r\n"
             Serial.PrintF "[PRK] Multiboot Verified. Long mode active.\r\n"
             Serial.PrintF "[UART] COM1 16550 UART Online!\r\n"
         End If
@@ -113,14 +113,14 @@ Module KernelMain
         If hasVgaText Then
             Serial.PrintF "[PRK] VGA Text Mode Terminal active (&HB8000).\r\n"
             Term.WriteLine CPtr(Pointer To Byte, "=========================================")
-            Term.WriteLine CPtr(Pointer To Byte, " PRK - LOW-LEVEL BASIC [REV: 2026.10.26-r30] ")
+            Term.WriteLine CPtr(Pointer To Byte, " PRK - LOW-LEVEL BASIC [REV: 2026.10.26-r33] ")
             Term.WriteLine CPtr(Pointer To Byte, "=========================================")
             Term.WriteChar 10
         ElseIf hasGopFb Then
             Serial.PrintF "[PRK] UEFI GOP Linear Framebuffer active (0x%x).\r\n", CType(UInt32, FB.GetFramebufferPhys() And &HFFFFFFFF)
             FB.ClearScreen &H00181824
             FB.DrawString 20, 20, CPtr(Pointer To Byte, "========================================="), &H0088C0D0, 1
-            FB.DrawString 20, 36, CPtr(Pointer To Byte, " PRK - LOW-LEVEL BASIC [REV: 2026.10.26-r30] "), &H008FBCBB, 1
+            FB.DrawString 20, 36, CPtr(Pointer To Byte, " PRK - LOW-LEVEL BASIC [REV: 2026.10.26-r33] "), &H008FBCBB, 1
             FB.DrawString 20, 52, CPtr(Pointer To Byte, "========================================="), &H0088C0D0, 1
         End If
 
@@ -468,18 +468,35 @@ Module KernelMain
         ' Discover in-memory USTAR initrd ramdisk
         Dim initrdStart As UInt64 = PMM.GetInitrdStart()
         Dim initrdEnd As UInt64 = PMM.GetInitrdEnd()
+        Dim genesisBaxSize As UInt64 = 0
+        Dim genesisBaxAddr As UInt64 = 0
         Dim dispBaxSize As UInt64 = 0
         Dim dispBaxAddr As UInt64 = 0
         Dim inputBaxSize As UInt64 = 0
         Dim inputBaxAddr As UInt64 = 0
         Dim compBaxSize As UInt64 = 0
         Dim compBaxAddr As UInt64 = 0
+        Dim devMgrBaxSize As UInt64 = 0
+        Dim devMgrBaxAddr As UInt64 = 0
+        Dim plexusBaxSize As UInt64 = 0
+        Dim plexusBaxAddr As UInt64 = 0
+        Dim wmBaxSize As UInt64 = 0
+        Dim wmBaxAddr As UInt64 = 0
+        Dim vfsBaxSize As UInt64 = 0
+        Dim vfsBaxAddr As UInt64 = 0
         Dim baxSize As UInt64 = 0
         Dim baxDataAddr As UInt64 = 0
 
         If initrdStart <> 0 And initrdEnd > initrdStart Then
             Serial.PrintF "[PRK] Scanning Initrd USTAR Ramdisk at 0x%lx (%u bytes)...\r\n", _
                           initrdStart, CType(UInt32, initrdEnd - initrdStart)
+
+            ' 0. Probe for Genesis PID 1 Root Orchestrator ('genesis.bax')
+            genesisBaxAddr = Tar.FindFile(initrdStart, "genesis.bax", genesisBaxSize)
+            If genesisBaxAddr <> 0 Then
+                Serial.PrintF "[PRK] Located 'genesis.bax' in ramdisk (%u bytes at 0x%lx)\r\n", _
+                              CType(UInt32, genesisBaxSize), genesisBaxAddr
+            End If
 
             ' 1. Probe for Display Driver Service daemon ('disp_srv.bax')
             dispBaxAddr = Tar.FindFile(initrdStart, "disp_srv.bax", dispBaxSize)
@@ -502,7 +519,35 @@ Module KernelMain
                               CType(UInt32, compBaxSize), compBaxAddr
             End If
 
-            ' 4. Probe for User Application ('user_app.bax')
+            ' 4. Probe for Device Arbiter daemon ('dev_mgr.bax')
+            devMgrBaxAddr = Tar.FindFile(initrdStart, "dev_mgr.bax", devMgrBaxSize)
+            If devMgrBaxAddr <> 0 Then
+                Serial.PrintF "[PRK] Located 'dev_mgr.bax' in ramdisk (%u bytes at 0x%lx)\r\n", _
+                              CType(UInt32, devMgrBaxSize), devMgrBaxAddr
+            End If
+
+            ' 5. Probe for Plexus Service Supervisor ('plexus_mgr.bax')
+            plexusBaxAddr = Tar.FindFile(initrdStart, "plexus_mgr.bax", plexusBaxSize)
+            If plexusBaxAddr <> 0 Then
+                Serial.PrintF "[PRK] Located 'plexus_mgr.bax' in ramdisk (%u bytes at 0x%lx)\r\n", _
+                              CType(UInt32, plexusBaxSize), plexusBaxAddr
+            End If
+
+            ' 6. Probe for Window Manager service ('wm.bax')
+            wmBaxAddr = Tar.FindFile(initrdStart, "wm.bax", wmBaxSize)
+            If wmBaxAddr <> 0 Then
+                Serial.PrintF "[PRK] Located 'wm.bax' in ramdisk (%u bytes at 0x%lx)\r\n", _
+                              CType(UInt32, wmBaxSize), wmBaxAddr
+            End If
+
+            ' 7. Probe for VFS Storage Node ('vfs_srv.bax')
+            vfsBaxAddr = Tar.FindFile(initrdStart, "vfs_srv.bax", vfsBaxSize)
+            If vfsBaxAddr <> 0 Then
+                Serial.PrintF "[PRK] Located 'vfs_srv.bax' in ramdisk (%u bytes at 0x%lx)\r\n", _
+                              CType(UInt32, vfsBaxSize), vfsBaxAddr
+            End If
+
+            ' 8. Probe for User Application ('user_app.bax')
             baxDataAddr = Tar.FindFile(initrdStart, "user_app.bax", baxSize)
             If baxDataAddr <> 0 Then
                 Serial.PrintF "[PRK] Located 'user_app.bax' in ramdisk (%u bytes at 0x%lx)\r\n", _
@@ -514,7 +559,14 @@ Module KernelMain
             Serial.PrintF "[PRK] Warning: No Multiboot initrd module provided.\r\n"
         End If
 
-        ' Spawn Display Driver Service Daemon
+        ' 0. Spawn Genesis PID 1 Root Orchestrator
+        Dim genesisPid As UInt64 = 0
+        If genesisBaxAddr <> 0 Then
+            genesisPid = SchedEngine.CreateBaxProcess("sys.genesis", genesisBaxAddr, genesisBaxSize, 1)
+            Serial.PrintF "[PRK] Spawned Genesis PID 1 Root Orchestrator (PID: %u)\r\n", CType(UInt32, genesisPid)
+        End If
+
+        ' 1. Spawn Display Driver Service Daemon
         Dim dispPid As UInt64 = 0
         If dispBaxAddr <> 0 Then
             dispPid = SchedEngine.CreateBaxProcess("srv.display", dispBaxAddr, dispBaxSize, 1)
@@ -533,6 +585,34 @@ Module KernelMain
         If compBaxAddr <> 0 Then
             compPid = SchedEngine.CreateBaxProcess("srv.compositor", compBaxAddr, compBaxSize, 1)
             Serial.PrintF "[PRK] Spawned Compositor Service Daemon (PID: %u)\r\n", CType(UInt32, compPid)
+        End If
+
+        ' Spawn Device Arbiter Daemon
+        Dim devMgrPid As UInt64 = 0
+        If devMgrBaxAddr <> 0 Then
+            devMgrPid = SchedEngine.CreateBaxProcess("srv.dev_mgr", devMgrBaxAddr, devMgrBaxSize, 1)
+            Serial.PrintF "[PRK] Spawned Device Arbiter Daemon (PID: %u)\r\n", CType(UInt32, devMgrPid)
+        End If
+
+        ' Spawn Service Supervisor Daemon
+        Dim plexusPid As UInt64 = 0
+        If plexusBaxAddr <> 0 Then
+            plexusPid = SchedEngine.CreateBaxProcess("srv.plexus_mgr", plexusBaxAddr, plexusBaxSize, 1)
+            Serial.PrintF "[PRK] Spawned Service Supervisor Daemon (PID: %u)\r\n", CType(UInt32, plexusPid)
+        End If
+
+        ' Spawn Window Manager Daemon
+        Dim wmPid As UInt64 = 0
+        If wmBaxAddr <> 0 Then
+            wmPid = SchedEngine.CreateBaxProcess("srv.wm", wmBaxAddr, wmBaxSize, 1)
+            Serial.PrintF "[PRK] Spawned Window Manager Daemon (PID: %u)\r\n", CType(UInt32, wmPid)
+        End If
+
+        ' Spawn Storage & VFS Daemon
+        Dim vfsPid As UInt64 = 0
+        If vfsBaxAddr <> 0 Then
+            vfsPid = SchedEngine.CreateBaxProcess("srv.vfs", vfsBaxAddr, vfsBaxSize, 1)
+            Serial.PrintF "[PRK] Spawned Storage & VFS Daemon (PID: %u)\r\n", CType(UInt32, vfsPid)
         End If
 
         ' Spawn Standalone Ring 3 BAX Application
@@ -556,7 +636,7 @@ Module KernelMain
 
         Do
             SchedEngine.Yield
-            Asm "sti\n\thlt" : : : "memory"
+            Asm "sti\n\tnop\n\thlt" : : : "memory"
         Loop
     End Sub
 

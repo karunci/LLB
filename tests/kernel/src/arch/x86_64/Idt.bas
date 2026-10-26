@@ -94,6 +94,16 @@ Module Arch.Idt
         Dim vector As UInt64
         vector = frame.Vector
 
+        ' For hardware interrupts (Vectors >= 32), send End of Interrupt (EOI)
+        ' BEFORE dispatching to handlers. This is essential for preemptive multitasking
+        ' so that if the handler switches context (Yield/Schedule), the Local APIC
+        ' in-service register is already cleared and future timer ticks can fire.
+        ' Note: Vector 255 is the APIC spurious interrupt vector; per x86 spec,
+        ' no EOI should be sent for spurious interrupts.
+        If vector >= 32 And vector <> 255 Then
+            Arch.X86_64.Apic.SendEoi
+        End If
+
         ' Check if a handler is registered for this vector
         If isrHandlers(vector) <> CPtr(Pointer To Byte, 0) Then
             Dim handlerFunc As InterruptHandler
@@ -107,20 +117,10 @@ Module Arch.Idt
                 Asm "cli\n\thlt" : : : "memory"
             Loop
         End If
-
-        ' Send End of Interrupt (EOI) for all hardware interrupts (Vectors >= 32)
-        If vector >= 32 Then
-            Arch.X86_64.Apic.SendEoi
-        End If
     End Sub
 
-    ' External Assembly Stub Symbols
-    Public Declare Sub isr_stub_0()
-    Public Declare Sub isr_stub_13()
-    Public Declare Sub isr_stub_14()
-    Public Declare Sub isr_stub_32()
-    Public Declare Sub isr_stub_33()
-    Public Declare Sub isr_stub_44()
+    ' External Assembly Stub Function
+    Public Declare Function get_isr_stub Lib "kernel" (ByVal vector As UInt64) As Pointer To Byte
 
     ' Initialize and load the IDT
     Public Unsafe Sub Initialize()
@@ -130,13 +130,10 @@ Module Arch.Idt
             isrHandlers(i) = CPtr(Pointer To Byte, 0)
         Next i
 
-        ' Bind Stubs to IDT Vectors (0x08 = Kernel Code Segment, 0x8E = Interrupt Gate)
-        SetGate 0, @isr_stub_0, &H08, &H8E    ' Vector 0: Divide Error
-        SetGate 13, @isr_stub_13, &H08, &H8E  ' Vector 13: General Protection Fault
-        SetGate 14, @isr_stub_14, &H08, &H8E  ' Vector 14: Page Fault
-        SetGate 32, @isr_stub_32, &H08, &H8E  ' Vector 32: Timer Interrupt
-        SetGate 33, @isr_stub_33, &H08, &H8E  ' Vector 33: Keyboard Interrupt
-        SetGate 44, @isr_stub_44, &H08, &H8E  ' Vector 44: PS/2 Mouse Interrupt
+        ' Populate all 256 IDT Gates with hardened stubs from get_isr_stub
+        For i = 0 To 255
+            SetGate CType(Byte, i), get_isr_stub(CType(UInt64, i)), &H08, &H8E
+        Next i
 
         ' Set up IDTR Pointer
         idtr.Limit = CType(UInt16, (256 * 16) - 1)

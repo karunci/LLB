@@ -1,0 +1,28 @@
+' Project Name: PROS Genesis Root Orchestrator
+' Filename: services/genesis/Genesis.llbproj
+' Summary: Standalone Ring 3 Genesis PID 1 root coordinator executable.
+
+[Project]
+Name    = "GenesisInit"
+Type    = "Executable"
+Version = "1.0.0"
+
+[Target]
+Arch = "x86_64-unknown-none-elf"
+
+[Output]
+OutDir  = "build"
+OutFile = "genesis.elf"
+
+[Entry]
+EntryPoint = "_start"
+
+[Linker]
+LinkerScript = "user_linker.ld"
+Libraries    = [
+    "../../lib/pros/build/libpros.a"
+]
+
+[Sources]
+Assembly = "brt0.S"
+Module   = "GenesisMain.bas"

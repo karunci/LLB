@@ -46,7 +46,8 @@ Module TaskRoutines
     Public Unsafe Sub CpuIdleLoop()
         Do
             ' Continuously pause and wait for interrupt / rescheduling
-            Asm "sti\n\thlt" : : : "memory"
+            ' Note: nop separates sti and hlt to ensure STI interrupt shadow clears before VM exit
+            Asm "sti\n\tnop\n\thlt" : : : "memory"
         Loop
     End Sub
 

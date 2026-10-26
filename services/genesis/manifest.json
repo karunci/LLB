@@ -1,0 +1,18 @@
+{
+  "app_id": "sys.genesis",
+  "name": "PROS Genesis Root Orchestrator",
+  "version": "1.0.0",
+  "vendor": "PROS Architecture Group",
+  "subsystem": "Init",
+  "permissions": [
+    "synapse.connect",
+    "synapse.register",
+    "node.lookup",
+    "process.manage"
+  ],
+  "node": {
+    "name": "sys.genesis",
+    "kind": "system",
+    "capabilities": 7
+  }
+}

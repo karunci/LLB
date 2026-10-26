@@ -29,6 +29,12 @@ syscall_entry:
     pushq %rcx                 /* Saved User RIP */
     pushq %rax                 /* Syscall Number [96(%rsp)] */
 
+    /* Load Kernel Data Segments (0x10) - safe now that %rax is saved */
+    mov $0x10, %ax
+    mov %ax, %ds
+    mov %ax, %es
+    mov %ax, %fs
+
     /* 5. Preserve General Purpose Registers (Creates Stack Frame) */
     pushq %rdi                 /* User arg1 [88(%rsp)] */
     pushq %rsi                 /* User arg2 [80(%rsp)] */
@@ -79,8 +85,16 @@ syscall_entry:
     popq %r11                  /* Restore User RFLAGS */
     orq $0x200, %r11           /* Force Interrupt Flag (IF=1) enabled for Ring 3 */
     andq $~0x4000, %r11        /* Clear Nested Task flag (NT=0) */
-    popq %rsp                  /* Restore User RSP */
 
-    /* Restore GS Base back to User Mode */
+    /* Restore User Data Segments (0x1B) on kernel stack before switching to User RSP */
+    pushq %rax
+    mov $0x1B, %ax
+    mov %ax, %ds
+    mov %ax, %es
+    mov %ax, %fs
+    popq %rax
+
+    popq %rsp                  /* Restore User RSP */
     swapgs
     sysretq
+

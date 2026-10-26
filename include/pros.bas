@@ -13,6 +13,7 @@ Module ProsApi
     ' 1. System Constants & Hardware Values
     ' =========================================================================
     Public Const NODE_KIND_CLIENT       As UInt32 = 1
+    Public Const NODE_KIND_SYSTEM       As UInt32 = 1
     Public Const NODE_KIND_DEVICE       As UInt32 = 2
     Public Const NODE_KIND_STORAGE      As UInt32 = 3
     Public Const NODE_KIND_ROUTER       As UInt32 = 4

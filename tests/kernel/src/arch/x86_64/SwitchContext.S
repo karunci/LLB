@@ -72,15 +72,24 @@ thread_start_trampoline:
     pop %rdx
     pop %rcx
     pop %rbx
-    pop %rax
-    add $16, %rsp            /* Skip dummy Vector and Error Code slots */
-    testb $3, 8(%rsp)        /* Inspect target CS at [RSP+8] */
+    /* Check target CS RPL at [RSP + 32] while %rax is still safely stacked */
+    testb $3, 32(%rsp)
     jz 1f
     swapgs                   /* Switch GS base to user */
     mov $0x1B, %ax           /* User data selector: 0x18 | RPL 3 */
     mov %ax, %ds
     mov %ax, %es
     mov %ax, %fs
-    mov %ax, %gs
-1:
+    pop %rax                 /* Restore genuine user %rax */
+    add $16, %rsp            /* Skip dummy Vector and Error Code slots */
     iretq
+1:
+    mov $0x10, %ax           /* Kernel data selector: 0x10 | RPL 0 */
+    mov %ax, %ds
+    mov %ax, %es
+    mov %ax, %fs
+    pop %rax                 /* Restore genuine kernel %rax */
+    add $16, %rsp            /* Skip dummy Vector and Error Code slots */
+    iretq
+
+

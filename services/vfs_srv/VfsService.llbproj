@@ -1,0 +1,28 @@
+' Project Name: PROS Storage & VFS Service
+' Filename: services/vfs_srv/VfsService.llbproj
+' Summary: Standalone Ring 3 virtual file system and storage service daemon.
+
+[Project]
+Name    = "VfsService"
+Type    = "Executable"
+Version = "1.0.0"
+
+[Target]
+Arch = "x86_64-unknown-none-elf"
+
+[Output]
+OutDir  = "build"
+OutFile = "vfs_srv.elf"
+
+[Entry]
+EntryPoint = "_start"
+
+[Linker]
+LinkerScript = "user_linker.ld"
+Libraries    = [
+    "../../lib/pros/build/libpros.a"
+]
+
+[Sources]
+Assembly = "brt0.S"
+Module   = "VfsMain.bas"

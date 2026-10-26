@@ -109,7 +109,9 @@ Module Arch.X86_64.Gdt
             "mov %%ax, %%ds\n\t" _
             "mov %%ax, %%es\n\t" _
             "mov %%ax, %%fs\n\t" _
+            "xor %%ax, %%ax\n\t" _
             "mov %%ax, %%gs\n\t" _
+            "mov $0x10, %%ax\n\t" _
             "mov %%ax, %%ss\n\t" _
             "mov $0x28, %%ax\n\t" _
             "ltr %%ax\n\t" : : "r"(gdtP_ptr) : "rax", "memory"

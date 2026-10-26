@@ -27,7 +27,8 @@ Module VfsMain
     End Structure
 
     ' Maximum mounted system nodes in RAM VFS table
-    Private vfsTable(24) As VfsEntry
+    ' Maximum mounted system nodes in RAM VFS table
+    Private vfsTable(32) As VfsEntry
     Private vfsCount As UInt32
 
     ''
@@ -51,6 +52,58 @@ Module VfsMain
         Wend
         StrEquals = (s1(idx) = 0 And s2(idx) = 0)
     End Function
+
+    ''
+    ' @brief Normalize path string supporting Windows C:\ drive notation and backslashes.
+    ' @param inPath Input path string pointer.
+    ' @param outBuf Output normalized buffer (at least 128 bytes).
+    ''
+    Public Unsafe Sub NormalizePath(ByVal inPath As Pointer To Byte, ByVal outBuf As Pointer To Byte)
+        If inPath = 0 Or outBuf = 0 Then Exit Sub
+
+        Dim rIdx As UInt32 = 0
+        Dim wIdx As UInt32 = 0
+
+        ' Skip leading spaces
+        While inPath(rIdx) = 32
+            rIdx = rIdx + 1
+        Wend
+
+        ' Strip Windows drive prefix (e.g. "C:" or "c:")
+        If (inPath(rIdx) = 67 Or inPath(rIdx) = 99) And inPath(rIdx + 1) = 58 Then
+            rIdx = rIdx + 2
+        End If
+
+        ' Ensure leading forward slash
+        If inPath(rIdx) <> 47 And inPath(rIdx) <> 92 Then
+            outBuf(wIdx) = 47 ' '/'
+            wIdx = wIdx + 1
+        End If
+
+        While inPath(rIdx) <> 0 And wIdx < 126
+            Dim c As Byte = inPath(rIdx)
+            ' Convert backslash '\' (92) to forward slash '/' (47)
+            If c = 92 Then
+                c = 47
+            End If
+
+            ' Collapse duplicate slashes
+            If c = 47 And wIdx > 0 And outBuf(wIdx - 1) = 47 Then
+                ' skip duplicate slash
+            Else
+                outBuf(wIdx) = c
+                wIdx = wIdx + 1
+            End If
+            rIdx = rIdx + 1
+        Wend
+
+        ' Strip trailing slash if path is longer than "/"
+        If wIdx > 1 And outBuf(wIdx - 1) = 47 Then
+            wIdx = wIdx - 1
+        End If
+
+        outBuf(wIdx) = 0
+    End Sub
 
     ''
     ' @brief Mount and populate the initial hybrid Windows + Android filesystem hierarchy.
@@ -147,28 +200,53 @@ Module VfsMain
         vfsTable(16).Kind = VFS_KIND_DIR
         vfsTable(16).Perms = &H0777
 
-        ' 5. Virtual Device Mountpoints (/dev)
-        vfsTable(17).Path = CPtr(Pointer To Byte, "/dev")
+        vfsTable(17).Path = CPtr(Pointer To Byte, "/data/user/0")
         vfsTable(17).SizeBytes = 0
         vfsTable(17).Kind = VFS_KIND_DIR
-        vfsTable(17).Perms = &H0755
+        vfsTable(17).Perms = &H0777
 
-        vfsTable(18).Path = CPtr(Pointer To Byte, "/dev/disp")
+        vfsTable(18).Path = CPtr(Pointer To Byte, "/data/user/0/Desktop")
         vfsTable(18).SizeBytes = 0
-        vfsTable(18).Kind = VFS_KIND_DEV
-        vfsTable(18).Perms = &H0666
+        vfsTable(18).Kind = VFS_KIND_DIR
+        vfsTable(18).Perms = &H0777
 
-        vfsTable(19).Path = CPtr(Pointer To Byte, "/dev/input")
+        vfsTable(19).Path = CPtr(Pointer To Byte, "/data/user/0/Documents")
         vfsTable(19).SizeBytes = 0
-        vfsTable(19).Kind = VFS_KIND_DEV
-        vfsTable(19).Perms = &H0666
+        vfsTable(19).Kind = VFS_KIND_DIR
+        vfsTable(19).Perms = &H0777
 
-        vfsTable(20).Path = CPtr(Pointer To Byte, "/dev/fb0")
+        ' 5. Virtual Device Mountpoints (/dev)
+        vfsTable(20).Path = CPtr(Pointer To Byte, "/dev")
         vfsTable(20).SizeBytes = 0
-        vfsTable(20).Kind = VFS_KIND_DEV
-        vfsTable(20).Perms = &H0666
+        vfsTable(20).Kind = VFS_KIND_DIR
+        vfsTable(20).Perms = &H0755
 
-        vfsCount = 21
+        vfsTable(21).Path = CPtr(Pointer To Byte, "/dev/disp")
+        vfsTable(21).SizeBytes = 0
+        vfsTable(21).Kind = VFS_KIND_DEV
+        vfsTable(21).Perms = &H0666
+
+        vfsTable(22).Path = CPtr(Pointer To Byte, "/dev/input")
+        vfsTable(22).SizeBytes = 0
+        vfsTable(22).Kind = VFS_KIND_DEV
+        vfsTable(22).Perms = &H0666
+
+        vfsTable(23).Path = CPtr(Pointer To Byte, "/dev/fb0")
+        vfsTable(23).SizeBytes = 0
+        vfsTable(23).Kind = VFS_KIND_DEV
+        vfsTable(23).Perms = &H0666
+
+        vfsTable(24).Path = CPtr(Pointer To Byte, "/dev/com1")
+        vfsTable(24).SizeBytes = 0
+        vfsTable(24).Kind = VFS_KIND_DEV
+        vfsTable(24).Perms = &H0666
+
+        vfsTable(25).Path = CPtr(Pointer To Byte, "/mnt/c")
+        vfsTable(25).SizeBytes = 0
+        vfsTable(25).Kind = VFS_KIND_DIR
+        vfsTable(25).Perms = &H0755
+
+        vfsCount = 26
     End Sub
 
     ''
@@ -177,9 +255,17 @@ Module VfsMain
     ' @return Index in vfsTable, or -1 if not found.
     ''
     Public Unsafe Function ResolvePath(ByVal pathPtr As Pointer To Byte) As Int32
+        If pathPtr = 0 Then
+            ResolvePath = -1
+            Exit Function
+        End If
+
+        Dim norm(128) As Byte
+        NormalizePath pathPtr, @norm(0)
+
         Dim i As UInt32 = 0
         While i < vfsCount
-            If StrEquals(pathPtr, vfsTable(i).Path) Then
+            If StrEquals(@norm(0), vfsTable(i).Path) Then
                 ResolvePath = CType(Int32, i)
                 Exit Function
             End If
@@ -224,6 +310,7 @@ Module VfsMain
         InitMountTree
         ConsolePrintWithUInt "[VFS] Mounted root filesystem: '/system' (USTAR Hierarchy, ", CType(UInt64, vfsCount), " entries)\r\n"
         ConsoleWriteLine "[VFS] Paths: /system/bin (Executables), /system/lib (Libraries), /data (User), /dev (Devices)"
+        ConsoleWriteLine "[VFS] Windows C:\\ path aliases mapped to /"
         ConsoleWriteLine "[VFS] Storage Arbiter online. Entering file request service loop..."
         ConsoleWriteLine "[VFS] ======================================================="
 
@@ -233,32 +320,38 @@ Module VfsMain
         Dim reqCount As UInt64 = 0
 
         Do
-            ' Poll for incoming file service requests over control synapse
-            If synPlexus <> 0 And SynapsePop(synPlexus, reqPkt) Then
-                If reqPkt.PacketType = VFS_CMD_LOOKUP Then
+            ' Poll for incoming requests directed to srv.vfs node
+            If SynapsePop(vfsNodeId, reqPkt) Then
+                If reqPkt.PacketType = VFS_CMD_LOOKUP Or reqPkt.PacketType = VFS_CMD_STAT Then
                     Dim nodeIdx As Int32 = ResolvePath(@reqPkt.Payload(0))
                     respPkt.Sequence = reqCount
-                    respPkt.Timestamp = GetUptime()
+                    respPkt.SourceNode = vfsNodeId
+                    respPkt.TargetNode = reqPkt.SourceNode
                     If nodeIdx >= 0 Then
                         respPkt.PacketType = VFS_RESP_OK
-                        respPkt.Length = 12
-                        ' Payload: [Kind: UInt32, Size: UInt32, Perms: UInt32]
+                        respPkt.PayloadLength = 16
                         Dim pKind As Pointer To UInt32 = CPtr(Pointer To UInt32, @respPkt.Payload(0))
                         Dim pSize As Pointer To UInt32 = CPtr(Pointer To UInt32, @respPkt.Payload(4))
                         Dim pPerm As Pointer To UInt32 = CPtr(Pointer To UInt32, @respPkt.Payload(8))
+                        Dim pStat As Pointer To UInt32 = CPtr(Pointer To UInt32, @respPkt.Payload(12))
                         pKind(0) = vfsTable(nodeIdx).Kind
                         pSize(0) = vfsTable(nodeIdx).SizeBytes
                         pPerm(0) = vfsTable(nodeIdx).Perms
+                        pStat(0) = 1
                     Else
                         respPkt.PacketType = VFS_RESP_ERROR
-                        respPkt.Length = 0
+                        respPkt.PayloadLength = 0
                     End If
-                    SynapsePush synPlexus, respPkt
+
+                    Dim replyChan As UInt64 = SynapseConnect(vfsNodeId, reqPkt.SourceNode, 7)
+                    If replyChan <> 0 Then
+                        SynapsePush replyChan, respPkt
+                    End If
                     reqCount = reqCount + 1
                 End If
             End If
 
-            ProcessSleep 500
+            ProcessSleep 50
         Loop
 
         user_main = 0

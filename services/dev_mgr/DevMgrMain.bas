@@ -61,6 +61,25 @@ Module DevMgrMain
     End Sub
 
     ''
+    ' @brief String equality helper for device queries.
+    ''
+    Private Unsafe Function StrEquals(ByVal s1 As Pointer To Byte, ByVal s2 As Pointer To Byte) As Boolean
+        If s1 = CPtr(Pointer To Byte, 0) Or s2 = CPtr(Pointer To Byte, 0) Then
+            StrEquals = False
+            Exit Function
+        End If
+        Dim idx As UInt32 = 0
+        While s1(idx) <> 0 And s2(idx) <> 0
+            If s1(idx) <> s2(idx) Then
+                StrEquals = False
+                Exit Function
+            End If
+            idx = idx + 1
+        Wend
+        StrEquals = (s1(idx) = 0 And s2(idx) = 0)
+    End Function
+
+    ''
     ' @brief Application entry point for dev_mgr daemon (Ring 3 CPL=3).
     ' @param argc Argument count.
     ' @param argv Argument vector.
@@ -115,7 +134,49 @@ Module DevMgrMain
         Dim devReqCount As UInt64 = 0
 
         Do
-            ProcessSleep 500
+            If SynapsePop(devNodeId, reqPkt) Then
+                If reqPkt.PacketType = DEV_CMD_QUERY Then
+                    Dim targetName As Pointer To Byte = @reqPkt.Payload(0)
+                    Dim foundIdx As Int32 = -1
+                    Dim i As UInt32 = 0
+                    While i < devCount
+                        If StrEquals(targetName, devices(i).Name) Then
+                            foundIdx = CType(Int32, i)
+                            Exit While
+                        End If
+                        i = i + 1
+                    Wend
+
+                    respPkt.Sequence = devReqCount
+                    respPkt.SourceNode = devNodeId
+                    respPkt.TargetNode = reqPkt.SourceNode
+                    If foundIdx >= 0 Then
+                        respPkt.PacketType = DEV_RESP_OK
+                        respPkt.PayloadLength = 24
+                        Dim pId As Pointer To UInt32 = CPtr(Pointer To UInt32, @respPkt.Payload(0))
+                        Dim pKind As Pointer To UInt32 = CPtr(Pointer To UInt32, @respPkt.Payload(4))
+                        Dim pStatus As Pointer To UInt32 = CPtr(Pointer To UInt32, @respPkt.Payload(8))
+                        Dim pReserved As Pointer To UInt32 = CPtr(Pointer To UInt32, @respPkt.Payload(12))
+                        Dim pBase As Pointer To UInt64 = CPtr(Pointer To UInt64, @respPkt.Payload(16))
+                        pId(0) = devices(foundIdx).Id
+                        pKind(0) = devices(foundIdx).Kind
+                        pStatus(0) = devices(foundIdx).Status
+                        pReserved(0) = 0
+                        pBase(0) = devices(foundIdx).BaseAddr
+                    Else
+                        respPkt.PacketType = 301 ' ERROR
+                        respPkt.PayloadLength = 0
+                    End If
+
+                    Dim replyChan As UInt64 = SynapseConnect(devNodeId, reqPkt.SourceNode, 7)
+                    If replyChan <> 0 Then
+                        SynapsePush replyChan, respPkt
+                    End If
+                    devReqCount = devReqCount + 1
+                End If
+            End If
+
+            ProcessSleep 50
         Loop
 
         user_main = 0

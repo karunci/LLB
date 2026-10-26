@@ -17,13 +17,12 @@ Namespace Pros.Nodes
 
     <Packed>
     Public Structure AxonPacket
-        Public Sequence   As UInt64
-        Public Timestamp  As UInt64
-        Public PacketType As UInt32
-        Public Flags      As UInt32
-        Public Length     As UInt32
-        Public Reserved   As UInt32
-        Public Payload(31) As Byte
+        Public Sequence      As UInt64
+        Public PacketType    As UInt32
+        Public PayloadLength As UInt32
+        Public SourceNode    As UInt64
+        Public TargetNode    As UInt64
+        Public Payload(255)  As Byte
     End Structure
 
     Public Module NodeRegistry

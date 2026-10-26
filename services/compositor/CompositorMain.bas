@@ -39,6 +39,7 @@ Module CompositorMain
     Private lastFpsFrame As UInt32 = 0
     Private lastFpsTime As UInt64 = 0
     Private currentFps As UInt32 = 60
+    Private lastRenderedFps As UInt32 = &HFFFFFFFF
     Private nextAnimTime As UInt64 = 0
 
     ''
@@ -485,16 +486,19 @@ Module CompositorMain
             animDir = 2
         End If
 
-        ' 4. Real-time dynamic FPS counter text measured from system timer
-        Dim fpsBuf(16) As Byte
-        Dim fIdx As UInt32 = 0
-        AppendUInt CType(UInt64, currentFps), @fpsBuf(0), fIdx
-        AppendStr " FPS", @fpsBuf(0), fIdx
-        fpsBuf(fIdx) = 0
+        ' 4. Real-time dynamic FPS counter text measured from system timer (cached to avoid redundant rasterization)
+        If currentFps <> lastRenderedFps Then
+            Dim fpsBuf(16) As Byte
+            Dim fIdx As UInt32 = 0
+            AppendUInt CType(UInt64, currentFps), @fpsBuf(0), fIdx
+            AppendStr " FPS", @fpsBuf(0), fIdx
+            fpsBuf(fIdx) = 0
 
-        ' Clear FPS text region and redraw dynamic counter
-        FillRect frontSurf, badgeX + 138, badgeY + 6, 60, 16, &HFF2E3440
-        DrawText5x7 frontSurf, badgeX + 140, badgeY + 10, @fpsBuf(0), &HFF88C0D0
+            ' Clear FPS text region and redraw dynamic counter
+            FillRect frontSurf, badgeX + 138, badgeY + 6, 60, 16, &HFF2E3440
+            DrawText5x7 frontSurf, badgeX + 140, badgeY + 10, @fpsBuf(0), &HFF88C0D0
+            lastRenderedFps = currentFps
+        End If
 
         If restoreCursor Then
             SaveCursorBackground cursorX, cursorY
@@ -547,7 +551,7 @@ Module CompositorMain
 
         DrawText5x7 frontSurf, 16, 10, CPtr(Pointer To Byte, "PROS WORKSTATION  |  APPLICATIONS  NODES  SERVICES"), &HFFECEFF4
         RenderMouseCoordinates
-        DrawText5x7 frontSurf, CType(Int32, dispInfo.Width) - 360, 10, CPtr(Pointer To Byte, "REV: 2026.10.26-r34-re02"), &HFF88C0D0
+        DrawText5x7 frontSurf, CType(Int32, dispInfo.Width) - 360, 10, CPtr(Pointer To Byte, "REV: 2026.10.26-r34-re03"), &HFF88C0D0
         DrawText5x7 frontSurf, CType(Int32, dispInfo.Width) - 170, 10, CPtr(Pointer To Byte, "SMP 4 CORES  ONLINE"), &HFFA3BE8C
 
         ' 3. Render Floating Desktop Window: "PROS System Monitor"
@@ -579,7 +583,7 @@ Module CompositorMain
         ' Card 1: Microkernel Architecture
         FillRect frontSurf, wx + 16, wy + 40, ww - 32, 42, &HFF1E222A
         FillRect frontSurf, wx + 16, wy + 40, 3, 42, &HFF81A1C1
-        DrawText5x7 frontSurf, wx + 26, wy + 48, CPtr(Pointer To Byte, "KERNEL : PRK-LLB MICROKERNEL [REV: 2026.10.26-r34-re02]"), &HFF81A1C1
+        DrawText5x7 frontSurf, wx + 26, wy + 48, CPtr(Pointer To Byte, "KERNEL : PRK-LLB MICROKERNEL [REV: 2026.10.26-r34-re03]"), &HFF81A1C1
         DrawText5x7 frontSurf, wx + 26, wy + 64, CPtr(Pointer To Byte, "MODEL  : DUAL-PLANE NEURAL SYNAPSE ROUTING"), &HFFD8DEE9
 
         ' Card 2: Compositor Status
@@ -743,10 +747,10 @@ Module CompositorMain
                     SaveCursorBackground cursorX, cursorY
                     DrawCursorArrow cursorX, cursorY
                     mouseDirty = False
+                    RenderMouseCoordinates
                 End If
 
                 RenderTelemetryBadge
-                RenderMouseCoordinates
 
                 If (nowTime - nextFrameTime) > 32 Then
                     nextFrameTime = nowTime + 16

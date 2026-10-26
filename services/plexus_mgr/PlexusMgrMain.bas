@@ -42,6 +42,25 @@ Module PlexusMgrMain
     End Sub
 
     ''
+    ' @brief String equality helper for service queries.
+    ''
+    Private Unsafe Function StrEquals(ByVal s1 As Pointer To Byte, ByVal s2 As Pointer To Byte) As Boolean
+        If s1 = CPtr(Pointer To Byte, 0) Or s2 = CPtr(Pointer To Byte, 0) Then
+            StrEquals = False
+            Exit Function
+        End If
+        Dim idx As UInt32 = 0
+        While s1(idx) <> 0 And s2(idx) <> 0
+            If s1(idx) <> s2(idx) Then
+                StrEquals = False
+                Exit Function
+            End If
+            idx = idx + 1
+        Wend
+        StrEquals = (s1(idx) = 0 And s2(idx) = 0)
+    End Function
+
+    ''
     ' @brief Application entry point for plexus_mgr daemon (Ring 3 CPL=3).
     ' @param argc Argument count.
     ' @param argv Argument vector.
@@ -101,16 +120,50 @@ Module PlexusMgrMain
         ConsoleWriteLine "[PLEXUS_MGR] ======================================================="
 
         ' 4. Active supervisor loop (Zero idle CPU via ProcessSleep)
-        Do
-            ' Update heartbeat timestamps
-            Dim nowTime As UInt64 = GetUptime()
-            Dim i As UInt32 = 0
-            While i < serviceCount
-                services(i).LastHeartbeat = nowTime
-                i = i + 1
-            Wend
+        Dim reqPkt As AxonPacket
+        Dim respPkt As AxonPacket
+        Dim pReqCount As UInt64 = 0
 
-            ProcessSleep 1000
+        Do
+            If SynapsePop(mgrNodeId, reqPkt) Then
+                If reqPkt.PacketType = PLEXUS_CMD_STATUS Then
+                    Dim targetName As Pointer To Byte = @reqPkt.Payload(0)
+                    Dim foundIdx As Int32 = -1
+                    Dim i As UInt32 = 0
+                    While i < serviceCount
+                        If StrEquals(targetName, services(i).Name) Then
+                            foundIdx = CType(Int32, i)
+                            Exit While
+                        End If
+                        i = i + 1
+                    Wend
+
+                    respPkt.Sequence = pReqCount
+                    respPkt.SourceNode = mgrNodeId
+                    respPkt.TargetNode = reqPkt.SourceNode
+                    If foundIdx >= 0 Then
+                        respPkt.PacketType = PLEXUS_RESP_OK
+                        respPkt.PayloadLength = 16
+                        Dim pPid As Pointer To UInt64 = CPtr(Pointer To UInt64, @respPkt.Payload(0))
+                        Dim pStatus As Pointer To UInt32 = CPtr(Pointer To UInt32, @respPkt.Payload(8))
+                        Dim pReserved As Pointer To UInt32 = CPtr(Pointer To UInt32, @respPkt.Payload(12))
+                        pPid(0) = services(foundIdx).Pid
+                        pStatus(0) = services(foundIdx).Status
+                        pReserved(0) = 0
+                    Else
+                        respPkt.PacketType = 401 ' ERROR
+                        respPkt.PayloadLength = 0
+                    End If
+
+                    Dim replyChan As UInt64 = SynapseConnect(mgrNodeId, reqPkt.SourceNode, 7)
+                    If replyChan <> 0 Then
+                        SynapsePush replyChan, respPkt
+                    End If
+                    pReqCount = pReqCount + 1
+                End If
+            End If
+
+            ProcessSleep 50
         Loop
 
         user_main = 0

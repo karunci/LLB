@@ -6,6 +6,7 @@ Import Sync
 Import Core.Nodes.SynapseCaps
 Use Drivers.SerialUart As Serial
 Use Core.Nodes.SynapseChannel
+Use Sched.Scheduler As SchedEngine
 
 Namespace Core.Nodes
 
@@ -147,6 +148,20 @@ Namespace Core.Nodes
 
             Dim flags As UInt64 = Sync.SpinlockOps.AcquireIrqSave(registryLock)
 
+            ' Check if an existing channel connects srcNodeId -> tgtNodeId
+            Dim existIdx As UInt32 = 0
+            While existIdx < SynapseCaps.MAX_NODES
+                If channelAllocated(existIdx) Then
+                    If channels(existIdx).GetSourceNode() = srcNodeId And channels(existIdx).GetTargetNode() = tgtNodeId Then
+                        Dim existCid As UInt64 = channels(existIdx).GetChannelId()
+                        Sync.SpinlockOps.ReleaseIrqRestore registryLock, flags
+                        ConnectSynapse = existCid
+                        Exit Function
+                    End If
+                End If
+                existIdx = existIdx + 1
+            Wend
+
             ' Find an available synapse channel slot
             Dim slot As UInt32 = 0
             While slot < SynapseCaps.MAX_NODES
@@ -188,6 +203,60 @@ Namespace Core.Nodes
             Wend
             GetChannel = 0
         End Function
+
+        ''
+        ' @brief Find an active channel targeting the given node that has pending packets.
+        ' @param targetNodeId Destination node ID.
+        ' @return Pointer to channel or 0 if none have pending packets.
+        ''
+        Public Unsafe Function GetInboundChannel(ByVal targetNodeId As UInt64) As Pointer To SynapseChannel
+            Dim i As UInt32 = 0
+            While i < SynapseCaps.MAX_NODES
+                If channelAllocated(i) Then
+                    If channels(i).GetTargetNode() = targetNodeId And channels(i).GetCount() > 0 Then
+                        GetInboundChannel = AddressOf channels(i)
+                        Exit Function
+                    End If
+                End If
+                i = i + 1
+            Wend
+            GetInboundChannel = 0
+        End Function
+
+        ''
+        ' @brief Wake any task waiting on a specific node.
+        ' @param targetNodeId Destination node ID.
+        ''
+        Public Unsafe Sub WakeNodeWaiter(ByVal targetNodeId As UInt64)
+            Dim i As UInt32 = 0
+            While i < SynapseCaps.MAX_NODES
+                If (nodes(i).Flags And SynapseCaps.NODE_FLAG_ACTIVE) <> 0 And nodes(i).NodeId = targetNodeId Then
+                    Dim wPid As UInt64 = nodes(i).WaitingPid
+                    nodes(i).WaitingPid = 0
+                    If wPid <> 0 Then
+                        SchedEngine.WakeTask wPid
+                    End If
+                    Exit Sub
+                End If
+                i = i + 1
+            Wend
+        End Sub
+
+        ''
+        ' @brief Set waiting PID for a specific node.
+        ' @param targetNodeId Destination node ID.
+        ' @param pid Task ID waiting for incoming messages.
+        ''
+        Public Unsafe Sub SetNodeWaitingPid(ByVal targetNodeId As UInt64, ByVal pid As UInt64)
+            Dim i As UInt32 = 0
+            While i < SynapseCaps.MAX_NODES
+                If (nodes(i).Flags And SynapseCaps.NODE_FLAG_ACTIVE) <> 0 And nodes(i).NodeId = targetNodeId Then
+                    nodes(i).WaitingPid = pid
+                    Exit Sub
+                End If
+                i = i + 1
+            Wend
+        End Sub
 
     End Class
 

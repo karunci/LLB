@@ -282,6 +282,154 @@ Module UserApplication
             End If
         End If
 
+        ' 10. Verify VFS Service via Synaptic IPC (Querying /system/bin/genesis.bax metadata)
+        Dim vfsNodeName(15) As Byte
+        vfsNodeName(0) = 115 ' 's'
+        vfsNodeName(1) = 114 ' 'r'
+        vfsNodeName(2) = 118 ' 'v'
+        vfsNodeName(3) = 46  ' '.'
+        vfsNodeName(4) = 118 ' 'v'
+        vfsNodeName(5) = 102 ' 'f'
+        vfsNodeName(6) = 115 ' 's'
+        vfsNodeName(7) = 0
+        Dim vfsTargetId As UInt64 = Syscall1(SYS_NODE_LOOKUP, CType(UInt64, @vfsNodeName(0)))
+        If vfsTargetId > 0 Then
+            Dim vfsSynId As UInt64 = Syscall3(SYS_SYNAPSE_CONNECT, userNodeId, vfsTargetId, 3)
+            If vfsSynId > 0 Then
+                Dim vfsReq As AxonPacket
+                vfsReq.Sequence = 201
+                vfsReq.PacketType = 11 ' VFS_CMD_STAT
+                vfsReq.Flags = 0
+                vfsReq.SourceNode = userNodeId
+                vfsReq.TargetNode = vfsTargetId
+                Dim testPath As Pointer To Byte = CPtr(Pointer To Byte, "/system/bin/genesis.bax")
+                Dim pi As UInt32 = 0
+                While testPath(pi) <> 0
+                    vfsReq.Payload(pi) = testPath(pi)
+                    pi = pi + 1
+                Wend
+                vfsReq.Payload(pi) = 0
+                vfsReq.PayloadLength = pi + 1
+                Syscall2 SYS_SYNAPSE_PUSH, vfsSynId, CType(UInt64, @vfsReq)
+
+                Dim vfsResp As AxonPacket
+                Dim vLoop As UInt32 = 0
+                While vLoop < 10
+                    If Syscall3(SYS_SYNAPSE_POP, userNodeId, CType(UInt64, @vfsResp), 0) = 1 Then
+                        If vfsResp.PacketType = 100 Then ' VFS_RESP_OK
+                            Dim pSize As Pointer To UInt32 = CPtr(Pointer To UInt32, @vfsResp.Payload(4))
+                            PrintMessageWithUInt "[USER-APP] VFS Metadata verified: '/system/bin/genesis.bax' (Size: ", CType(UInt64, pSize(0)), " bytes)\r\n"
+                        End If
+                        Exit While
+                    End If
+                    Syscall1 SYS_PROCESS_SLEEP, 10
+                    vLoop = vLoop + 1
+                Wend
+            End If
+        End If
+
+        ' 11. Verify Device Manager Service via Synaptic IPC (Querying 'pci.disp.lfb')
+        Dim devNodeName(15) As Byte
+        devNodeName(0) = 115 ' 's'
+        devNodeName(1) = 114 ' 'r'
+        devNodeName(2) = 118 ' 'v'
+        devNodeName(3) = 46  ' '.'
+        devNodeName(4) = 100 ' 'd'
+        devNodeName(5) = 101 ' 'e'
+        devNodeName(6) = 118 ' 'v'
+        devNodeName(7) = 95  ' '_'
+        devNodeName(8) = 109 ' 'm'
+        devNodeName(9) = 103 ' 'g'
+        devNodeName(10) = 114' 'r'
+        devNodeName(11) = 0
+        Dim devTargetId As UInt64 = Syscall1(SYS_NODE_LOOKUP, CType(UInt64, @devNodeName(0)))
+        If devTargetId > 0 Then
+            Dim devSynId As UInt64 = Syscall3(SYS_SYNAPSE_CONNECT, userNodeId, devTargetId, 3)
+            If devSynId > 0 Then
+                Dim devReq As AxonPacket
+                devReq.Sequence = 202
+                devReq.PacketType = 31 ' DEV_CMD_QUERY
+                devReq.Flags = 0
+                devReq.SourceNode = userNodeId
+                devReq.TargetNode = devTargetId
+                Dim devNamePtr As Pointer To Byte = CPtr(Pointer To Byte, "pci.disp.lfb")
+                Dim di As UInt32 = 0
+                While devNamePtr(di) <> 0
+                    devReq.Payload(di) = devNamePtr(di)
+                    di = di + 1
+                Wend
+                devReq.Payload(di) = 0
+                devReq.PayloadLength = di + 1
+                Syscall2 SYS_SYNAPSE_PUSH, devSynId, CType(UInt64, @devReq)
+
+                Dim devResp As AxonPacket
+                Dim dLoop As UInt32 = 0
+                While dLoop < 10
+                    If Syscall3(SYS_SYNAPSE_POP, userNodeId, CType(UInt64, @devResp), 0) = 1 Then
+                        If devResp.PacketType = 300 Then ' DEV_RESP_OK
+                            Dim pBase As Pointer To UInt64 = CPtr(Pointer To UInt64, @devResp.Payload(16))
+                            PrintMessageWithUInt "[USER-APP] Device Manager verified: 'pci.disp.lfb' (Aperture: 0x", pBase(0), ")\r\n"
+                        End If
+                        Exit While
+                    End If
+                    Syscall1 SYS_PROCESS_SLEEP, 10
+                    dLoop = dLoop + 1
+                Wend
+            End If
+        End If
+
+        ' 12. Verify Plexus Supervisor Service via Synaptic IPC (Querying 'srv.compositor')
+        Dim plexNodeName(16) As Byte
+        plexNodeName(0) = 115 ' 's'
+        plexNodeName(1) = 114 ' 'r'
+        plexNodeName(2) = 118 ' 'v'
+        plexNodeName(3) = 46  ' '.'
+        plexNodeName(4) = 112 ' 'p'
+        plexNodeName(5) = 108 ' 'l'
+        plexNodeName(6) = 101 ' 'e'
+        plexNodeName(7) = 120 ' 'x'
+        plexNodeName(8) = 117 ' 'u'
+        plexNodeName(9) = 115 ' 's'
+        plexNodeName(10) = 95 ' '_'
+        plexNodeName(11) = 109' 'm'
+        plexNodeName(12) = 103' 'g'
+        plexNodeName(13) = 114' 'r'
+        plexNodeName(14) = 0
+        Dim plexTargetId As UInt64 = Syscall1(SYS_NODE_LOOKUP, CType(UInt64, @plexNodeName(0)))
+        If plexTargetId > 0 Then
+            Dim plexSynId As UInt64 = Syscall3(SYS_SYNAPSE_CONNECT, userNodeId, plexTargetId, 3)
+            If plexSynId > 0 Then
+                Dim plexReq As AxonPacket
+                plexReq.Sequence = 203
+                plexReq.PacketType = 40 ' PLEXUS_CMD_STATUS
+                plexReq.Flags = 0
+                plexReq.SourceNode = userNodeId
+                plexReq.TargetNode = plexTargetId
+                Dim srvCompName As Pointer To Byte = CPtr(Pointer To Byte, "srv.compositor")
+                Dim cpi As UInt32 = 0
+                While srvCompName(cpi) <> 0
+                    plexReq.Payload(cpi) = srvCompName(cpi)
+                    cpi = cpi + 1
+                Wend
+                plexReq.Payload(cpi) = 0
+                plexReq.PayloadLength = cpi + 1
+                Syscall2 SYS_SYNAPSE_PUSH, plexSynId, CType(UInt64, @plexReq)
+
+                Dim plexResp As AxonPacket
+                Dim pLoop As UInt32 = 0
+                While pLoop < 10
+                    If Syscall3(SYS_SYNAPSE_POP, userNodeId, CType(UInt64, @plexResp), 0) = 1 Then
+                        If plexResp.PacketType = 400 Then ' PLEXUS_RESP_OK
+                            PrintString "[USER-APP] Plexus Supervisor verified: 'srv.compositor' is supervised & active\r\n"
+                        End If
+                        Exit While
+                    End If
+                    Syscall1 SYS_PROCESS_SLEEP, 10
+                    pLoop = pLoop + 1
+                Wend
+            End If
+        End If
+
         PrintString "[BRT0] user_main completed successfully. Returning exit code 0.\r\n"
         PrintString "[BRT0] =======================================================\r\n"
 

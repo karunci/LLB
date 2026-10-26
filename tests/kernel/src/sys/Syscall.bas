@@ -241,6 +241,7 @@ Namespace Sys
                         If chan <> 0 Then
                             Dim pktPtr As Pointer To AxonPacket = CPtr(Pointer To AxonPacket, arg2)
                             If chan.PushPacket(pktPtr(0)) Then
+                                Registry.WakeNodeWaiter chan.GetTargetNode()
                                 Dispatch = 1
                             Else
                                 Dispatch = 0
@@ -253,19 +254,41 @@ Namespace Sys
                     End If
 
                 Case SYS_SYNAPSE_POP
-                    ' arg1 = channelId (UInt64), arg2 = packetPtr (UInt64), arg3 = block (0 or 1)
+                    ' arg1 = channelId or targetNodeId (UInt64), arg2 = packetPtr (UInt64), arg3 = block (0 or 1)
                     If ValidateUserBuffer(arg2, SizeOf(AxonPacket)) Then
-                        Dim chanPop As Pointer To SynapseChannel = Registry.GetChannel(arg1)
-                        If chanPop <> 0 Then
-                            Dim outPktPtr As Pointer To AxonPacket = CPtr(Pointer To AxonPacket, arg2)
-                            Dim shouldBlock As Boolean = (arg3 <> 0)
-                            If chanPop.PopPacket(outPktPtr(0), shouldBlock) Then
-                                Dispatch = 1
+                        Dim outPktPtr As Pointer To AxonPacket = CPtr(Pointer To AxonPacket, arg2)
+                        Dim shouldBlock As Boolean = (arg3 <> 0)
+                        If arg1 < 5000 Then
+                            ' Node-level multiplexed pop: receive from any channel destined to this node
+                            Do
+                                Dim chanIn As Pointer To SynapseChannel = Registry.GetInboundChannel(arg1)
+                                If chanIn <> 0 Then
+                                    If chanIn.PopPacket(outPktPtr(0), False) Then
+                                        Dispatch = 1
+                                        Exit Do
+                                    End If
+                                End If
+
+                                If Not shouldBlock Then
+                                    Dispatch = 0
+                                    Exit Do
+                                End If
+
+                                Registry.SetNodeWaitingPid arg1, SchedEngine.GetCurrentPid()
+                                SchedEngine.BlockCurrentTask
+                            Loop
+                        Else
+                            ' Channel-specific pop
+                            Dim chanPop As Pointer To SynapseChannel = Registry.GetChannel(arg1)
+                            If chanPop <> 0 Then
+                                If chanPop.PopPacket(outPktPtr(0), shouldBlock) Then
+                                    Dispatch = 1
+                                Else
+                                    Dispatch = 0
+                                End If
                             Else
                                 Dispatch = 0
                             End If
-                        Else
-                            Dispatch = 0
                         End If
                     Else
                         Dispatch = 0

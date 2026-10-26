@@ -890,4 +890,32 @@ tests/kernel/
 - [x] **Mandatory Revision Bumping:**
   - Bumped build revision to `REV: 2026.10.26-r34-re02` across kernel boot banner, serial logs, top desktop menu bar, and system monitor window.
 
+---
+
+## Phase 28: Inbound Multiplexed Synapses, Full Windows+Android Directory Tree, and System ABI Specification (`REV: 2026.10.26-r34-re03`)
+
+- [x] **Inbound Target Node Synapse Scanning & Event Sleep (`tests/kernel/src/node/NodeRegistry.cls` & `tests/kernel/src/sys/Syscall.bas`):**
+  - Enhanced `SYS_SYNAPSE_POP` to scan all incoming channels targeting the caller's node ID when a node ID (< 5000) is specified as `arg1`.
+  - Implemented sleeping wait (`SetNodeWaitingPid`, `BlockCurrentTask`) when no packets are pending, and instant wake-up (`WakeNodeWaiter`, `SchedEngine.WakeTask`) in `SYS_SYNAPSE_PUSH` when a message is queued.
+  - Set reply channel capabilities to 7 (`CAP_SYNAPSE_READ Or CAP_SYNAPSE_WRITE Or CAP_SYNAPSE_NOTIFY`) across all daemons, enabling seamless bidirectional query/reply RPC between Ring 3 clients and service daemons.
+- [x] **Complete Hybrid Windows + Android Virtual File System (`services/vfs_srv/VfsMain.bas`):**
+  - Expanded in-memory VFS hierarchy to 26 nodes covering `/system/bin`, `/system/lib`, `/system/etc`, `/system/fonts`, `/data/app`, `/data/user/0`, `/dev`, `/mnt/c`, and `/mnt/cdrom`.
+  - Implemented full Windows path normalization (`C:\...` -> `/mnt/c/...`, backslash `\` to `/` conversion).
+  - Implemented lookup and stat handlers responding to `VFS_CMD_LOOKUP` and `VFS_CMD_STAT` via dynamic Synaptic reply channels.
+- [x] **Compositor Presentation Pacing & Telemetry Optimization (`services/compositor/CompositorMain.bas`):**
+  - Cached dynamic FPS text rasterization: rendered to the top menu bar only when `currentFps <> lastRenderedFps` (1 Hz update rate instead of 60 Hz).
+  - Coalesced mouse coordinate string rendering so menu bar text updates only when mouse coordinates actually change.
+  - Maintained solid 60 FPS presentation gate while keeping CPU usage at 0%–1% guest and 1%–3% VMM during active mouse cursor interaction.
+- [x] **Standard System Library Synchronized ABI (`lib/pros/` & `include/pros.bas`):**
+  - Synchronized canonical 288-byte `AxonPacket` layout across kernel, client library, and services.
+  - Implemented full Synaptic IPC client exchanges in `VfsClient.Stat`, `WindowManagerClient.RequestFocus`, `DeviceClient.QueryDevice`, and `ServiceSupervisorClient.IsServiceActive`.
+  - Rebuilt and archived static library `lib/pros/build/libpros.a`.
+- [x] **System Documentation Suite:**
+  - Published [`docs/SYSTEM_API_AND_ABI.md`](file:///t:/projects/LLB/llbc/docs/SYSTEM_API_AND_ABI.md): 64-bit AMD64 syscall register mapping, syscall ID table (1-71), 288-byte `AxonPacket` layout, shared memory protocol.
+  - Published [`docs/STANDARD_LIBRARY.md`](file:///t:/projects/LLB/llbc/docs/STANDARD_LIBRARY.md): Complete API reference for all 10 `libpros` namespaces and C interoperability.
+  - Published [`docs/DIRECTORY_LAYOUT.md`](file:///t:/projects/LLB/llbc/docs/DIRECTORY_LAYOUT.md): Detailed specification of the hybrid Windows + Android directory tree, mount points, and normalization rules.
+- [x] **Mandatory Revision Bumping:**
+  - Bumped revision tag to `[REV: 2026.10.26-r34-re03]` across kernel boot banner, serial logs, desktop menu bar, and system monitor window.
+
+
 

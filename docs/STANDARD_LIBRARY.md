@@ -1,345 +1,78 @@
-# Standard Libraries (`LibLLB` & `LibLLB_Metal`)
+# PROS Standard Library (libpros): API Reference & Architecture
 
-Low-Level Basic provides standard runtime libraries tailored for hosted applications and freestanding / bare-metal systems:
+## 1. Overview
+The PROS Standard Library (`libpros.a`, headers in `include/pros.bas`) provides native Low-Level Basic (LLB) modules and standard C declarations for userland applications, drivers, and background daemons.
 
-| Library | Directory | Target Type | Binary Output | Environment / Linkage |
-|:---|:---|:---:|:---:|:---|
-| **`LibLLB`** | `lib/hosted/` | `SharedLibrary` | `libllb.so` | **Hosted userland** runtimes (Linux / Termux / Android). Dynamically linked CRT shared object. |
-| **`LibLLB_Metal`** | `lib/metal/` | `StaticLibrary` | `libllb_metal.a` | **Freestanding / bare-metal** systems (kernels, bootloaders, microcontrollers). Zero host libc dependency. |
-
----
-
-## 1. Quick Comparison with C Standard Library (libc)
-
-The following table maps LLB standard library routines to their standard C (`<string.h>`, `<stdlib.h>`, `<stdio.h>`, `<ctype.h>`, `<math.h>`) counterparts:
-
-| LLB Module | LLB Routine | C Equivalent | Purpose & Behavior |
-|:---|:---|:---|:---|
-| **`Std.Strings`** | `Length(str)` | `strlen(s)` | Computes number of characters before null terminator. |
-| **`Std.Strings`** | `Compare(s1, s2)` | `strcmp(s1, s2)` | Lexicographically compares two null-terminated strings (-1, 0, 1). |
-| **`Std.Strings`** | `CompareN(s1, s2, n)` | `strncmp(s1, s2, n)` | Lexicographically compares up to `n` characters of two strings. |
-| **`Std.Strings`** | `CompareI(s1, s2)` | `strcasecmp(s1, s2)` | Case-insensitive ASCII string comparison. |
-| **`Std.Strings`** | `Copy(dest, src)` | `strcpy(dest, src)` | Copies null-terminated string to destination buffer. |
-| **`Std.Strings`** | `CopyN(dest, src, n)` | `strncpy(dest, src, n)` | Copies at most `n` characters, padding with zeros. |
-| **`Std.Strings`** | `Concat(dest, src)` | `strcat(dest, src)` | Appends null-terminated source string to destination. |
-| **`Std.Strings`** | `SubString(src, start, n, outBuf)` | `memcpy`/slice | Extracts substring from 0-based offset into destination buffer. |
-| **`Std.Strings`** | `Find(str, c)` | `strchr(s, c)` | Locates first occurrence of character byte in string. |
-| **`Std.Memory`** | `Fill(dest, val, count)` | `memset(dest, val, n)` | Fills memory buffer with constant byte value. |
-| **`Std.Memory`** | `SetBytes(dest, val, count)` | `memset(dest, val, n)` | Semantic alias for `Fill`. |
-| **`Std.Memory`** | `Copy(dest, src, count)` | `memcpy(dest, src, n)` | Non-overlapping byte copy from source to destination. |
-| **`Std.Memory`** | `CopyFast(dest, src, count)` | Aligned `memcpy` | 64-bit word-aligned chunk copy for high throughput. |
-| **`Std.Memory`** | `Move(dest, src, count)` | `memmove(dest, src, n)`| Overlap-safe memory copy. |
-| **`Std.Memory`** | `Compare(p1, p2, count)` | `memcmp(p1, p2, n)` | Byte-by-byte memory comparison (-1, 0, 1). |
-| **`Std.Memory`** | `Search(ptr, val, count)` | `memchr(s, c, n)` | Locates first matching byte within `count` bytes of memory. |
-| **`Format`** | `SprintF(outBuf, maxLen, fmt, args...)` | `snprintf(buf, size, fmt, ...)` | Safe variadic string formatting (`%s`, `%u`, `%d`/`%i`, `%x`/`%X`, `%c`, `%%`). |
-| **`Format`** | `ToHex(val, outBuf, prefix)` | `sprintf(buf, "%x", val)` | Unsigned integer to hexadecimal string conversion. |
-| **`Format`** | `ToUInt(val, outBuf)` | `sprintf(buf, "%llu", val)` | Unsigned integer to decimal string conversion. |
-| **`Format`** | `ToInt(val, outBuf)` | `sprintf(buf, "%lld", val)` | Signed integer to decimal string conversion. |
-| **`Conv`** | `ParseUInt(str)` | `strtoull(str, NULL, 10)` | Parses unsigned decimal number from ASCII string. |
-| **`Conv`** | `ParseInt(str)` | `strtoll(str, NULL, 10)` | Parses signed decimal number from ASCII string. |
-| **`Conv`** | `ParseHex(str)` | `strtoull(str, NULL, 16)` | Parses hexadecimal integer from ASCII string. |
-| **`Math`** | `Abs(val)` | `labs(x)` / `llabs(x)` | Absolute value of signed 64-bit integer. |
-| **`Math`** | `Min(a, b)` | `MIN(a, b)` | Minimum of two signed 64-bit integers. |
-| **`Math`** | `Max(a, b)` | `MAX(a, b)` | Maximum of two signed 64-bit integers. |
-| **`Math`** | `Clamp(val, low, high)` | `__builtin_clamp` | Clamps value within inclusive range `[lowVal, highVal]`. |
-| **`Math`** | `DivRoundUp(num, denom)` | `(num + denom - 1) / denom` | Ceiled integer division. |
-| **`Math`** | `AlignUp(val, align)` | `(val + align - 1) & ~(align - 1)` | Aligns address upwards to power-of-two boundary. |
-| **`Math`** | `PopCount(val)` | `__builtin_popcountll(x)` | Counts number of set bits (1s) in 64-bit integer. |
-| **`Math`** | `CountLeadingZeros(val)` | `__builtin_clzll(x)` | Counts leading zero bits (0 to 64). |
-| **`Math`** | `CountTrailingZeros(val)`| `__builtin_ctzll(x)` | Counts trailing zero bits (0 to 64). |
-| **`Ascii`** | `IsDigit(c)` | `isdigit(c)` | Checks if ASCII byte is `'0'` through `'9'`. |
-| **`Ascii`** | `IsAlpha(c)` | `isalpha(c)` | Checks if ASCII byte is `'A'`-`'Z'` or `'a'`-`'z'`. |
-| **`Ascii`** | `IsAlnum(c)` | `isalnum(c)` | Checks if ASCII byte is alphanumeric. |
-| **`Ascii`** | `IsWhitespace(c)` | `isspace(c)` | Checks if ASCII byte is space, tab, newline, or carriage return. |
-| **`Ascii`** | `IsHexDigit(c)` | `isxdigit(c)` | Checks if ASCII byte is valid hexadecimal character. |
-| **`Ascii`** | `ToUpper(c)` | `toupper(c)` | Converts lowercase ASCII character to uppercase. |
-| **`Ascii`** | `ToLower(c)` | `tolower(c)` | Converts uppercase ASCII character to lowercase. |
-| **`TextWriter`** | `PrintF(fmt, args...)` | `fprintf(stream, fmt, ...)` | Variadic stream formatting attached to any `ICharSink` destination. |
+The library strictly follows LLB module and library binding rules:
+- `Import` for modules (`.bas`).
+- `Use` for classes (`.cls`).
+- `Declare` for external precompiled libraries (`.a`, `.bdl`).
+- `Alias` for long or namespaced symbol exports.
 
 ---
 
-## 2. API Reference & Signatures
+## 2. Subsystem API Reference
 
-### Module `Std.Strings`
+### 2.1 Process Management (`Pros.Sys.Process`)
+Header export: `ProcessYield`, `ProcessSleep`, `GetPid`, `TerminateProcess`, `GetCoreCount`, `GetUptime`.
 
-```vb
-' Computes length of null-terminated string (excluding null terminator)
-Public Unsafe Function Length(ByVal str As Pointer To Byte) As UInt64
+- `Sub ProcessYield()`: Relinquishes CPU quantum to next runnable task.
+- `Sub ProcessSleep(ByVal ms As UInt64)`: Puts task to sleep on kernel timer queue. Halts CPU when all tasks are sleeping.
+- `Function GetPid() As UInt64`: Returns calling task's PID.
+- `Sub TerminateProcess(ByVal exitCode As UInt64)`: Exits calling process cleanly.
+- `Function GetCoreCount() As UInt64`: Returns total online SMP CPU cores.
+- `Function GetUptime() As UInt64`: Returns system uptime in milliseconds.
 
-' Lexicographically compares two null-terminated strings
-' Returns: 0 if equal, -1 if s1 < s2, 1 if s1 > s2
-Public Unsafe Function Compare(ByVal s1 As Pointer To Byte, ByVal s2 As Pointer To Byte) As Int32
+### 2.2 Console I/O (`Pros.IO.Console`)
+Header export: `ConsoleWrite`, `ConsoleWriteLine`, `ConsolePrintWithUInt`.
 
-' Lexicographically compares at most n characters of two strings
-Public Unsafe Function CompareN(ByVal s1 As Pointer To Byte, ByVal s2 As Pointer To Byte, ByVal n As UInt64) As Int32
+- `Sub ConsoleWrite(ByVal strPtr As Pointer To Byte)`: Emits null-terminated string to COM1 UART and debug console.
+- `Sub ConsoleWriteLine(ByVal strPtr As Pointer To Byte)`: Emits string with trailing `\r\n`.
+- `Sub ConsolePrintWithUInt(ByVal prefix As Pointer To Byte, ByVal val As UInt64, ByVal suffix As Pointer To Byte)`: Atomically formats and emits string with embedded 64-bit integer.
 
-' Case-insensitive string comparison
-Public Unsafe Function CompareI(ByVal s1 As Pointer To Byte, ByVal s2 As Pointer To Byte) As Int32
+### 2.3 Neural Node Registry & Synapses (`Pros.Nodes.NodeRegistry`)
+Header export: `NodeRegister`, `NodeLookup`, `SynapseConnect`, `SynapsePush`, `SynapsePop`.
 
-' Copies null-terminated string from src to dest
-Public Unsafe Function Copy(ByVal dest As Pointer To Byte, ByVal src As Pointer To Byte) As UInt64
+- `Function NodeRegister(ByVal kind As UInt32, ByVal namePtr As Pointer To Byte, ByVal caps As UInt32) As UInt64`: Registers calling process node in control topology.
+- `Function NodeLookup(ByVal namePtr As Pointer To Byte) As UInt64`: Resolves public service node name (e.g. `"srv.vfs"`, `"srv.wm"`, `"srv.dev_mgr"`).
+- `Function SynapseConnect(ByVal srcNodeId As UInt64, ByVal targetNodeId As UInt64, ByVal caps As UInt32) As UInt64`: Creates or reuses a directed channel between two nodes.
+- `Function SynapsePush(ByVal synId As UInt64, ByRef pkt As AxonPacket) As Boolean`: Pushes packet to channel ring buffer.
+- `Function SynapsePop(ByVal synId As UInt64, ByRef pkt As AxonPacket) As Boolean`: Retrieves incoming packet from a channel or from the node's inbound queue.
 
-' Copies at most n characters from src to dest, zero-filling the remainder
-Public Unsafe Function CopyN(ByVal dest As Pointer To Byte, ByVal src As Pointer To Byte, ByVal n As UInt64) As UInt64
+### 2.4 Zero-Copy Shared Memory (`Pros.Memory.Shmem`)
+Header export: `ShmemCreate`, `ShmemAttach`, `ShmemDetach`.
 
-' Appends null-terminated src string to dest buffer
-Public Unsafe Function Concat(ByVal dest As Pointer To Byte, ByVal src As Pointer To Byte) As UInt64
+- `Function ShmemCreate(ByVal sizeBytes As UInt64, ByVal targetVaddr As UInt64) As UInt64`: Allocates physical pages and maps them to virtual address space.
+- `Function ShmemAttach(ByVal shmid As UInt64, ByVal targetVaddr As UInt64) As UInt64`: Maps an existing shared memory pool.
+- `Function ShmemDetach(ByVal shmid As UInt64) As Boolean`: Unmaps and decrements reference count.
 
-' Extracts substring from 0-based offset into outBuf
-Public Unsafe Function SubString(ByVal src As Pointer To Byte, ByVal start As UInt64, ByVal count As UInt64, ByVal outBuf As Pointer To Byte) As UInt64
+### 2.5 2D Surface Graphics & Blitting (`Pros.Gui.Graphics`)
+Header export: `FillRect`, `Blit`.
 
-' Finds first occurrence of character c in str
-Public Unsafe Function Find(ByVal str As Pointer To Byte, ByVal c As Byte) As Pointer To Byte
-```
+- `Sub FillRect(ByRef surf As Surface, ByVal rx As Int32, ByVal ry As Int32, ByVal rw As Int32, ByVal rh As Int32, ByVal color As UInt32)`: Fills clipped rectangle in ARGB8888 color.
+- `Sub Blit(ByRef dst As Surface, ByVal dx As Int32, ByVal dy As Int32, ByRef src As Surface, ByVal sx As Int32, ByVal sy As Int32, ByVal w As Int32, ByVal h As Int32)`: Fast zero-copy pixel block transfer.
 
----
+### 2.6 Virtual File System (`Pros.Storage.VfsClient`)
+Header export: `VfsStat`.
 
-### Module `Std.Memory`
+- `Function VfsStat(ByVal pathPtr As Pointer To Byte, ByRef outStat As FileStat) As Boolean`: Queries file size, node type, and permissions from `srv.vfs` using Synaptic IPC. Supports both Windows-style paths (`C:\System\Bin\genesis.bax`) and Android/Unix paths (`/system/bin/genesis.bax`).
 
-```vb
-' Fills count bytes with constant byte value
-Public Unsafe Sub Fill(ByVal dest As Pointer To Byte, ByVal val As Byte, ByVal count As UInt64)
+### 2.7 Window Manager (`Pros.Gui.WindowManagerClient`)
+Header export: `WmRequestFocus`.
 
-' Semantic alias for Fill
-Public Unsafe Sub SetBytes(ByVal dest As Pointer To Byte, ByVal val As Byte, ByVal count As UInt64)
+- `Function WmRequestFocus(ByVal winId As UInt32) As Boolean`: Sends `WM_CMD_SET_FOCUS` to `srv.wm` to update desktop focus state and active window borders.
 
-' Fast non-overlapping byte copy
-Public Unsafe Sub Copy(ByVal dest As Pointer To Byte, ByVal src As Pointer To Byte, ByVal count As UInt64)
+### 2.8 Device Manager (`Pros.Devices.DeviceClient`)
+Header export: `DevQueryDevice`.
 
-' High-throughput 64-bit word-aligned chunk copy
-Public Unsafe Sub CopyFast(ByVal dest As Pointer To Byte, ByVal src As Pointer To Byte, ByVal count As UInt64)
+- `Function DevQueryDevice(ByVal namePtr As Pointer To Byte, ByRef outInfo As DeviceInfo) As Boolean`: Queries hardware topology, MMIO apertures, and IRQ line numbers from `srv.dev_mgr`.
 
-' Safe copy handling overlapping memory regions
-Public Unsafe Sub Move(ByVal dest As Pointer To Byte, ByVal src As Pointer To Byte, ByVal count As UInt64)
+### 2.9 Service Supervisor (`Pros.Services.ServiceSupervisorClient`)
+Header export: `PlexusIsServiceActive`.
 
-' Compares first count bytes of two memory buffers
-' Returns: 0 if equal, -1 if s1 < s2, 1 if s1 > s2
-Public Unsafe Function Compare(ByVal s1 As Pointer To Byte, ByVal s2 As Pointer To Byte, ByVal count As UInt64) As Int32
-
-' Searches first count bytes for value val; returns pointer to matched byte or 0
-Public Unsafe Function Search(ByVal ptr As Pointer To Byte, ByVal val As Byte, ByVal count As UInt64) As Pointer To Byte
-```
-
----
-
-### Module `Format`
-
-```vb
-' Converts unsigned integer to hexadecimal string
-Public Unsafe Function ToHex(ByVal value As UInt64, ByVal outBuf As Pointer To Byte, ByVal prefix As Boolean) As UInt32
-
-' Converts unsigned integer to decimal string
-Public Unsafe Function ToUInt(ByVal value As UInt64, ByVal outBuf As Pointer To Byte) As UInt32
-
-' Converts signed integer to decimal string
-Public Unsafe Function ToInt(ByVal value As Int64, ByVal outBuf As Pointer To Byte) As UInt32
-
-' Safe variadic formatted printing into bounded buffer
-' Supported specifiers: %s (string), %u (uint64), %d / %i (int64), %x / %X (hex), %c (char), %% (literal %)
-Public Unsafe Function SprintF(ByVal outBuf As Pointer To Byte, ByVal maxLen As UInt64, ByVal fmt As Pointer To Byte, ParamArray args() As Pointer To Int64) As UInt32
-```
+- `Function PlexusIsServiceActive(ByVal serviceName As Pointer To Byte) As Boolean`: Queries `srv.plexus_mgr` to determine if a background daemon is healthy and running.
 
 ---
 
-### Module `Conv`
-
-```vb
-' Parses ASCII decimal string into unsigned 64-bit integer
-Public Unsafe Function ParseUInt(ByVal str As Pointer To Byte) As UInt64
-
-' Parses ASCII decimal string (with optional +/-) into signed 64-bit integer
-Public Unsafe Function ParseInt(ByVal str As Pointer To Byte) As Int64
-
-' Parses ASCII hexadecimal string (with optional 0x / 0X / &H prefix) into unsigned 64-bit integer
-Public Unsafe Function ParseHex(ByVal str As Pointer To Byte) As UInt64
-```
-
----
-
-### Module `Math`
-
-```vb
-' Computes absolute value of signed 64-bit integer
-Public Function Abs(ByVal val As Int64) As Int64
-
-' Returns minimum of two signed 64-bit integers
-Public Function Min(ByVal a As Int64, ByVal b As Int64) As Int64
-
-' Returns maximum of two signed 64-bit integers
-Public Function Max(ByVal a As Int64, ByVal b As Int64) As Int64
-
-' Clamps value within [lowVal, highVal]
-Public Function Clamp(ByVal val As Int64, ByVal lowVal As Int64, ByVal highVal As Int64) As Int64
-
-' Ceiled division: (numerator + denominator - 1) / denominator
-Public Function DivRoundUp(ByVal numerator As UInt64, ByVal denominator As UInt64) As UInt64
-
-' Aligns value upwards to power-of-two alignment boundary
-Public Function AlignUp(ByVal value As UInt64, ByVal alignment As UInt64) As UInt64
-
-' Counts number of 1 bits in 64-bit integer
-Public Function PopCount(ByVal value As UInt64) As UInt32
-
-' Counts number of leading zero bits
-Public Function CountLeadingZeros(ByVal value As UInt64) As UInt32
-
-' Counts number of trailing zero bits
-Public Function CountTrailingZeros(ByVal value As UInt64) As UInt32
-```
-
----
-
-### Module `Ascii`
-
-```vb
-Public Function IsDigit(ByVal c As Byte) As Boolean
-Public Function IsAlpha(ByVal c As Byte) As Boolean
-Public Function IsAlnum(ByVal c As Byte) As Boolean
-Public Function IsWhitespace(ByVal c As Byte) As Boolean
-Public Function IsHexDigit(ByVal c As Byte) As Boolean
-Public Function ToUpper(ByVal c As Byte) As Byte
-Public Function ToLower(ByVal c As Byte) As Byte
-```
-
----
-
-### Class `TextWriter` & Interface `ICharSink`
-
-```vb
-' Interface for stream destination drivers (Serial, VGA console, file descriptors)
-Public Interface ICharSink
-    Sub WriteChar(ByVal c As Byte)
-    Sub WriteString(ByVal str As Pointer To Byte)
-End Interface
-
-' Stream writer class wrapping any ICharSink implementation
-Public Class TextWriter
-    Public Unsafe Sub Attach(ByVal sink As Pointer To ICharSink)
-    Public Unsafe Sub WriteChar(ByVal c As Byte)
-    Public Unsafe Sub Write(ByVal str As Pointer To Byte)
-    Public Unsafe Sub WriteLine(ByVal str As Pointer To Byte)
-    Public Unsafe Sub WriteUInt(ByVal value As UInt64)
-    Public Unsafe Sub WriteInt(ByVal value As Int64)
-    Public Unsafe Sub WriteHex(ByVal value As UInt64, ByVal prefix As Boolean)
-    Public Unsafe Sub PrintF(ByVal fmt As Pointer To Byte, ParamArray args() As Pointer To Int64)
-End Class
-```
-
----
-
-## 3. How to Use in Projects
-
-### Hosted Applications (Dynamic Shared Library)
-
-Add the shared library path to `Libraries` in your project manifest:
-
-```ini
-[Project]
-Name = "MyApp"
-Type = "Executable"
-
-[Target]
-Platform = "hosted"
-
-[Linker]
-Libraries = [
-    "../../lib/hosted/build/libllb.so"
-]
-```
-
-Declare routines with `Lib "libllb"`:
-```vb
-Public Declare Function SprintF Lib "libllb" (ByVal outBuf As Pointer To Byte, ByVal maxLen As UInt64, ByVal fmt As Pointer To Byte, ParamArray args() As Pointer To Int64) As UInt32
-Public Declare Function Std_Strings_Concat Lib "libllb" (ByVal dest As Pointer To Byte, ByVal src As Pointer To Byte) As UInt64
-```
-
-### Freestanding & Bare-Metal Kernels (Static Archive)
-
-Add the static library archive to `Libraries` in your project manifest:
-
-```ini
-[Project]
-Name = "Kernel"
-Type = "Kernel"
-
-[Target]
-Architecture = "x86_64-unknown-none-elf"
-Platform     = "freestanding"
-
-[Linker]
-Libraries = [
-    "../../lib/metal/build/libllb_metal.a"
-]
-```
-
-Declare routines with `Lib "libllb_metal"`:
-```vb
-Public Declare Function Min Lib "libllb_metal" (ByVal a As Int64, ByVal b As Int64) As Int64
-Public Declare Function Std_Memory_Search Lib "libllb_metal" (ByVal ptr As Pointer To Byte, ByVal val As Byte, ByVal count As UInt64) As Pointer To Byte
-Public Declare Function SprintF Lib "libllb_metal" (ByVal outBuf As Pointer To Byte, ByVal maxLen As UInt64, ByVal fmt As Pointer To Byte, ParamArray args() As Pointer To Int64) As UInt32
-```
-
----
-
-## 4. Standardized Language Binding Conventions
-
-To maintain architectural clarity and prevent ambiguity across systems programming, PROS and Low-Level Basic enforce strict semantic separation between modules, classes, and precompiled libraries:
-
-```vb
-' =========================================================================
-' 1. IMPORT for Modules (.bas)
-'    Brings namespace routines, constants, and structures into the compilation unit.
-' =========================================================================
-Import "src/Syscall.bas"
-Import Pros.Sys.Syscall
-
-' =========================================================================
-' 2. USE for Classes (.cls)
-'    Imports object types, virtual method tables, and class definitions.
-' =========================================================================
-Use Mem.PhysicalMemoryManager As PMM
-Use Arch.Acpi As ACPI
-
-' =========================================================================
-' 3. DECLARE for Libraries (.a, .bdl, .so)
-'    Binds to external precompiled static or dynamic library symbols.
-' =========================================================================
-Public Declare Sub ProcessYield Lib "libpros" Alias "Pros_Process_Yield" ()
-Public Declare Function GetPid Lib "libpros" Alias "Pros_Process_GetPid" () As UInt64
-
-' =========================================================================
-' 4. ALIAS for Long Names
-'    Always shorten long, namespaced, or mangled names into clean, readable identifiers.
-' =========================================================================
-Use Arch.X86_64.PhysicalMemoryManager As PMM
-Public Declare Function FillRect Lib "libpros" Alias "Pros_Gui_Graphics_FillRect" (ByRef surf As Surface, ByVal rx As Int32, ByVal ry As Int32, ByVal rw As Int32, ByVal rh As Int32, ByVal color As UInt32) As Void
-```
-
----
-
-## 5. PROS System Runtime Library (`LibPROS`)
-
-| Library | Directory | Target Type | Binary Output | Environment / Linkage |
-|:---|:---|:---:|:---:|:---|
-| **`LibPROS`** | `lib/pros/` | `StaticLibrary` (Phase 14) / `SharedLibrary` (Phase 16) | `libpros.a` / `libpros.bdl` | **PROS Ring 3 Userland** (Drivers, Services, Compositor, Apps). |
-
-### Header Interface (`include/pros.bas`)
-Applications and drivers include the standard header declarations and link against `libpros.a`:
-
-```vb
-' Linker configuration in MyService.llbproj:
-' [Linker]
-' Libraries = [ "../../lib/pros/build/libpros.a" ]
-
-Import "include/pros.bas"
-
-Module AppMain
-    Public Unsafe Function user_main() As UInt64
-        Dim pid As UInt64 = GetPid()
-        ConsoleWrite "[APP] Active PID: "
-        ProcessYield
-        user_main = 0
-    End Function
-End Module
-```
-
+## 3. C Language Interoperability
+All exported symbols in `libpros.a` provide C-compatible ABI bindings without mangling, allowing C/C++ userland programs to link directly against `libpros.a` using `<pros.h>`.

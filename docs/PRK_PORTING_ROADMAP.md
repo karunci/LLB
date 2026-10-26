@@ -789,7 +789,22 @@ tests/kernel/
 - [x] **Mandatory Revision Bumping:**
   - Bumped build revision to `REV: 2026.10.26-r29` across kernel boot banner, serial logs, top desktop menu bar, and system monitor window.
 
+---
 
+## Phase 24: Ring 3 Interrupt GS Base Isolation (`swapgs`), IDT Exception Diagnostic & Compositor Pacing Fix (`REV: 2026.10.26-r30`)
 
-
-
+- [x] **Ring 3 Interrupt GS Base Isolation via `swapgs` (`IsrStubs.S`):**
+  - **Root Cause of VirtualBox Boot Stall ("Guest load 3% & VMM load 97%"):**
+    - When transitioning to Ring 3 userspace, `thread_start_trampoline` executes `swapgs`, placing the per-CPU `scratchPtr` into `IA32_KERNEL_GS_BASE` and leaving user `IA32_GS_BASE = 0`.
+    - Hardware interrupts (LAPIC Timer Vector 32, Keyboard Vector 33, Mouse Vector 44) do NOT automatically execute `swapgs`. When an interrupt fired while running a Ring 3 user thread (`srv.display`, `srv.input`, `srv.compositor`), the ISR entered with `GS_BASE == 0`.
+    - During interrupt handling, `OnTimerTick` called `Arch.X86_64.Gdt.GetCpuId()`, which executed `movl %gs:24, %eax`. With `GS_BASE == 0`, this attempted to read virtual address 24.
+    - Because the active page table was `userPml4` (where page 0 is strictly unmapped to trap NULL pointers), reading address 24 in kernel mode triggered a continuous Page Fault (#PF Vector 14) exception storm, locking up the VirtualBox hypervisor with 97% VMM exit load.
+  - **Resolution:**
+    - Updated `isr_common_stub` in `tests/kernel/src/arch/x86_64/IsrStubs.S` to inspect the interrupted code segment (`testb $3, 144(%rsp)`). If interrupted from Ring 3 (`CS RPL != 0`), it executes `swapgs` on ISR entry to activate kernel `GS_BASE`, and `swapgs` before `iretq` (`testb $3, 8(%rsp)`) to restore user `GS_BASE`.
+- [x] **IDT Fatal CPU Exception Diagnostic (`Idt.bas`):**
+  - Added panic reporting in `Arch.Idt.IsrDispatcher` for unhandled CPU exceptions (`vector < 32`), dumping Vector, ErrorCode, RIP, CS, and RSP directly to COM1 UART and halting cleanly with `cli; hlt`.
+- [x] **Compositor Adaptive Pacing & Persistent Input Driver:**
+  - In `services/compositor/CompositorMain.bas`, updated idle pacing from `waitRemaining >= 15` to `waitRemaining >= 2`, ensuring the compositor sleeps for the remaining frame interval and allows the CPU core to halt (`sti; hlt`) rather than spinning with tight `ProcessYield` calls.
+  - In `services/input_srv/InputMain.bas`, replaced the one-shot yield exit with a persistent daemon loop (`Do : ProcessSleep 500 : Loop`).
+- [x] **Mandatory Revision Bumping:**
+  - Bumped build revision to `REV: 2026.10.26-r30` across kernel boot banner, serial logs, top desktop menu bar, and system monitor window.

@@ -29,6 +29,12 @@ isr_common_stub:
     push %rbx
     push %rax
 
+    /* If interrupted from Ring 3 (CS RPL 3 at 144(%rsp)), switch to kernel GS base */
+    testb $3, 144(%rsp)
+    jz 1f
+    swapgs
+1:
+
     /* Pass pointer to InterruptFrame stack structure in %rdi (System V AMD64 ABI) */
     mov %rsp, %rdi
     call Arch_Idt_IsrDispatcher
@@ -52,6 +58,12 @@ isr_common_stub:
 
     /* Cleanup error code and interrupt vector number */
     add $16, %rsp
+
+    /* If returning to Ring 3 (CS RPL 3 at 8(%rsp)), restore user GS base */
+    testb $3, 8(%rsp)
+    jz 2f
+    swapgs
+2:
     iretq
 
 /* Macro for generating ISR entry points without CPU error code */

@@ -5,6 +5,7 @@
 Module Arch.Idt
 
     Import Arch.X86_64.Apic
+    Use Drivers.SerialUart As Serial
 
     ' Exact 16-byte x86_64 IDT Entry Gate Descriptor
     <Packed>
@@ -98,6 +99,13 @@ Module Arch.Idt
             Dim handlerFunc As InterruptHandler
             handlerFunc = CType(InterruptHandler, isrHandlers(vector))
             handlerFunc(frame)
+        ElseIf vector < 32 Then
+            ' Fatal unhandled CPU exception
+            Serial.PrintF "\r\n[CPU EXCEPTION] Fatal Vector: %u | Error: 0x%x | RIP: 0x%lx | CS: 0x%x | RSP: 0x%lx\r\n", _
+                          CType(UInt32, vector), CType(UInt32, frame.ErrorCode And &HFFFFFFFF), frame.Rip, CType(UInt32, frame.Cs), frame.Rsp
+            Do
+                Asm "cli\n\thlt" : : : "memory"
+            Loop
         End If
 
         ' Send End of Interrupt (EOI) for all hardware interrupts (Vectors >= 32)

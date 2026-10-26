@@ -70,13 +70,14 @@ Module InputServiceMain
             ConsoleWriteLine "[INPUT_SRV] Shared Event Queue initialized (Capacity: 64 high-level events)"
         End If
 
-        ' 5. Yield processor time slice to simulate continuous event dispatching
-        ConsoleWriteLine "[INPUT_SRV] Dispatcher loop active. Calling ProcessYield..."
-        ProcessYield
-        ConsoleWriteLine "[INPUT_SRV] Resumed from time slice. Pipeline ready for Compositor."
-
-        ConsoleWriteLine "[INPUT_SRV] input_srv daemon operational. Yielding cleanly."
+        ' 5. Active daemon event loop
+        ConsoleWriteLine "[INPUT_SRV] Dispatcher loop active. Entering background daemon loop..."
+        ConsoleWriteLine "[INPUT_SRV] input_srv daemon operational."
         ConsoleWriteLine "[INPUT_SRV] ======================================================="
+
+        Do
+            ProcessSleep 500
+        Loop
 
         user_main = 0
     End Function

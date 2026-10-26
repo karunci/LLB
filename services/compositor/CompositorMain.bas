@@ -770,8 +770,8 @@ Module CompositorMain
                     waitRemaining = nextAnimTime - nowTime
                 End If
 
-                If waitRemaining >= 15 Then
-                    ProcessSleep 1
+                If waitRemaining >= 2 Then
+                    ProcessSleep waitRemaining
                 Else
                     ProcessYield
                 End If

@@ -66,6 +66,39 @@ Namespace Fs
             StringEqual = (s1(i) = 0 And s2(i) = 0)
         End Function
 
+        Private Unsafe Function MatchFilename(ByVal tarPath As Pointer To Byte, ByVal searchName As Pointer To Byte) As Boolean
+            If Me.StringEqual(tarPath, searchName) Then
+                MatchFilename = True
+                Exit Function
+            End If
+
+            ' If searchName does not contain a slash, compare against basename of tarPath
+            Dim hasSlash As Boolean = False
+            Dim si As UInt32 = 0
+            While searchName(si) <> 0
+                If searchName(si) = 47 Then hasSlash = True
+                si = si + 1
+            Wend
+
+            If Not hasSlash Then
+                Dim lastSlash As Int32 = -1
+                Dim ti As UInt32 = 0
+                While tarPath(ti) <> 0
+                    If tarPath(ti) = 47 Then lastSlash = CType(Int32, ti)
+                    ti = ti + 1
+                Wend
+                If lastSlash >= 0 Then
+                    Dim basePtr As Pointer To Byte = tarPath + (lastSlash + 1)
+                    If Me.StringEqual(basePtr, searchName) Then
+                        MatchFilename = True
+                        Exit Function
+                    End If
+                End If
+            End If
+
+            MatchFilename = False
+        End Function
+
         ''
         ' @brief Find a file inside an in-memory USTAR archive by filename with path normalization.
         ' @param archivePhys Starting physical/virtual address of the TAR archive.
@@ -117,7 +150,7 @@ Namespace Fs
                     tarNamePtr = tarNamePtr + 1
                 End If
 
-                If Me.StringEqual(tarNamePtr, searchPtr) Then
+                If Me.MatchFilename(tarNamePtr, searchPtr) Then
                     outSize = fileSize
                     FindFile = fileDataAddr
                     Exit Function

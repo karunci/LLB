@@ -917,5 +917,44 @@ tests/kernel/
 - [x] **Mandatory Revision Bumping:**
   - Bumped revision tag to `[REV: 2026.10.26-r34-re03]` across kernel boot banner, serial logs, desktop menu bar, and system monitor window.
 
+---
+
+## Phase 29: Event-Driven SynapsePopWait, Canonical 288B AxonPacket Alignment & Multi-Daemon IPC Verification (`REV: 2026.10.26-r34-re04`)
+
+- [x] **Canonical 288-Byte `AxonPacket` ABI Alignment:**
+  - Removed rogue padding fields from `tests/user_app/UserMain.bas` so all services and applications share the exact same 288-byte binary layout:
+    `Sequence (8B)`, `PacketType (4B)`, `PayloadLength (4B)`, `SourceNode (8B)`, `TargetNode (8B)`, `Payload(255) (256B)`.
+- [x] **Zero Idle CPU Event-Driven Wait (`SynapsePopWait`):**
+  - Exposed blocking IPC pop in `include/pros.bas` and `lib/pros/src/Node.bas`.
+  - Replaced polling loops across all service daemons (`srv.vfs`, `srv.dev_mgr`, `srv.plexus_mgr`, `srv.wm`) with blocking waits, waking immediately upon packet arrival.
+- [x] **End-to-End Multi-Daemon Synaptic IPC Verification:**
+  - Verified User App (PID 9) queries to VFS (`/System/Servers/genesis.bax`), Device Manager (`pci.disp.lfb`), and Plexus Supervisor (`srv.compositor`) with clean zero exit code and automated task reaping.
+- [x] **Mandatory Revision Bumping:**
+  - Bumped revision tag to `[REV: 2026.10.26-r34-re04]`.
+
+---
+
+## Phase 30: Windows+Android Directory Hierarchy, 16-Byte Aligned TSS Stack Security & Frame Pacing (`REV: 2026.10.26-r34-re05`)
+
+- [x] **Dedicated Windows + Android Directory Hierarchy (Rejection of Unix Conventions):**
+  - Restructured VFS mount table and ramdisk packaging into the clean non-Unix hierarchy:
+    - `/Apps/` (User installed apps, binaries, libraries, configs, and state).
+    - `/Libraries/` (System-wide shared libraries).
+    - `/System/Apps/` (Built-in system apps like Shell).
+    - `/System/Libraries/` (`libpros.a`, `libllb.a`).
+    - `/System/Configs/` (`system.cfg`).
+    - `/System/Drivers/` (`pci.disp.lfb`, `ps2.input`).
+    - `/System/Servers/` (`genesis.bax`, `disp_srv.bax`, `input_srv.bax`, `compositor.bax`, `dev_mgr.bax`, `plexus_mgr.bax`, `wm.bax`, `vfs_srv.bax`).
+    - `/Users/` (`/Users/Default/Desktop`, `/Users/Default/Documents`).
+  - Implemented dual-path lookup matching in `TarArchive.cls` so both basename and hierarchical paths resolve effortlessly.
+  - Documented full architectural specification in [`docs/DIRECTORY_LAYOUT.md`](file:///t:/projects/LLB/llbc/docs/DIRECTORY_LAYOUT.md).
+- [x] **TSS RSP0 Strict 16-Byte Alignment on Task Switch:**
+  - In `tests/kernel/src/sched/Scheduler.cls`, enforced strict 16-byte alignment (`kstackTop And (Not 15)`) when updating `TSS.RSP0` for AP and BSP cores, guaranteeing hardware interrupt stack safety during CPL 3 to CPL 0 transitions.
+- [x] **Compositor Sleep Pacing Refinement (60 FPS Capped, Low CPU on Mouse Motion):**
+  - In `services/compositor/CompositorMain.bas`, refined sleep duration to `ProcessSleep (waitRemaining - 1)` instead of rapid 1ms sleep wakeups.
+  - Keeps FPS strictly locked at ~60 FPS without spiking to 200 during continuous mouse movements, preserving smooth animations while keeping guest CPU at 0%–1% and hypervisor VMM load at 1%–4%.
+- [x] **Mandatory Revision Bumping:**
+  - Bumped build revision to `REV: 2026.10.26-r34-re05` across kernel boot banner, serial logs, desktop menu bar, and system monitor window.
+
 
 

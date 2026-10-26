@@ -39,17 +39,30 @@ python3 tools/bax_pack.py services/wm/build/wm.elf -o services/wm/build/wm.bax -
 python3 tools/bax_pack.py services/vfs_srv/build/vfs_srv.elf -o services/vfs_srv/build/vfs_srv.bax --manifest services/vfs_srv/manifest.json
 python3 tools/bax_pack.py tests/user_app/build/user_app.elf -o tests/user_app/build/user_app.bax --manifest tests/user_app/manifest.json
 
+STAGING_DIR="${PROJECT_ROOT}/build/initrd_staging"
+rm -rf "${STAGING_DIR}"
+mkdir -p "${STAGING_DIR}/System/Servers"
+mkdir -p "${STAGING_DIR}/System/Libraries"
+mkdir -p "${STAGING_DIR}/System/Configs"
+mkdir -p "${STAGING_DIR}/Apps/UserApp"
+mkdir -p "${STAGING_DIR}/Users/Default"
+
+cp "${PROJECT_ROOT}/services/genesis/build/genesis.bax" "${STAGING_DIR}/System/Servers/"
+cp "${PROJECT_ROOT}/services/disp_srv/build/disp_srv.bax" "${STAGING_DIR}/System/Servers/"
+cp "${PROJECT_ROOT}/services/input_srv/build/input_srv.bax" "${STAGING_DIR}/System/Servers/"
+cp "${PROJECT_ROOT}/services/compositor/build/compositor.bax" "${STAGING_DIR}/System/Servers/"
+cp "${PROJECT_ROOT}/services/dev_mgr/build/dev_mgr.bax" "${STAGING_DIR}/System/Servers/"
+cp "${PROJECT_ROOT}/services/plexus_mgr/build/plexus_mgr.bax" "${STAGING_DIR}/System/Servers/"
+cp "${PROJECT_ROOT}/services/wm/build/wm.bax" "${STAGING_DIR}/System/Servers/"
+cp "${PROJECT_ROOT}/services/vfs_srv/build/vfs_srv.bax" "${STAGING_DIR}/System/Servers/"
+cp "${PROJECT_ROOT}/tests/user_app/build/user_app.bax" "${STAGING_DIR}/Apps/UserApp/"
+
+# Dual compatibility: provide root-level copies so flat lookups and hierarchical lookups both succeed
+cp "${STAGING_DIR}/System/Servers/"*.bax "${STAGING_DIR}/"
+cp "${STAGING_DIR}/Apps/UserApp/user_app.bax" "${STAGING_DIR}/"
+
 mkdir -p tests/user_app/build
-tar -cf "${INITRD_TAR}" \
-    -C tests/user_app/build user_app.bax \
-    -C "${PROJECT_ROOT}/services/genesis/build" genesis.bax \
-    -C "${PROJECT_ROOT}/services/disp_srv/build" disp_srv.bax \
-    -C "${PROJECT_ROOT}/services/input_srv/build" input_srv.bax \
-    -C "${PROJECT_ROOT}/services/compositor/build" compositor.bax \
-    -C "${PROJECT_ROOT}/services/dev_mgr/build" dev_mgr.bax \
-    -C "${PROJECT_ROOT}/services/plexus_mgr/build" plexus_mgr.bax \
-    -C "${PROJECT_ROOT}/services/wm/build" wm.bax \
-    -C "${PROJECT_ROOT}/services/vfs_srv/build" vfs_srv.bax
+tar -cf "${INITRD_TAR}" -C "${STAGING_DIR}" .
 
 echo "[+] Building Dedicated Kernel ELFs (MB2 and MB1)..."
 ./build/llbc-stage0 tests/kernel/Kernel_MB2.llbproj

@@ -298,7 +298,7 @@ Module UserApplication
                 vfsReq.PacketType = 11 ' VFS_CMD_STAT
                 vfsReq.SourceNode = userNodeId
                 vfsReq.TargetNode = vfsTargetId
-                Dim testPath As Pointer To Byte = CPtr(Pointer To Byte, "/system/bin/genesis.bax")
+                Dim testPath As Pointer To Byte = CPtr(Pointer To Byte, "/System/Servers/genesis.bax")
                 Dim pi As UInt32 = 0
                 While testPath(pi) <> 0
                     vfsReq.Payload(pi) = testPath(pi)
@@ -312,7 +312,7 @@ Module UserApplication
                 If Syscall3(SYS_SYNAPSE_POP, userNodeId, CType(UInt64, @vfsResp), 1) = 1 Then
                     If vfsResp.PacketType = 100 Then ' VFS_RESP_OK
                         Dim pSize As Pointer To UInt32 = CPtr(Pointer To UInt32, @vfsResp.Payload(4))
-                        PrintMessageWithUInt CPtr(Pointer To Byte, "[USER-APP] VFS Metadata verified: '/system/bin/genesis.bax' (Size: "), CType(UInt64, pSize(0)), CPtr(Pointer To Byte, " bytes)\r\n")
+                        PrintMessageWithUInt CPtr(Pointer To Byte, "[USER-APP] VFS Metadata verified: '/System/Servers/genesis.bax' (Size: "), CType(UInt64, pSize(0)), CPtr(Pointer To Byte, " bytes)\r\n")
                     End If
                 End If
             End If

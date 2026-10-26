@@ -719,8 +719,8 @@ Public Class Scheduler
         Dim nextTask As Pointer To TaskControlBlock = CPtr(Pointer To TaskControlBlock, nextAddr)
         nextTask.State = Sched.ThreadState.STATE_RUNNING
 
-        ' Set per-core TSS RSP0 stack pointer to next task's kernel stack
-        Dim kstackTop As UInt64 = nextTask.KStackBase + CType(UInt64, KERNEL_STACK_SIZE)
+        ' Set per-core TSS RSP0 stack pointer to next task's kernel stack (strictly 16-byte aligned)
+        Dim kstackTop As UInt64 = (nextTask.KStackBase + CType(UInt64, KERNEL_STACK_SIZE)) And (Not CType(UInt64, 15))
         Arch.X86_64.Gdt.SetKernelStackForCore coreId, kstackTop
 
         Dim targetCr3 As UInt64 = nextTask.Cr3Root

@@ -55,6 +55,7 @@ LLB fuses the safety and performance of modern systems languages with the approa
 | String comparison (`StrComp`, `Option Compare`) | ✅ | Built-in three-way string comparison function (`StrComp`) returning -1, 0, 1 |
 | `DoEvents` | 🚫 Won't Implement | Windows GUI message pump (`PeekMessage`/`DispatchMessage`). Inapplicable for freestanding systems & kernels. |
 | Collections / `For Each` | ✅ | Iterator-based looping over fixed arrays & dynamic collections (`ArrayList`, etc.) |
+| Aggregate Initializers (`{ ... }`) | ✅ | Support for `{ expr1, expr2, ... }` for arrays and structs with `.rodata` static tables |
 
 ---
 
@@ -74,6 +75,7 @@ LLB fuses the safety and performance of modern systems languages with the approa
 | `Variant` / `Object` | 🚫 Won't Implement | Dynamically-typed boxed COM structures. Contradicts bare-metal zero-cost goals; use `Union`, `Structure(Of T)`, or `Result(T, E)`. |
 | `Date` | 🚫 Won't Implement | High-level calendar/locale type requiring OS libc timezone databases. Systems code uses `UInt64` UNIX timestamps. |
 | Dynamic arrays (syntax `Dim x()`) | 🔧 Partial | Supported via dynamic pointer resizing (`ReDim`, `ReDim Preserve`, `Erase`) and freestanding `ArrayList`. Fat-pointer syntax is a future candidate. |
+| Auto-sized array inference (`Dim x() As T = { ... }`) | ✅ | Dimension count and element type automatically deduced from aggregate initializers |
 | Multidimensional arrays / Matrices (`Dim x(M, N)`) | ✅ | Row-major flat indexing computation |
 | `UBound` / `LBound` | ✅ | Dimension-aware array bounds intrinsics (`UBound(arr, dim)`) |
 | Union types (`Union ... End Union`) | ✅ | Overlapping memory layout with offset-0 member aliasing for registers & hardware protocols |
@@ -408,7 +410,44 @@ While LLB enforces robust syntactic safety quarantines (`Unsafe` blocks for raw 
 6. **Standard String & Type Inspection Intrinsics:**
    - Built-in freestanding runtime helpers (`IsNumericString(s)`, `IsAlpha(s)`, `IsWhitespace(s)`).
 
+---
 
+## I. Modern Systems Languages Capability Audit (LLB vs C23 vs Zig / Rust)
 
+Comprehensive capability audit assessing Low-Level Basic (LLB) against contemporary systems programming languages, establishing architectural parity and prioritizing upcoming language features for operating system and bare-metal software construction.
 
+### 1. Capability & Feature Comparison Matrix
+
+| Subsystem / Feature Area | Low-Level Basic (Current) | C23 Standard | Zig / Modern Rust | Architectural Role & OS Impact |
+| :--- | :---: | :---: | :---: | :--- |
+| **Aggregate Initializers (`{ ... }`)** | **✅ Supported** | ✅ Supported | ✅ Supported | Native `{ expr1, expr2, ... }` for arrays, slices, and structs with `.rodata` static tables. |
+| **Direct Hardware MMIO & Pointers** | **✅ Supported** | ✅ Supported | ✅ Supported | `Volatile Pointer To T`, `CPtr`, element-scaled pointer arithmetic. |
+| **Inline Assembly with Constraints** | **✅ Supported** | ✅ Supported | ✅ Supported | Inline `Asm "..." : outputs : inputs : clobbers` with early-clobber `"=&r"` operands. |
+| **Packed Layouts & Alignment** | **✅ Supported** | ✅ Supported | ✅ Supported | `<Packed>`, `<Align(N)>`, `#Assert SizeOf(...)` for IDT/GDT/TSS hardware descriptors. |
+| **Object Models & Interfaces** | **✅ Supported** | ❌ Struct of Fn Ptrs | Traits / Protocols | `Interface`, `Implements`, `Class` `<Instancing(Global/SingleUse/MultiUse)>`. |
+| **Multi-Module Project Architecture** | **✅ Supported** | Headers (`.h`) | Modules / Crates | `Import` (modules), `Use` (classes), `Declare` (libraries), with transitive import discovery. |
+| **Embedded Toolchain & Linker** | **✅ Supported** | External (ld/lld) | Embedded LLD | Integrated LLVM 21 backend with embedded LLD linker in single self-contained binary. |
+| **Designated Initializers** | *⏳ Roadmap* | ✅ Supported | ✅ Supported | `{ .x = 10, .y = 20 }` or `{ x: 10, y: 20 }` for selective struct member initialization. |
+| **Compile-Time String Concatenation** | *⏳ Roadmap* | ✅ Supported | ✅ Supported | Folding string literals at compile-time (`Const MSG = "A" & "B"`). |
+| **Static Local Variables** | *⏳ Roadmap* | ✅ Supported | ✅ Supported | `Static counter As Int32 = 0` retaining state across procedure invocations. |
+| **`Defer` Scoped Block Cleanup** | *⏳ Roadmap* | ❌ `__attribute__((cleanup))` | ✅ Supported | Deterministic scope exit cleanup (spinlocks, handles, file descriptors). |
+| **Packed Bitfield Structure Members** | *🔧 Partial* | ✅ Supported | ✅ Supported | Currently handled via bitwise masks (`Or`, `And`, `LShift`, `RShift`); native member syntax pending. |
+| **Explicitly Sized Typed Enums** | *🔧 Partial* | ✅ Supported | ✅ Supported | `Enum Name As UInt8 ... End Enum` for precise register and wire-protocol representations. |
+| **Raw / Multiline String Literals** | *⏳ Roadmap* | ✅ Supported | ✅ Supported | `"""..."""` or `@"..."` for embedded shaders, configs, and font bitmaps. |
+| **Local Variable Type Inference** | *⏳ Roadmap* | ✅ `auto` | ✅ `var` / `let` | `Dim x := expr` eliminating redundant type annotations for local variables. |
+
+### 2. Ranked Systems-Level Language Roadmap
+
+1. **Compile-Time Constant String Concatenation & Folding:**
+   - Enable compile-time concatenation of string constants (`Const KERNEL_BANNER = "PROS " & "KERNEL"`) for global and static tables.
+2. **Designated Initializers:**
+   - Allow out-of-order, named initialization of struct fields (`Dim cfg As Config = { .Width = 1024, .Height = 768 }`).
+3. **Static Local Variables:**
+   - Support `Static` procedure variables allocated in `.data` / `.bss` retaining state across calls without polluting module namespace.
+4. **`Defer` Scoped Cleanup Statement:**
+   - Provide zero-cost compile-time scoped cleanup handlers executed upon exiting the containing block or procedure (`Defer Spinlock.Release lock`).
+5. **Native Bitfield Member Syntax:**
+   - Extend struct declarations with bitfield declarations (`Flags : 4 As UInt8`) compiling to bitwise extraction/insertion.
+6. **Explicit Sized Enums:**
+   - Support typed enums (`Enum MouseButton As UInt8`) to enforce integer size semantics on protocol payloads.
 

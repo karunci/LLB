@@ -379,9 +379,13 @@ Namespace Sys
                     If ValidateUserBuffer(arg2, 4096) Then
                         Dim attPml4 As UInt64 = SchedEngine.GetCurrentCr3()
                         Dim attRes As Int64 = Shmem.AttachShmem(CType(Int64, arg1), arg2, attPml4)
-                        Dispatch = CType(UInt64, attRes)
+                        If attRes = 0 Then
+                            Dispatch = arg2
+                        Else
+                            Dispatch = 0
+                        End If
                     Else
-                        Dispatch = CType(UInt64, -1)
+                        Dispatch = 0
                     End If
 
                 Case SYS_SHMEM_DETACH
@@ -414,7 +418,7 @@ Namespace Sys
                         Dim pageCount As UInt64 = (lfbSize + 4095) / 4096
                         Dim pIdx As UInt64
                         For pIdx = 0 To pageCount - 1
-                            VmmEngine.MapPage callerCr3, arg1 + (pIdx * 4096), lfbPhys + (pIdx * 4096), &H07 ' Present | Writable | User
+                            VmmEngine.MapPage callerCr3, arg1 + (pIdx * 4096), lfbPhys + (pIdx * 4096), &H07 ' Present | Writable | User (Cacheable Write-Combining)
                         Next pIdx
                         Dispatch = 1
                     Else

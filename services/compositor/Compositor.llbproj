@@ -26,4 +26,5 @@ Libraries    = [
 [Sources]
 Assembly = "brt0.S"
 Module   = "CursorTheme.bas"
+Module   = "../wm/WindowTheme.bas"
 Module   = "CompositorMain.bas"

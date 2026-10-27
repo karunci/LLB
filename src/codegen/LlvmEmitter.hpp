@@ -79,6 +79,7 @@ private:
     llvm::Type* getLlvmType(const TypeSpec& typeSpec);
     llvm::Type* getElementType(const TypeSpec& typeSpec);
     llvm::Value* getPointerToExpr(ExprASTNode* expr);
+    llvm::Constant* emitConstantValue(const ExprASTNode* expr, llvm::Type* targetType);
 
     bool isStringExpr(ExprASTNode* expr);
     llvm::Function* getOrCreateMalloc();

@@ -92,7 +92,7 @@ Module KernelMain
         ' Initialize COM1 line control & Serial UART driver with hardware probing
         Serial.Initialize
         If Serial.IsAvailable() Then
-            Serial.PrintF "\r\n[PRK] Booting Low-Level Basic Kernel [REV: 2026.10.27-r35-re02]!\r\n"
+            Serial.PrintF "\r\n[PRK] Booting Low-Level Basic Kernel [REV: 2026.10.27-r35-re11]!\r\n"
             Serial.PrintF "[PRK] Multiboot Verified. Long mode active.\r\n"
             Serial.PrintF "[UART] COM1 16550 UART Online!\r\n"
         End If
@@ -117,14 +117,14 @@ Module KernelMain
         If hasVgaText Then
             Serial.PrintF "[PRK] VGA Text Mode Terminal active (&HB8000).\r\n"
             Term.WriteLine CPtr(Pointer To Byte, "=========================================")
-            Term.WriteLine CPtr(Pointer To Byte, " PRK - LOW-LEVEL BASIC [REV: 2026.10.27-r35-re02] ")
+            Term.WriteLine CPtr(Pointer To Byte, " PRK - LOW-LEVEL BASIC [REV: 2026.10.27-r35-re11] ")
             Term.WriteLine CPtr(Pointer To Byte, "=========================================")
             Term.WriteChar 10
         ElseIf hasGopFb Then
             Serial.PrintF "[PRK] UEFI GOP Linear Framebuffer active (0x%x).\r\n", CType(UInt32, FB.GetFramebufferPhys() And &HFFFFFFFF)
             FB.ClearScreen &H00181824
             FB.DrawString 20, 20, CPtr(Pointer To Byte, "========================================="), &H0088C0D0, 1
-            FB.DrawString 20, 36, CPtr(Pointer To Byte, " PRK - LOW-LEVEL BASIC [REV: 2026.10.27-r35-re02] "), &H008FBCBB, 1
+            FB.DrawString 20, 36, CPtr(Pointer To Byte, " PRK - LOW-LEVEL BASIC [REV: 2026.10.27-r35-re11] "), &H008FBCBB, 1
             FB.DrawString 20, 52, CPtr(Pointer To Byte, "========================================="), &H0088C0D0, 1
         End If
 
@@ -491,6 +491,12 @@ Module KernelMain
         Dim vfsBaxAddr As UInt64 = 0
         Dim baxSize As UInt64 = 0
         Dim baxDataAddr As UInt64 = 0
+        Dim sysMonBaxSize As UInt64 = 0
+        Dim sysMonBaxAddr As UInt64 = 0
+        Dim termBaxSize As UInt64 = 0
+        Dim termBaxAddr As UInt64 = 0
+        Dim nodeViewBaxSize As UInt64 = 0
+        Dim nodeViewBaxAddr As UInt64 = 0
 
         If initrdStart <> 0 And initrdEnd > initrdStart Then
             Serial.PrintF "[PRK] Scanning Initrd USTAR Ramdisk at 0x%lx (%u bytes)...\r\n", _
@@ -552,7 +558,28 @@ Module KernelMain
                               CType(UInt32, vfsBaxSize), vfsBaxAddr
             End If
 
-            ' 8. Probe for User Application ('user_app.bax')
+            ' 8. Probe for System Monitor ('sys_mon.bax')
+            sysMonBaxAddr = Tar.FindFile(initrdStart, "sys_mon.bax", sysMonBaxSize)
+            If sysMonBaxAddr <> 0 Then
+                Serial.PrintF "[PRK] Located 'sys_mon.bax' in ramdisk (%u bytes at 0x%lx)\r\n", _
+                              CType(UInt32, sysMonBaxSize), sysMonBaxAddr
+            End If
+
+            ' 9. Probe for Terminal Console ('terminal.bax')
+            termBaxAddr = Tar.FindFile(initrdStart, "terminal.bax", termBaxSize)
+            If termBaxAddr <> 0 Then
+                Serial.PrintF "[PRK] Located 'terminal.bax' in ramdisk (%u bytes at 0x%lx)\r\n", _
+                              CType(UInt32, termBaxSize), termBaxAddr
+            End If
+
+            ' 10. Probe for Neural Node Viewer ('node_viewer.bax')
+            nodeViewBaxAddr = Tar.FindFile(initrdStart, "node_viewer.bax", nodeViewBaxSize)
+            If nodeViewBaxAddr <> 0 Then
+                Serial.PrintF "[PRK] Located 'node_viewer.bax' in ramdisk (%u bytes at 0x%lx)\r\n", _
+                              CType(UInt32, nodeViewBaxSize), nodeViewBaxAddr
+            End If
+
+            ' 11. Probe for User Application ('user_app.bax')
             baxDataAddr = Tar.FindFile(initrdStart, "user_app.bax", baxSize)
             If baxDataAddr <> 0 Then
                 Serial.PrintF "[PRK] Located 'user_app.bax' in ramdisk (%u bytes at 0x%lx)\r\n", _
@@ -625,6 +652,27 @@ Module KernelMain
         If baxDataAddr <> 0 Then
             userPid = SchedEngine.CreateBaxProcess("user.test.app", baxDataAddr, baxSize, 2)
             Serial.PrintF "[PRK] Spawned Standalone Ring 3 BAX Process (PID: %u)\r\n", CType(UInt32, userPid)
+        End If
+
+        ' Spawn Autonomous Ring 3 System Monitor GUI Process
+        Dim sysMonPid As UInt64 = 0
+        If sysMonBaxAddr <> 0 Then
+            sysMonPid = SchedEngine.CreateBaxProcess("apps.sys_mon", sysMonBaxAddr, sysMonBaxSize, 2)
+            Serial.PrintF "[PRK] Spawned System Monitor GUI Process (PID: %u)\r\n", CType(UInt32, sysMonPid)
+        End If
+
+        ' Spawn Autonomous Ring 3 Terminal Console GUI Process
+        Dim termPid As UInt64 = 0
+        If termBaxAddr <> 0 Then
+            termPid = SchedEngine.CreateBaxProcess("apps.terminal", termBaxAddr, termBaxSize, 2)
+            Serial.PrintF "[PRK] Spawned Terminal Console GUI Process (PID: %u)\r\n", CType(UInt32, termPid)
+        End If
+
+        ' Spawn Autonomous Ring 3 Neural Node Viewer GUI Process
+        Dim nodeViewPid As UInt64 = 0
+        If nodeViewBaxAddr <> 0 Then
+            nodeViewPid = SchedEngine.CreateBaxProcess("apps.node_viewer", nodeViewBaxAddr, nodeViewBaxSize, 2)
+            Serial.PrintF "[PRK] Spawned Neural Node Viewer GUI Process (PID: %u)\r\n", CType(UInt32, nodeViewPid)
         End If
 
         Serial.PrintF "[PRK] Kernel boot and userland dispatch completed successfully.\r\n"

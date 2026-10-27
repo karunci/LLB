@@ -48,9 +48,16 @@ __stack_chk_fail:
 .global memset
 .type memset, @function
 memset:
+    cld
     movq %rdi, %r8
     movzbl %sil, %eax
+    movabsq $0x0101010101010101, %r9
+    imulq %r9, %rax
     movq %rdx, %rcx
+    shrq $3, %rcx
+    rep stosq
+    movq %rdx, %rcx
+    andq $7, %rcx
     rep stosb
     movq %r8, %rax
     ret
@@ -58,8 +65,13 @@ memset:
 .global memcpy
 .type memcpy, @function
 memcpy:
+    cld
     movq %rdi, %r8
     movq %rdx, %rcx
+    shrq $3, %rcx
+    rep movsq
+    movq %rdx, %rcx
+    andq $7, %rcx
     rep movsb
     movq %r8, %rax
     ret

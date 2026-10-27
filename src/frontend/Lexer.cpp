@@ -256,6 +256,10 @@ Token Lexer::nextToken() {
         case '*': return makeToken(TokenType::Asterisk, "*", startLine, startCol);
         case '/': return makeToken(TokenType::Slash, "/", startLine, startCol);
         case '@': return makeToken(TokenType::At, "@", startLine, startCol);
+        case '{': return makeToken(TokenType::LBrace, "{", startLine, startCol);
+        case '}': return makeToken(TokenType::RBrace, "}", startLine, startCol);
+        case '[': return makeToken(TokenType::LBracket, "[", startLine, startCol);
+        case ']': return makeToken(TokenType::RBracket, "]", startLine, startCol);
         default: break;
     }
 

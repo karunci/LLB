@@ -564,6 +564,12 @@ std::unique_ptr<DimStmtNode> Parser::parseDimStatement() {
 
     if (match(TokenType::Equal)) {
         dimNode->initValue = parseExpression();
+        if (auto arrLit = dynamic_cast<ArrayLiteralExprASTNode*>(dimNode->initValue.get())) {
+            if (dimNode->type.isArray && (dimNode->type.arraySize == 0 || (dimNode->type.dimensions.size() == 1 && dimNode->type.dimensions[0] == 0))) {
+                dimNode->type.arraySize = arrLit->elements.size();
+                dimNode->type.dimensions = { arrLit->elements.size() };
+            }
+        }
     }
 
     return dimNode;
@@ -577,13 +583,54 @@ std::unique_ptr<ConstStmtNode> Parser::parseConstStatement(bool isPublic) {
     expect(TokenType::Identifier, "Expected constant identifier");
     constNode->name = name;
 
+    bool isArray = false;
+    size_t arraySize = 0;
+    std::vector<size_t> dimensions;
+    if (match(TokenType::LParen)) {
+        isArray = true;
+        do {
+            size_t dim = 0;
+            if (m_currentToken.type == TokenType::NumberLiteral) {
+                try {
+                    std::string numText = m_currentToken.text;
+                    if (numText.size() >= 2 && (numText[0] == '&' && (numText[1] == 'H' || numText[1] == 'h'))) {
+                        dim = std::stoull(numText.substr(2), nullptr, 16);
+                    } else {
+                        dim = std::stoull(numText, nullptr, 10);
+                    }
+                } catch (...) {
+                    dim = 0;
+                }
+                consume();
+            }
+            dimensions.push_back(dim);
+        } while (match(TokenType::Comma));
+
+        if (!dimensions.empty()) {
+            arraySize = dimensions[0];
+            for (size_t i = 1; i < dimensions.size(); ++i) {
+                arraySize *= dimensions[i];
+            }
+        }
+        expect(TokenType::RParen, "Expected ')' after array dimension");
+    }
+
     if (m_currentToken.type == TokenType::KwAs || checkKeyword("As")) {
         consume();
         constNode->type = parseTypeSpec();
     }
+    constNode->type.isArray = isArray;
+    constNode->type.arraySize = arraySize;
+    constNode->type.dimensions = dimensions;
 
     expect(TokenType::Equal, "Expected '=' in constant declaration");
     constNode->value = parseExpression();
+    if (auto arrLit = dynamic_cast<ArrayLiteralExprASTNode*>(constNode->value.get())) {
+        if (constNode->type.isArray && (constNode->type.arraySize == 0 || (constNode->type.dimensions.size() == 1 && constNode->type.dimensions[0] == 0))) {
+            constNode->type.arraySize = arrLit->elements.size();
+            constNode->type.dimensions = { arrLit->elements.size() };
+        }
+    }
     return constNode;
 }
 
@@ -1849,6 +1896,24 @@ std::unique_ptr<ExprASTNode> Parser::parsePostfixExpr() {
 }
 
 std::unique_ptr<ExprASTNode> Parser::parsePrimaryExpr() {
+    // Aggregate / Array Literal: { expr1, expr2, ... }
+    if (match(TokenType::LBrace)) {
+        size_t startLine = m_prevToken.line;
+        size_t startCol = m_prevToken.column;
+        std::vector<std::unique_ptr<ExprASTNode>> elements;
+        if (!check(TokenType::RBrace)) {
+            do {
+                if (check(TokenType::RBrace)) break; // trailing comma support
+                elements.push_back(parseExpression());
+            } while (match(TokenType::Comma));
+        }
+        expect(TokenType::RBrace, "Expected '}' closing aggregate literal");
+        auto node = std::make_unique<ArrayLiteralExprASTNode>(std::move(elements));
+        node->line = startLine;
+        node->column = startCol;
+        return node;
+    }
+
     // String Literal
     if (m_currentToken.type == TokenType::StringLiteral) {
         auto node = std::make_unique<StringExprASTNode>(m_currentToken.text);
@@ -3284,6 +3349,12 @@ void Parser::parseContainerMembers(ModuleNode* container) {
 
                 if (match(TokenType::Equal)) {
                     dimNode->initValue = parseExpression();
+                    if (auto arrLit = dynamic_cast<ArrayLiteralExprASTNode*>(dimNode->initValue.get())) {
+                        if (dimNode->type.isArray && (dimNode->type.arraySize == 0 || (dimNode->type.dimensions.size() == 1 && dimNode->type.dimensions[0] == 0))) {
+                            dimNode->type.arraySize = arrLit->elements.size();
+                            dimNode->type.dimensions = { arrLit->elements.size() };
+                        }
+                    }
                 }
 
                 container->members.push_back(std::move(dimNode));

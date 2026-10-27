@@ -208,15 +208,15 @@ llvm::Type* LlvmEmitter::getLlvmType(const TypeSpec& typeSpec) {
 }
 
 llvm::Type* LlvmEmitter::getElementType(const TypeSpec& typeSpec) {
-    if (toLower(typeSpec.name) == "string") {
-        return llvm::Type::getInt8Ty(*m_context);
-    }
     TypeSpec decayed = typeSpec;
     if (decayed.isArray) {
         decayed.isArray = false;
         decayed.arraySize = 0;
         decayed.dimensions.clear();
         return getLlvmType(decayed);
+    }
+    if (toLower(typeSpec.name) == "string") {
+        return llvm::Type::getInt8Ty(*m_context);
     }
     if (decayed.pointerDepth > 0) {
         decayed.pointerDepth--;
@@ -301,6 +301,15 @@ llvm::Value* LlvmEmitter::getPointerToExpr(ExprASTNode* expr) {
             gVar = findGlobalCaseInsensitive(m_module.get(), var->name);
         }
         if (gVar) {
+            auto tIt = m_variableTypes.find(var->name);
+            if (tIt == m_variableTypes.end()) {
+                tIt = m_variableTypes.find(toLower(var->name));
+            }
+            if (tIt != m_variableTypes.end()) {
+                if (tIt->second.pointerDepth > 0) {
+                    return m_builder->CreateLoad(gVar->getValueType(), gVar, var->name);
+                }
+            }
             return gVar;
         }
 
@@ -341,10 +350,21 @@ llvm::Value* LlvmEmitter::getPointerToExpr(ExprASTNode* expr) {
                 llvm::GlobalVariable* gVar = m_module->getGlobalVariable(varBase->name);
                 if (!gVar) gVar = findGlobalCaseInsensitive(m_module.get(), varBase->name);
                 if (gVar) {
-                    baseVal = gVar;
                     if (baseType.name.empty()) {
-                        baseType.name = gVar->getValueType()->isStructTy() ? gVar->getValueType()->getStructName().str() : "";
-                        baseType.isArray = true;
+                        auto gtIt = m_variableTypes.find(varBase->name);
+                        if (gtIt == m_variableTypes.end()) gtIt = m_variableTypes.find(toLower(varBase->name));
+                        if (gtIt != m_variableTypes.end()) baseType = gtIt->second;
+                    }
+                    if (baseType.isArray) {
+                        baseVal = gVar;
+                    } else if (baseType.pointerDepth > 0) {
+                        baseVal = m_builder->CreateLoad(gVar->getValueType(), gVar, varBase->name);
+                    } else {
+                        baseVal = gVar;
+                        if (baseType.name.empty()) {
+                            baseType.name = gVar->getValueType()->isStructTy() ? gVar->getValueType()->getStructName().str() : "";
+                            baseType.isArray = true;
+                        }
                     }
                 } else if (!m_currentScopeClass.empty() && m_namedValues.count("Me")) {
                     std::string varLower = toLower(varBase->name);
@@ -694,6 +714,20 @@ TypeSpec LlvmEmitter::deduceExprType(ExprASTNode* expr) {
         res.name = "String";
         return res;
     }
+    if (auto arrLit = dynamic_cast<ArrayLiteralExprASTNode*>(expr)) {
+        if (!arrLit->elements.empty()) {
+            TypeSpec elemSpec = deduceExprType(arrLit->elements[0].get());
+            res = elemSpec;
+            res.isArray = true;
+            res.arraySize = arrLit->elements.size();
+            res.dimensions = { arrLit->elements.size() };
+            return res;
+        }
+        res.isArray = true;
+        res.arraySize = 0;
+        res.dimensions = { 0 };
+        return res;
+    }
     if (auto num = dynamic_cast<NumberExprASTNode*>(expr)) {
         if (num->typeHint == "Boolean") {
             res.name = "Boolean";
@@ -959,6 +993,125 @@ void LlvmEmitter::checkConstantOverflow(const TypeSpec& targetType, ExprASTNode*
             m_hadError = true;
         }
     }
+}
+
+llvm::Constant* LlvmEmitter::emitConstantValue(const ExprASTNode* expr, llvm::Type* targetType) {
+    if (!expr) return llvm::Constant::getNullValue(targetType);
+
+    // Number literal
+    if (auto num = dynamic_cast<const NumberExprASTNode*>(expr)) {
+        if (targetType->isFloatingPointTy()) {
+            return llvm::ConstantFP::get(targetType, num->isFloat ? num->floatVal : static_cast<double>(num->val));
+        }
+        if (targetType->isIntegerTy()) {
+            return llvm::ConstantInt::get(targetType, num->val);
+        }
+        if (targetType->isPointerTy()) {
+            if (num->val == 0) return llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(targetType));
+            return llvm::ConstantExpr::getIntToPtr(llvm::ConstantInt::get(llvm::Type::getInt64Ty(*m_context), num->val), targetType);
+        }
+    }
+
+    // String literal
+    if (auto str = dynamic_cast<const StringExprASTNode*>(expr)) {
+        if (targetType->isPointerTy()) {
+            llvm::Constant* strData = llvm::ConstantDataArray::getString(*m_context, str->val, true);
+            auto* gv = new llvm::GlobalVariable(*m_module, strData->getType(), true, llvm::GlobalValue::PrivateLinkage, strData, ".str");
+            gv->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
+            return gv;
+        }
+        if (targetType->isArrayTy() && targetType->getArrayElementType()->isIntegerTy(8)) {
+            auto* arrTy = llvm::cast<llvm::ArrayType>(targetType);
+            std::vector<llvm::Constant*> bytes;
+            for (size_t i = 0; i < arrTy->getNumElements(); ++i) {
+                uint8_t byteVal = (i < str->val.size()) ? static_cast<uint8_t>(str->val[i]) : 0;
+                bytes.push_back(llvm::ConstantInt::get(llvm::Type::getInt8Ty(*m_context), byteVal));
+            }
+            return llvm::ConstantArray::get(arrTy, bytes);
+        }
+    }
+
+    // Unary expression
+    if (auto un = dynamic_cast<const UnaryExprASTNode*>(expr)) {
+        if (un->op == "-") {
+            llvm::Constant* inner = emitConstantValue(un->expr.get(), targetType);
+            if (auto* ci = llvm::dyn_cast_or_null<llvm::ConstantInt>(inner)) {
+                return llvm::ConstantInt::get(targetType, -ci->getSExtValue());
+            }
+            if (auto* cf = llvm::dyn_cast_or_null<llvm::ConstantFP>(inner)) {
+                return llvm::ConstantFP::get(targetType, -cf->getValueAPF().convertToDouble());
+            }
+        } else if (un->op == "+") {
+            return emitConstantValue(un->expr.get(), targetType);
+        }
+    }
+
+    // Variable / Constant / Enum lookup
+    if (auto var = dynamic_cast<const VariableExprASTNode*>(expr)) {
+        auto it = m_enumConstants.find(var->name);
+        if (it == m_enumConstants.end()) it = m_enumConstants.find(toLower(var->name));
+        if (it != m_enumConstants.end()) {
+            if (targetType->isIntegerTy()) return llvm::ConstantInt::get(targetType, it->second);
+        }
+        auto* gv = findGlobalCaseInsensitive(m_module.get(), var->name);
+        if (gv) {
+            if (targetType->isPointerTy()) return gv;
+            if (gv->hasInitializer()) return gv->getInitializer();
+        }
+    }
+
+    // Cast expression
+    if (auto cast = dynamic_cast<const CastExprASTNode*>(expr)) {
+        llvm::Type* castTy = getLlvmType(cast->targetType);
+        llvm::Constant* inner = emitConstantValue(cast->expr.get(), castTy);
+        if (inner) {
+            if (targetType->isPointerTy() && inner->getType()->isIntegerTy()) {
+                if (auto* ci = llvm::dyn_cast<llvm::ConstantInt>(inner)) {
+                    if (ci->isNullValue()) return llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(targetType));
+                    return llvm::ConstantExpr::getIntToPtr(ci, targetType);
+                }
+                return inner;
+            }
+            if (targetType->isIntegerTy() && inner->getType()->isIntegerTy()) {
+                if (auto* ci = llvm::dyn_cast<llvm::ConstantInt>(inner)) {
+                    return llvm::ConstantInt::get(targetType, ci->getSExtValue());
+                }
+                return inner;
+            }
+            return inner;
+        }
+    }
+
+    // Array / Aggregate literal: { ... }
+    if (auto arrLit = dynamic_cast<const ArrayLiteralExprASTNode*>(expr)) {
+        if (targetType->isArrayTy()) {
+            auto* arrTy = llvm::cast<llvm::ArrayType>(targetType);
+            llvm::Type* elemTy = arrTy->getElementType();
+            std::vector<llvm::Constant*> elements;
+            for (size_t i = 0; i < arrTy->getNumElements(); ++i) {
+                if (i < arrLit->elements.size()) {
+                    elements.push_back(emitConstantValue(arrLit->elements[i].get(), elemTy));
+                } else {
+                    elements.push_back(llvm::Constant::getNullValue(elemTy));
+                }
+            }
+            return llvm::ConstantArray::get(arrTy, elements);
+        }
+        if (targetType->isStructTy()) {
+            auto* stTy = llvm::cast<llvm::StructType>(targetType);
+            std::vector<llvm::Constant*> fields;
+            for (size_t i = 0; i < stTy->getNumElements(); ++i) {
+                if (i < arrLit->elements.size()) {
+                    fields.push_back(emitConstantValue(arrLit->elements[i].get(), stTy->getElementType(i)));
+                } else {
+                    fields.push_back(llvm::Constant::getNullValue(stTy->getElementType(i)));
+                }
+            }
+            return llvm::ConstantStruct::get(stTy, fields);
+        }
+    }
+
+    return llvm::Constant::getNullValue(targetType);
 }
 
 llvm::Function* LlvmEmitter::getOrCreatePanic() {
@@ -3630,10 +3783,41 @@ void LlvmEmitter::emitDimStatement(const DimStmtNode& dimNode) {
     // Optional initial value or default zero-initialization for scalar/struct types
     if (dimNode.initValue) {
         checkConstantOverflow(dimNode.type, dimNode.initValue.get(), dimNode.line, dimNode.column);
-        llvm::Value* initVal = emitExpression(dimNode.initValue.get());
-        if (initVal) {
-            initVal = coerceType(initVal, varType);
-            m_builder->CreateStore(initVal, alloca);
+        if (auto arrLit = dynamic_cast<const ArrayLiteralExprASTNode*>(dimNode.initValue.get())) {
+            if (varType->isArrayTy()) {
+                auto* arrTy = llvm::cast<llvm::ArrayType>(varType);
+                llvm::Type* elemTy = arrTy->getElementType();
+                for (size_t i = 0; i < arrLit->elements.size() && i < arrTy->getNumElements(); ++i) {
+                    llvm::Value* elemPtr = m_builder->CreateConstInBoundsGEP2_64(varType, alloca, 0, i, dimNode.varName + "_elem");
+                    llvm::Value* elemVal = emitExpression(arrLit->elements[i].get());
+                    if (elemVal) {
+                        elemVal = coerceType(elemVal, elemTy);
+                        m_builder->CreateStore(elemVal, elemPtr);
+                    }
+                }
+            } else if (varType->isStructTy()) {
+                auto* stTy = llvm::cast<llvm::StructType>(varType);
+                for (size_t i = 0; i < arrLit->elements.size() && i < stTy->getNumElements(); ++i) {
+                    llvm::Value* fieldPtr = m_builder->CreateStructGEP(stTy, alloca, i, dimNode.varName + "_fld");
+                    llvm::Value* fieldVal = emitExpression(arrLit->elements[i].get());
+                    if (fieldVal) {
+                        fieldVal = coerceType(fieldVal, stTy->getElementType(i));
+                        m_builder->CreateStore(fieldVal, fieldPtr);
+                    }
+                }
+            } else {
+                llvm::Value* initVal = emitExpression(dimNode.initValue.get());
+                if (initVal) {
+                    initVal = coerceType(initVal, varType);
+                    m_builder->CreateStore(initVal, alloca);
+                }
+            }
+        } else {
+            llvm::Value* initVal = emitExpression(dimNode.initValue.get());
+            if (initVal) {
+                initVal = coerceType(initVal, varType);
+                m_builder->CreateStore(initVal, alloca);
+            }
         }
     } else if (!dimNode.type.isArray) {
         if (varType->isSingleValueType()) {
@@ -3660,25 +3844,38 @@ void LlvmEmitter::declareConstant(const ConstStmtNode& constNode, const std::str
         if (ch == '.') ch = '_';
     }
 
+    llvm::Type* constType = getLlvmType(constNode.type);
+    bool isFoldedInt = false;
     if (constNode.value) {
         if (auto num = dynamic_cast<const NumberExprASTNode*>(constNode.value.get())) {
-            m_enumConstants[baseName] = num->val;
-            m_enumConstants[toLower(baseName)] = num->val;
-            m_enumConstants[fullName] = num->val;
-            m_enumConstants[toLower(fullName)] = num->val;
-            m_enumConstants[mangledName] = num->val;
-            m_enumConstants[toLower(mangledName)] = num->val;
+            if (!num->isFloat && constType->isIntegerTy()) {
+                isFoldedInt = true;
+                m_enumConstants[baseName] = num->val;
+                m_enumConstants[toLower(baseName)] = num->val;
+                m_enumConstants[fullName] = num->val;
+                m_enumConstants[toLower(fullName)] = num->val;
+                m_enumConstants[mangledName] = num->val;
+                m_enumConstants[toLower(mangledName)] = num->val;
+            }
         }
     }
 
-    llvm::Type* constType = getLlvmType(constNode.type);
-    if (!constNode.value && !findGlobalCaseInsensitive(m_module.get(), baseName)) {
+    bool needsGlobalVar = (!constNode.value) || !isFoldedInt;
+    if (needsGlobalVar && !findGlobalCaseInsensitive(m_module.get(), baseName)) {
+        llvm::Constant* initVal = nullptr;
+        if (constNode.value) {
+            initVal = emitConstantValue(constNode.value.get(), constType);
+        }
+        if (!initVal) {
+            initVal = llvm::Constant::getNullValue(constType);
+        }
+        llvm::GlobalValue::LinkageTypes linkage = llvm::GlobalValue::InternalLinkage;
         new llvm::GlobalVariable(
             *m_module,
             constType,
             true, // isConstant
-            llvm::GlobalValue::InternalLinkage,
-            llvm::Constant::getNullValue(constType),
+            linkage,
+            initVal,
             baseName
         );
     }
@@ -3701,10 +3898,41 @@ void LlvmEmitter::emitConstStatement(const ConstStmtNode& constNode) {
 
     if (constNode.value) {
         checkConstantOverflow(constNode.type, constNode.value.get(), constNode.line, constNode.column);
-        llvm::Value* val = emitExpression(constNode.value.get());
-        if (val) {
-            val = coerceType(val, constType);
-            m_builder->CreateStore(val, alloca);
+        if (auto arrLit = dynamic_cast<const ArrayLiteralExprASTNode*>(constNode.value.get())) {
+            if (constType->isArrayTy()) {
+                auto* arrTy = llvm::cast<llvm::ArrayType>(constType);
+                llvm::Type* elemTy = arrTy->getElementType();
+                for (size_t i = 0; i < arrLit->elements.size() && i < arrTy->getNumElements(); ++i) {
+                    llvm::Value* elemPtr = m_builder->CreateConstInBoundsGEP2_64(constType, alloca, 0, i, constNode.name + "_elem");
+                    llvm::Value* elemVal = emitExpression(arrLit->elements[i].get());
+                    if (elemVal) {
+                        elemVal = coerceType(elemVal, elemTy);
+                        m_builder->CreateStore(elemVal, elemPtr);
+                    }
+                }
+            } else if (constType->isStructTy()) {
+                auto* stTy = llvm::cast<llvm::StructType>(constType);
+                for (size_t i = 0; i < arrLit->elements.size() && i < stTy->getNumElements(); ++i) {
+                    llvm::Value* fieldPtr = m_builder->CreateStructGEP(stTy, alloca, i, constNode.name + "_fld");
+                    llvm::Value* fieldVal = emitExpression(arrLit->elements[i].get());
+                    if (fieldVal) {
+                        fieldVal = coerceType(fieldVal, stTy->getElementType(i));
+                        m_builder->CreateStore(fieldVal, fieldPtr);
+                    }
+                }
+            } else {
+                llvm::Value* val = emitExpression(constNode.value.get());
+                if (val) {
+                    val = coerceType(val, constType);
+                    m_builder->CreateStore(val, alloca);
+                }
+            }
+        } else {
+            llvm::Value* val = emitExpression(constNode.value.get());
+            if (val) {
+                val = coerceType(val, constType);
+                m_builder->CreateStore(val, alloca);
+            }
         }
     }
 }
@@ -3757,7 +3985,7 @@ void LlvmEmitter::emitAssignStatement(const AssignStmtNode& assignNode) {
                     if (tIt == m_variableTypes.end()) {
                         tIt = m_variableTypes.find(toLower(var->name));
                     }
-                    if (tIt != m_variableTypes.end() && tIt->second.pointerDepth == 0) {
+                    if (tIt != m_variableTypes.end()) {
                         llvm::Value* ptrVal = m_builder->CreateLoad(targetAlloca->getAllocatedType(), targetAlloca, var->name + ".ptr");
                         llvm::Type* valTy = getLlvmType(tIt->second);
                         val = coerceType(val, valTy);
@@ -3853,7 +4081,13 @@ void LlvmEmitter::emitAssignStatement(const AssignStmtNode& assignNode) {
             } else {
                 llvm::GlobalVariable* gVar = findGlobalCaseInsensitive(m_module.get(), var->name);
                 if (gVar) {
-                    baseVal = gVar;
+                    if (baseType.isArray) {
+                        baseVal = gVar;
+                    } else if (baseType.pointerDepth > 0) {
+                        baseVal = m_builder->CreateLoad(gVar->getValueType(), gVar, var->name);
+                    } else {
+                        baseVal = gVar;
+                    }
                 } else if (!m_currentScopeClass.empty() && m_namedValues.count("Me")) {
                     std::string varLower = toLower(var->name);
                     auto fIt = m_structFieldIndices[m_currentScopeClass].find(varLower);
@@ -4796,7 +5030,7 @@ void LlvmEmitter::emitAsmStatement(const AsmStmtNode& asmNode) {
                 if (m_byRefParams.count(var->name) || m_byRefParams.count(toLower(var->name))) {
                     auto tIt = m_variableTypes.find(var->name);
                     if (tIt == m_variableTypes.end()) tIt = m_variableTypes.find(toLower(var->name));
-                    if (tIt != m_variableTypes.end() && tIt->second.pointerDepth == 0) {
+                    if (tIt != m_variableTypes.end()) {
                         ptr = m_builder->CreateLoad(it->second->getAllocatedType(), it->second, var->name + ".ptr");
                         ty = getLlvmType(tIt->second);
                     }
@@ -5563,6 +5797,38 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
         return m_builder->CreateGlobalString(str->val, "str");
     }
 
+    // Array / Aggregate Literal: { ... }
+    if (auto arrLit = dynamic_cast<ArrayLiteralExprASTNode*>(expr)) {
+        TypeSpec deduced = deduceExprType(arrLit);
+        llvm::Type* llvmArrTy = getLlvmType(deduced);
+        llvm::Function* curFunc = m_builder->GetInsertBlock()->getParent();
+        llvm::IRBuilder<> entryBuilder(&curFunc->getEntryBlock(), curFunc->getEntryBlock().begin());
+        llvm::AllocaInst* alloca = entryBuilder.CreateAlloca(llvmArrTy, nullptr, "arrlit.tmp");
+        if (llvmArrTy->isArrayTy()) {
+            auto* arrTy = llvm::cast<llvm::ArrayType>(llvmArrTy);
+            llvm::Type* elemTy = arrTy->getElementType();
+            for (size_t i = 0; i < arrLit->elements.size() && i < arrTy->getNumElements(); ++i) {
+                llvm::Value* elemPtr = m_builder->CreateConstInBoundsGEP2_64(llvmArrTy, alloca, 0, i, "arrlit.elem");
+                llvm::Value* elemVal = emitExpression(arrLit->elements[i].get());
+                if (elemVal) {
+                    elemVal = coerceType(elemVal, elemTy);
+                    m_builder->CreateStore(elemVal, elemPtr);
+                }
+            }
+        } else if (llvmArrTy->isStructTy()) {
+            auto* stTy = llvm::cast<llvm::StructType>(llvmArrTy);
+            for (size_t i = 0; i < arrLit->elements.size() && i < stTy->getNumElements(); ++i) {
+                llvm::Value* fieldPtr = m_builder->CreateStructGEP(stTy, alloca, i, "arrlit.fld");
+                llvm::Value* fieldVal = emitExpression(arrLit->elements[i].get());
+                if (fieldVal) {
+                    fieldVal = coerceType(fieldVal, stTy->getElementType(i));
+                    m_builder->CreateStore(fieldVal, fieldPtr);
+                }
+            }
+        }
+        return alloca;
+    }
+
     // Variables & Enums
     if (auto var = dynamic_cast<VariableExprASTNode*>(expr)) {
         auto it = m_namedValues.find(var->name);
@@ -5579,7 +5845,7 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
             }
             llvm::Value* val = m_builder->CreateLoad(it->second->getAllocatedType(), it->second, var->name);
             if (m_byRefParams.count(var->name) || m_byRefParams.count(toLower(var->name))) {
-                if (tIt != m_variableTypes.end() && tIt->second.pointerDepth == 0) {
+                if (tIt != m_variableTypes.end()) {
                     llvm::Type* valTy = getLlvmType(tIt->second);
                     val = m_builder->CreateLoad(valTy, val, var->name + ".deref");
                 }
@@ -6039,7 +6305,13 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
             } else {
                 llvm::GlobalVariable* gVar = findGlobalCaseInsensitive(m_module.get(), var->name);
                 if (gVar) {
-                    baseVal = gVar;
+                    if (baseType.isArray) {
+                        baseVal = gVar;
+                    } else if (baseType.pointerDepth > 0) {
+                        baseVal = m_builder->CreateLoad(gVar->getValueType(), gVar, var->name);
+                    } else {
+                        baseVal = gVar;
+                    }
                 } else if (!m_currentScopeClass.empty() && m_namedValues.count("Me")) {
                     std::string varLower = toLower(var->name);
                     auto fIt = m_structFieldIndices[m_currentScopeClass].find(varLower);
@@ -7360,7 +7632,8 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
                 llvm::Value* aVal = nullptr;
                 if (exprNode) {
                     llvm::Type* pTy = callee->getFunctionType()->getParamType(p);
-                    if (pTy->isPointerTy()) {
+                    TypeSpec argType = deduceExprType(exprNode);
+                    if (pTy->isPointerTy() && argType.pointerDepth == 0) {
                         aVal = getPointerToExpr(exprNode);
                     }
                     if (!aVal) {
@@ -7489,9 +7762,9 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
                         } else if (i < byRefIt->second.size()) {
                             isByRefParam = byRefIt->second[i];
                         }
-                    }
-                    if (!isByRefParam && paramIdx < callee->getFunctionType()->getNumParams()) {
-                        if (callee->getFunctionType()->getParamType(paramIdx)->isPointerTy()) {
+                    } else if (paramIdx < callee->getFunctionType()->getNumParams()) {
+                        TypeSpec argType = deduceExprType(call->args[i].get());
+                        if (callee->getFunctionType()->getParamType(paramIdx)->isPointerTy() && argType.pointerDepth == 0) {
                             isByRefParam = true;
                         }
                     }
@@ -8302,26 +8575,25 @@ bool LlvmEmitter::emitModule(const ModuleNode& moduleNode) {
                 if (ch == '.') ch = '_';
             }
 
-            if (c->value) {
-                if (auto num = dynamic_cast<const NumberExprASTNode*>(c->value.get())) {
-                    m_enumConstants[c->name] = num->val;
-                    m_enumConstants[toLower(c->name)] = num->val;
-                    m_enumConstants[fullName] = num->val;
-                    m_enumConstants[toLower(fullName)] = num->val;
-                    m_enumConstants[mangledName] = num->val;
-                    m_enumConstants[toLower(mangledName)] = num->val;
-                }
-            }
             llvm::Type* constType = getLlvmType(c->type);
-            llvm::Constant* initVal = llvm::Constant::getNullValue(constType);
             if (c->value) {
                 if (auto num = dynamic_cast<const NumberExprASTNode*>(c->value.get())) {
-                    if (num->isFloat && constType->isFloatingPointTy()) {
-                        initVal = llvm::ConstantFP::get(constType, num->floatVal);
-                    } else if (constType->isIntegerTy()) {
-                        initVal = llvm::ConstantInt::get(constType, num->val);
+                    if (!num->isFloat && constType->isIntegerTy()) {
+                        m_enumConstants[c->name] = num->val;
+                        m_enumConstants[toLower(c->name)] = num->val;
+                        m_enumConstants[fullName] = num->val;
+                        m_enumConstants[toLower(fullName)] = num->val;
+                        m_enumConstants[mangledName] = num->val;
+                        m_enumConstants[toLower(mangledName)] = num->val;
                     }
                 }
+            }
+            llvm::Constant* initVal = nullptr;
+            if (c->value) {
+                initVal = emitConstantValue(c->value.get(), constType);
+            }
+            if (!initVal) {
+                initVal = llvm::Constant::getNullValue(constType);
             }
             llvm::GlobalValue::LinkageTypes linkage = llvm::GlobalValue::InternalLinkage;
             if (!findGlobalCaseInsensitive(m_module.get(), c->name)) {
@@ -8498,15 +8770,12 @@ bool LlvmEmitter::emitModule(const ModuleNode& moduleNode) {
         for (const auto& member : moduleNode.members) {
             if (auto dim = dynamic_cast<const DimStmtNode*>(member.get())) {
             llvm::Type* varType = getLlvmType(dim->type);
-            llvm::Constant* initVal = llvm::Constant::getNullValue(varType);
+            llvm::Constant* initVal = nullptr;
             if (dim->initValue) {
-                if (auto num = dynamic_cast<const NumberExprASTNode*>(dim->initValue.get())) {
-                    if (num->isFloat && varType->isFloatingPointTy()) {
-                        initVal = llvm::ConstantFP::get(varType, num->floatVal);
-                    } else if (varType->isIntegerTy()) {
-                        initVal = llvm::ConstantInt::get(varType, num->val);
-                    }
-                }
+                initVal = emitConstantValue(dim->initValue.get(), varType);
+            }
+            if (!initVal) {
+                initVal = llvm::Constant::getNullValue(varType);
             }
             m_variableTypes[dim->varName] = dim->type;
             m_variableTypes[toLower(dim->varName)] = dim->type;

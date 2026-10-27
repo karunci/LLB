@@ -246,30 +246,32 @@ dprintf:
 .global memset
 .type memset, @function
 memset:
-    /* System V AMD64 ABI:
-     * %rdi: dest pointer
-     * %rsi: fill byte (int)
-     * %rdx: count (size_t)
-     * Returns: %rax = dest pointer
-     */
-    movq %rdi, %rax       /* Save dest for return value */
-    movq %rdx, %rcx       /* Count into rcx for rep stosb */
-    movb %sil, %al        /* Byte value */
+    cld
+    movq %rdi, %r8        /* Save dest return pointer */
+    movzbl %sil, %eax     /* Byte value */
+    movabsq $0x0101010101010101, %r9
+    imulq %r9, %rax
+    movq %rdx, %rcx
+    shrq $3, %rcx         /* 64-bit quadword count */
+    rep stosq
+    movq %rdx, %rcx
+    andq $7, %rcx         /* Remaining bytes */
     rep stosb
-    movq %rdi, %rax       /* Restore dest return pointer */
+    movq %r8, %rax        /* Restore dest return pointer */
     retq
 
 .global memcpy
 .type memcpy, @function
 memcpy:
-    /* %rdi: dest pointer
-     * %rsi: src pointer
-     * %rdx: count (size_t)
-     * Returns: %rax = dest pointer
-     */
-    movq %rdi, %rax       /* Save dest for return value */
-    movq %rdx, %rcx       /* Count into rcx for rep movsb */
+    cld
+    movq %rdi, %r8        /* Save dest return pointer */
+    movq %rdx, %rcx
+    shrq $3, %rcx         /* 64-bit quadword count */
+    rep movsq
+    movq %rdx, %rcx
+    andq $7, %rcx         /* Remaining bytes */
     rep movsb
+    movq %r8, %rax        /* Restore dest return pointer */
     retq
 
 .global memmove

@@ -25,7 +25,12 @@ Namespace Pros.Memory
         ' @return Base virtual address where shared pages were mapped, or 0 on failure.
         ''
         Public Unsafe Function Attach(ByVal shmid As UInt64, ByVal targetVaddr As UInt64) As UInt64
-            Attach = Pros.Sys.RawSyscall.Call2(Pros.Sys.SYS_SHMEM_ATTACH, shmid, targetVaddr)
+            Dim res As UInt64 = Pros.Sys.RawSyscall.Call2(Pros.Sys.SYS_SHMEM_ATTACH, shmid, targetVaddr)
+            If res = 0 Or res = targetVaddr Then
+                Attach = targetVaddr
+            Else
+                Attach = 0
+            End If
         End Function
 
         ''

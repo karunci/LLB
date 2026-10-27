@@ -34,6 +34,7 @@
 27. [Standard Libraries (`LibLLB` & `LibLLB_Metal`)](#27-standard-libraries-libllb--libllb_metal)
 28. [Intermediate Build Artifact Management](#28-intermediate-build-artifact-management)
 29. [Complete Syntactic Forms & Capabilities Matrix](#29-complete-syntactic-forms--capabilities-matrix)
+30. [Modern Systems Languages Capability Audit (LLB vs C23 vs Zig / Rust)](#30-modern-systems-languages-capability-audit-llb-vs-c23-vs-zig--rust)
 
 ---
 
@@ -326,6 +327,37 @@ Public Const MAX_RETRIES As Int32 = 5
     TypeAlias SysInt = Int32
 #End If
 ```
+
+### Aggregate Initializers (`{ ... }`)
+LLB provides first-class aggregate initializers for static arrays, constants, and structures. Initializers support arbitrary nested expressions, trailing commas, and multiline formatting:
+
+#### Array Aggregate Initialization
+```vb
+' Explicitly sized constant array in .rodata
+Private Const GLYPH_CLOSE(10) As UInt16 = { _
+    &H0000, &H030C, &H0198, &H00F0, &H0060, _
+    &H0060, &H00F0, &H0198, &H030C, &H0000  _
+}
+
+' Auto-sized inferred array (bounds automatically deduced at compile time)
+Dim primes() As Int32 = { 2, 3, 5, 7, 11, 13, 17, 19 }
+
+' String pointer table
+Const CURSOR_NAMES() As String = { "Arrow", "IBeam", "ResizeEW", "ResizeNS" }
+```
+
+#### Struct Aggregate Initialization
+```vb
+Public Structure Point
+    Public X As Int32
+    Public Y As Int32
+End Structure
+
+' Aggregate struct initialization
+Dim pt As Point = { 1024, 768 }
+```
+- **Static `.rodata` Lowering:** When used with `Const` or global/module variables, aggregate initializers are emitted as zero-overhead compile-time constant tables (`ConstantArray` / `ConstantStruct`).
+- **Array Peeling & Pointer Decay:** To extract the pointer to an array constant in `.rodata`, use `CPtr(Pointer To T, AddressOf ArrayName)`.
 
 ---
 
@@ -1266,6 +1298,48 @@ Using guard As New SpinlockGuard(m_lock)
     ProcessPage frame
 End Using ' Automatically invokes guard.Dispose() upon leaving block
 ```
+
+---
+
+## 30. Modern Systems Languages Capability Audit (LLB vs C23 vs Zig / Rust)
+
+A comprehensive capability audit assessing Low-Level Basic (LLB) against contemporary systems programming languages (C23 standard, Zig 0.13+, and Modern Rust), establishing architectural parity and prioritizing upcoming language features for operating systems, bare-metal firmware, and performance-critical computing.
+
+### 30.1 Systems Capabilities Comparison Matrix
+
+| Subsystem / Feature Area | Low-Level Basic (Current) | C23 Standard | Zig / Modern Rust | Architectural Role & OS Impact |
+| :--- | :---: | :---: | :---: | :--- |
+| **Aggregate Initializers (`{ ... }`)** | **✅ Supported** | ✅ Supported | ✅ Supported | Native `{ expr1, expr2, ... }` for arrays, slices, and structs with `.rodata` static tables. |
+| **Direct Hardware MMIO & Pointers** | **✅ Supported** | ✅ Supported | ✅ Supported | `Volatile Pointer To T`, `CPtr`, element-scaled pointer arithmetic. |
+| **Inline Assembly with Constraints** | **✅ Supported** | ✅ Supported | ✅ Supported | Inline `Asm "..." : outputs : inputs : clobbers` with early-clobber `"=&r"` operands. |
+| **Packed Layouts & Alignment** | **✅ Supported** | ✅ Supported | ✅ Supported | `<Packed>`, `<Align(N)>`, `#Assert SizeOf(...)` for IDT/GDT/TSS hardware descriptors. |
+| **Object Models & Interfaces** | **✅ Supported** | ❌ Struct of Fn Ptrs | Traits / Protocols | `Interface`, `Implements`, `Class` `<Instancing(Global/SingleUse/MultiUse)>`. |
+| **Multi-Module Project Architecture** | **✅ Supported** | Headers (`.h`) | Modules / Crates | `Import` (modules), `Use` (classes), `Declare` (libraries), with transitive import discovery. |
+| **Embedded Toolchain & Linker** | **✅ Supported** | External (ld/lld) | Embedded LLD | Integrated LLVM 21 backend with embedded LLD linker in single self-contained binary. |
+| **Designated Initializers** | *⏳ Roadmap* | ✅ Supported | ✅ Supported | `{ .x = 10, .y = 20 }` or `{ x: 10, y: 20 }` for selective struct member initialization. |
+| **Compile-Time String Concatenation** | *⏳ Roadmap* | ✅ Supported | ✅ Supported | Folding string literals at compile-time (`Const MSG = "A" & "B"`). |
+| **Static Local Variables** | *⏳ Roadmap* | ✅ Supported | ✅ Supported | `Static counter As Int32 = 0` retaining state across procedure invocations. |
+| **`Defer` Scoped Block Cleanup** | *⏳ Roadmap* | ❌ `__attribute__((cleanup))` | ✅ Supported | Deterministic scope exit cleanup (spinlocks, handles, file descriptors). |
+| **Packed Bitfield Structure Members** | *🔧 Partial* | ✅ Supported | ✅ Supported | Currently handled via bitwise masks (`Or`, `And`, `LShift`, `RShift`); native member syntax pending. |
+| **Explicitly Sized Typed Enums** | *🔧 Partial* | ✅ Supported | ✅ Supported | `Enum Name As UInt8 ... End Enum` for precise register and wire-protocol representations. |
+| **Raw / Multiline String Literals** | *⏳ Roadmap* | ✅ Supported | ✅ Supported | `"""..."""` or `@"..."` for embedded shaders, configs, and font bitmaps. |
+| **Local Variable Type Inference** | *⏳ Roadmap* | ✅ `auto` | ✅ `var` / `let` | `Dim x := expr` eliminating redundant type annotations for local variables. |
+
+### 30.2 Ranked Systems-Level Language Roadmap
+
+1. **Compile-Time Constant String Concatenation & Folding:**
+   - Enable compile-time concatenation of string constants (`Const KERNEL_BANNER = "PROS " & "KERNEL"`) for global and static tables.
+2. **Designated Initializers:**
+   - Allow out-of-order, named initialization of struct fields (`Dim cfg As Config = { .Width = 1024, .Height = 768 }`).
+3. **Static Local Variables:**
+   - Support `Static` procedure variables allocated in `.data` / `.bss` retaining state across calls without polluting module namespace.
+4. **`Defer` Scoped Cleanup Statement:**
+   - Provide zero-cost compile-time scoped cleanup handlers executed upon exiting the containing block or procedure (`Defer Spinlock.Release lock`).
+5. **Native Bitfield Member Syntax:**
+   - Extend struct declarations with bitfield declarations (`Flags : 4 As UInt8`) compiling to bitwise extraction/insertion.
+6. **Explicit Sized Enums:**
+   - Support typed enums (`Enum MouseButton As UInt8`) to enforce integer size semantics on protocol payloads.
+
 
 
 

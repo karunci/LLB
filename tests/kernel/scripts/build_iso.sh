@@ -27,6 +27,9 @@ cd "${PROJECT_ROOT}"
 ./build/llbc-stage0 services/plexus_mgr/PlexusMgr.llbproj
 ./build/llbc-stage0 services/wm/WmService.llbproj
 ./build/llbc-stage0 services/vfs_srv/VfsService.llbproj
+./build/llbc-stage0 services/sys_mon/SysMon.llbproj
+./build/llbc-stage0 services/terminal/Terminal.llbproj
+./build/llbc-stage0 services/node_viewer/NodeViewer.llbproj
 ./build/llbc-stage0 tests/user_app/UserApp.llbproj
 
 python3 tools/bax_pack.py services/genesis/build/genesis.elf -o services/genesis/build/genesis.bax --manifest services/genesis/manifest.json
@@ -37,6 +40,9 @@ python3 tools/bax_pack.py services/dev_mgr/build/dev_mgr.elf -o services/dev_mgr
 python3 tools/bax_pack.py services/plexus_mgr/build/plexus_mgr.elf -o services/plexus_mgr/build/plexus_mgr.bax --manifest services/plexus_mgr/manifest.json
 python3 tools/bax_pack.py services/wm/build/wm.elf -o services/wm/build/wm.bax --manifest services/wm/manifest.json
 python3 tools/bax_pack.py services/vfs_srv/build/vfs_srv.elf -o services/vfs_srv/build/vfs_srv.bax --manifest services/vfs_srv/manifest.json
+python3 tools/bax_pack.py services/sys_mon/build/sys_mon.elf -o services/sys_mon/build/sys_mon.bax --manifest services/sys_mon/manifest.json
+python3 tools/bax_pack.py services/terminal/build/terminal.elf -o services/terminal/build/terminal.bax --manifest services/terminal/manifest.json
+python3 tools/bax_pack.py services/node_viewer/build/node_viewer.elf -o services/node_viewer/build/node_viewer.bax --manifest services/node_viewer/manifest.json
 python3 tools/bax_pack.py tests/user_app/build/user_app.elf -o tests/user_app/build/user_app.bax --manifest tests/user_app/manifest.json
 
 STAGING_DIR="${PROJECT_ROOT}/build/initrd_staging"
@@ -55,6 +61,9 @@ cp "${PROJECT_ROOT}/services/dev_mgr/build/dev_mgr.bax" "${STAGING_DIR}/System/S
 cp "${PROJECT_ROOT}/services/plexus_mgr/build/plexus_mgr.bax" "${STAGING_DIR}/System/Servers/"
 cp "${PROJECT_ROOT}/services/wm/build/wm.bax" "${STAGING_DIR}/System/Servers/"
 cp "${PROJECT_ROOT}/services/vfs_srv/build/vfs_srv.bax" "${STAGING_DIR}/System/Servers/"
+cp "${PROJECT_ROOT}/services/sys_mon/build/sys_mon.bax" "${STAGING_DIR}/System/Servers/"
+cp "${PROJECT_ROOT}/services/terminal/build/terminal.bax" "${STAGING_DIR}/System/Servers/"
+cp "${PROJECT_ROOT}/services/node_viewer/build/node_viewer.bax" "${STAGING_DIR}/System/Servers/"
 cp "${PROJECT_ROOT}/tests/user_app/build/user_app.bax" "${STAGING_DIR}/Apps/UserApp/"
 
 # Dual compatibility: provide root-level copies so flat lookups and hierarchical lookups both succeed

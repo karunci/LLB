@@ -5,7 +5,11 @@
 Module Arch.Idt
 
     Import Arch.X86_64.Apic
+    Import Sched
     Use Drivers.SerialUart As Serial
+    Use Sched.Scheduler As SchedEngine
+    Use Mem.VirtualMemoryManager As VmmEngine
+    Use Mem.BuddyAllocator As Buddy
 
     ' Exact 16-byte x86_64 IDT Entry Gate Descriptor
     <Packed>
@@ -110,12 +114,51 @@ Module Arch.Idt
             handlerFunc = CType(InterruptHandler, isrHandlers(vector))
             handlerFunc(frame)
         ElseIf vector < 32 Then
-            ' Fatal unhandled CPU exception
-            Serial.PrintF "\r\n[CPU EXCEPTION] Fatal Vector: %u | Error: 0x%x | RIP: 0x%lx | CS: 0x%x | RSP: 0x%lx\r\n", _
-                          CType(UInt32, vector), CType(UInt32, frame.ErrorCode And &HFFFFFFFF), frame.Rip, CType(UInt32, frame.Cs), frame.Rsp
-            Do
-                Asm "cli\n\thlt" : : : "memory"
-            Loop
+            ' CPU Exception Handler
+            If vector = 14 Then
+                Dim cr2Val As UInt64 = 0
+                Asm "mov %%cr2, %0" : "=r"(cr2Val) : : "memory"
+
+                ' 1. Demand Paging: Stack auto-expansion down to 0x6C000000
+                If cr2Val >= &H6C000000 And cr2Val < &H70000000 Then
+                    Dim pageVaddr As UInt64 = cr2Val And &HFFFFFFFFFFFFF000
+                    Dim physFrame As UInt64 = Buddy.AllocPages(0)
+                    If physFrame <> 0 Then
+                        Dim curCr3 As UInt64 = 0
+                        Asm "mov %%cr3, %0" : "=r"(curCr3) : : "memory"
+                        VmmEngine.MapPage curCr3, pageVaddr, physFrame, &H07
+                        Asm "invlpg (%0)" : : "r"(pageVaddr) : "memory"
+                        Exit Sub ' Return cleanly and resume faulting instruction
+                    End If
+                End If
+
+                ' 2. Process Isolation for Ring 3 user faults
+                If (frame.Cs And 3) = 3 Then
+                    Serial.PrintF "\r\n[CPU FAULT] Ring 3 User Process Fault: RIP: 0x%lx | CR2: 0x%lx | Error: 0x%x | Terminating Task Cleanly.\r\n", _
+                                  frame.Rip, cr2Val, CType(UInt32, frame.ErrorCode And &HFFFFFFFF)
+                    SchedEngine.ExitCurrentTask 1
+                    Exit Sub
+                End If
+
+                ' Kernel Ring 0 Fault: Halt
+                Serial.PrintF "\r\n[CPU EXCEPTION] Fatal Ring 0 Vector: 14 (Page Fault) | CR2: 0x%lx | Error: 0x%x | RIP: 0x%lx | CS: 0x%x | RSP: 0x%lx\r\n", _
+                              cr2Val, CType(UInt32, frame.ErrorCode And &HFFFFFFFF), frame.Rip, CType(UInt32, frame.Cs), frame.Rsp
+                Do
+                    Asm "cli\n\thlt" : : : "memory"
+                Loop
+            Else
+                If (frame.Cs And 3) = 3 Then
+                    Serial.PrintF "\r\n[CPU FAULT] Ring 3 Exception Vector: %u | RIP: 0x%lx | Error: 0x%x | Terminating Task Cleanly.\r\n", _
+                                  CType(UInt32, vector), frame.Rip, CType(UInt32, frame.ErrorCode And &HFFFFFFFF)
+                    SchedEngine.ExitCurrentTask 1
+                    Exit Sub
+                End If
+                Serial.PrintF "\r\n[CPU EXCEPTION] Fatal Vector: %u | Error: 0x%x | RIP: 0x%lx | CS: 0x%x | RSP: 0x%lx\r\n", _
+                              CType(UInt32, vector), CType(UInt32, frame.ErrorCode And &HFFFFFFFF), frame.Rip, CType(UInt32, frame.Cs), frame.Rsp
+                Do
+                    Asm "cli\n\thlt" : : : "memory"
+                Loop
+            End If
         End If
     End Sub
 

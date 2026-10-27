@@ -1,0 +1,28 @@
+' Project Name: PROS Neural Node Viewer
+' Filename: services/node_viewer/NodeViewer.llbproj
+' Summary: Standalone Ring 3 neural node topology viewer application.
+
+[Project]
+Name    = "NodeViewer"
+Type    = "Executable"
+Version = "1.0.0"
+
+[Target]
+Arch = "x86_64-unknown-none-elf"
+
+[Output]
+OutDir  = "build"
+OutFile = "node_viewer.elf"
+
+[Entry]
+EntryPoint = "_start"
+
+[Linker]
+LinkerScript = "user_linker.ld"
+Libraries    = [
+    "../../lib/pros/build/libpros.a"
+]
+
+[Sources]
+Assembly = "brt0.S"
+Module   = "NodeViewerMain.bas"

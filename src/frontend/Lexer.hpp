@@ -142,7 +142,11 @@ enum class TokenType {
     Asterisk,       // *
     Slash,          // /
     Ampersand,      // &
-    At              // @
+    At,             // @
+    LBrace,         // {
+    RBrace,         // }
+    LBracket,       // [
+    RBracket        // ]
 };
 
 struct Token {

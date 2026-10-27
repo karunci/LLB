@@ -41,9 +41,56 @@ Module ProsApi
     Public Const COLOR_BTN_MAX          As UInt32 = &HFF00C853
     Public Const COLOR_BTN_MIN          As UInt32 = &HFF5E81AC
 
+    ' Window Manager Protocol & IPC Constants
+    Public Const WM_CMD_REGISTER_TABLE  As UInt32 = 30
+    Public Const WM_CMD_CREATE_WINDOW   As UInt32 = 31
+    Public Const WM_CMD_DESTROY_WINDOW  As UInt32 = 32
+    Public Const WM_CMD_SET_FOCUS       As UInt32 = 22
+    Public Const WM_CMD_MOVE_WINDOW     As UInt32 = 23
+    Public Const WM_CMD_RESIZE_WINDOW   As UInt32 = 24
+    Public Const WM_CMD_MINIMIZE_WINDOW As UInt32 = 25
+    Public Const WM_CMD_MAXIMIZE_WINDOW As UInt32 = 26
+    Public Const WM_CMD_RESTORE_WINDOW  As UInt32 = 27
+    Public Const WM_CMD_MOUSE_EVENT     As UInt32 = 33
+    Public Const WM_CMD_SET_CURSOR      As UInt32 = 34
+    Public Const WM_CMD_WINDOW_DIRTY    As UInt32 = 35
+
+    Public Const WM_RESP_OK             As UInt32 = 200
+    Public Const WM_RESP_ERROR          As UInt32 = 201
+
+    Public Const MAX_WINDOWS            As UInt32 = 16
+
+    ' Window State Identifiers
+    Public Const WIN_STATE_NORMAL       As Int32 = 0
+    Public Const WIN_STATE_MINIMIZED    As Int32 = 1
+    Public Const WIN_STATE_MAXIMIZED    As Int32 = 2
+
     ' =========================================================================
     ' 2. System Structures
     ' =========================================================================
+    <Packed>
+    Public Structure WindowDescriptor
+        Public WinId         As UInt32
+        Public OwnerPid      As UInt64
+        Public X             As Int32
+        Public Y             As Int32
+        Public Width         As Int32
+        Public Height        As Int32
+        Public SurfaceWidth  As Int32
+        Public SurfaceHeight As Int32
+        Public State         As Int32
+        Public Focused       As Boolean
+        Public ShmId         As UInt64
+        Public ClientVaddr   As UInt64
+        Public Title(32)     As Byte
+    End Structure
+
+    <Packed>
+    Public Structure WindowTable
+        Public Revision    As UInt32
+        Public Count       As UInt32
+        Public Windows(15) As WindowDescriptor
+    End Structure
     <Packed>
     Public Structure AxonPacket
         Public Sequence      As UInt64
@@ -159,6 +206,9 @@ Module ProsApi
 
     ' Window Management APIs
     Public Declare Function WmRequestFocus Lib "libpros" Alias "Pros_Gui_WindowManagerClient_RequestFocus" (ByVal winId As UInt32) As Boolean
+    Public Declare Function WmCreateWindow Lib "libpros" Alias "Pros_Gui_WindowManagerClient_CreateWindow" (ByVal w As Int32, ByVal h As Int32, ByVal shmId As UInt64, ByVal titlePtr As Pointer To Byte) As UInt32
+    Public Declare Function WmDestroyWindow Lib "libpros" Alias "Pros_Gui_WindowManagerClient_DestroyWindow" (ByVal winId As UInt32) As Boolean
+    Public Declare Function WmSignalDirty Lib "libpros" Alias "Pros_Gui_WindowManagerClient_SignalDirty" (ByVal winId As UInt32, ByVal rx As Int32, ByVal ry As Int32, ByVal rw As Int32, ByVal rh As Int32) As Boolean
 
     ' Device Management APIs
     <Packed>

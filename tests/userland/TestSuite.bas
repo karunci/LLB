@@ -1914,6 +1914,43 @@ SkipMiddle:
         TestNestedNamespaceDisambiguation = True
     End Function
 
+    ' 67. Aggregate Initializers ({ ... }) for Arrays and Structs
+    Public Function TestAggregateInitializers() As Boolean
+        ' 1. Local fixed array initializer
+        Dim nums(4) As Int32 = { 10, 20, 30, 40 }
+        If nums(0) <> 10 Or nums(1) <> 20 Or nums(2) <> 30 Or nums(3) <> 40 Then
+            TestAggregateInitializers = False
+            Exit Function
+        End If
+
+        ' 2. Auto-sized array initializer
+        Dim primes() As Int32 = { 2, 3, 5, 7, 11, 13 }
+        If primes(0) <> 2 Or primes(1) <> 3 Or primes(2) <> 5 Or primes(3) <> 7 Or primes(4) <> 11 Or primes(5) <> 13 Then
+            TestAggregateInitializers = False
+            Exit Function
+        End If
+
+        ' 3. Array of string literals
+        Dim sprite() As String = { _
+            "X...X", _
+            ".X.X.", _
+            "..X.." _
+        }
+        If StrComp(sprite(0), "X...X") <> 0 Or StrComp(sprite(1), ".X.X.") <> 0 Or StrComp(sprite(2), "..X..") <> 0 Then
+            TestAggregateInitializers = False
+            Exit Function
+        End If
+
+        ' 4. Struct aggregate initializer
+        Dim pt As Point = { 100, 200 }
+        If pt.X <> 100 Or pt.Y <> 200 Then
+            TestAggregateInitializers = False
+            Exit Function
+        End If
+
+        TestAggregateInitializers = True
+    End Function
+
     ' Main Entry Point
     Public Unsafe Function Main(ByVal argc As Int32, ByVal argv As Pointer To Pointer To Byte) As Int32
         puts CPtr(Pointer To Byte, "================================================")
@@ -2450,13 +2487,21 @@ SkipMiddle:
             failCount = failCount + 1
         End If
 
+        ' 67. Aggregate Initializers ({ ... }) for Arrays and Structs
+        If TestAggregateInitializers() Then
+            puts CPtr(Pointer To Byte, "Test 67 > [PASS] Aggregate Initializers ({ ... }) for Arrays and Structs")
+        Else
+            puts CPtr(Pointer To Byte, "Test 67 > [FAIL] Aggregate Initializers ({ ... })")
+            failCount = failCount + 1
+        End If
+
         puts CPtr(Pointer To Byte, "================================================")
         If failCount = 0 Then
-            puts CPtr(Pointer To Byte, "   ALL 66 TEST SUITES PASSED SUCCESSFULLY!      ")
+            puts CPtr(Pointer To Byte, "   ALL 67 TEST SUITES PASSED SUCCESSFULLY!      ")
             puts CPtr(Pointer To Byte, "================================================")
             Main = 0
         Else
-            Print "   TEST SUITE FINISHED WITH ", failCount, " FAILURE(S) OUT OF 66"
+            Print "   TEST SUITE FINISHED WITH ", failCount, " FAILURE(S) OUT OF 67"
             puts CPtr(Pointer To Byte, "================================================")
             Main = 1
         End If

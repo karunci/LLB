@@ -53,137 +53,142 @@ Module CursorTheme
     '    activeMask: 1 = pixel present, 0 = transparent
     '    colorMask:  1 = crisp white interior (&HFFFFFFFF), 0 = black border (&HFF000000)
     ' =========================================================================
+    Private Const ArrowActive(18) As UInt16 = { _
+        &H8000, &HC000, &HE000, &HF000, &HF800, &HFC00, &HFE00, &HFF00, _
+        &HFF80, &HFFC0, &HFFC0, &HFE00, &HEF00, &HCF00, &H8780, &H0780, _
+        &H0300, &H0000 _
+    }
+    Private Const ArrowColor(18) As UInt16 = { _
+        &H0000, &H0000, &H4000, &H6000, &H7000, &H7800, &H7C00, &H7E00, _
+        &H7F00, &H7F80, &H7C00, &H6C00, &H4600, &H0600, &H0300, &H0300, _
+        &H0000, &H0000 _
+    }
+
+    Private Const IBeamActive(18) As UInt16 = { _
+        &H3F00, &H0C00, &H0C00, &H0C00, &H0C00, &H0C00, &H0C00, &H0C00, _
+        &H0C00, &H0C00, &H0C00, &H0C00, &H0C00, &H3F00, &H0000, &H0000, _
+        &H0000, &H0000 _
+    }
+    Private Const IBeamColor(18) As UInt16 = { _
+        &H0000, &H0000, &H0000, &H0000, &H0000, &H0000, &H0000, &H0000, _
+        &H0000, &H0000, &H0000, &H0000, &H0000, &H0000, &H0000, &H0000, _
+        &H0000, &H0000 _
+    }
+
+    Private Const ResizeEWActive(18) As UInt16 = { _
+        &H0000, &H0000, &H0000, &H0810, &H1818, &H3FFC, &H7FFE, &H3FFC, _
+        &H1818, &H0810, &H0000, &H0000, &H0000, &H0000, &H0000, &H0000, _
+        &H0000, &H0000 _
+    }
+    Private Const ResizeEWColor(18) As UInt16 = { _
+        &H0000, &H0000, &H0000, &H0000, &H0000, &H1008, &H3FFC, &H1008, _
+        &H0000, &H0000, &H0000, &H0000, &H0000, &H0000, &H0000, &H0000, _
+        &H0000, &H0000 _
+    }
+
+    Private Const ResizeNSActive(18) As UInt16 = { _
+        &H0100, &H0380, &H07C0, &H0FC0, &H0100, &H0100, &H0100, &H0100, _
+        &H0100, &H0100, &H0FC0, &H07C0, &H0380, &H0100, &H0000, &H0000, _
+        &H0000, &H0000 _
+    }
+    Private Const ResizeNSColor(18) As UInt16 = { _
+        &H0000, &H0100, &H0380, &H0000, &H0000, &H0000, &H0000, &H0000, _
+        &H0000, &H0000, &H0000, &H0380, &H0100, &H0000, &H0000, &H0000, _
+        &H0000, &H0000 _
+    }
+
+    Private Const ResizeNWSEActive(18) As UInt16 = { _
+        &HF000, &HF000, &HF800, &H9C00, &H0E00, &H0700, &H0380, &H01C0, _
+        &H00E0, &H0070, &H0039, &H001F, &H000F, &H000F, &H0000, &H0000, _
+        &H0000, &H0000 _
+    }
+    Private Const ResizeNWSEColor(18) As UInt16 = { _
+        &H0000, &H6000, &H5000, &H0800, &H0400, &H0200, &H0100, &H0080, _
+        &H0040, &H0020, &H0010, &H000A, &H0006, &H0000, &H0000, &H0000, _
+        &H0000, &H0000 _
+    }
+
+    Private Const ResizeNESWActive(18) As UInt16 = { _
+        &H000F, &H000F, &H001F, &H0039, &H0070, &H00E0, &H01C0, &H0380, _
+        &H0700, &H0E00, &H9C00, &HF800, &HF000, &HF000, &H0000, &H0000, _
+        &H0000, &H0000 _
+    }
+    Private Const ResizeNESWColor(18) As UInt16 = { _
+        &H0000, &H0006, &H000A, &H0010, &H0020, &H0040, &H0080, &H0100, _
+        &H0200, &H0400, &H0800, &H5000, &H6000, &H0000, &H0000, &H0000, _
+        &H0000, &H0000 _
+    }
+
     ''
-    ' @brief Load row bitmasks for the specified cursor sprite.
+    ' @brief Retrieve pointer to static active bitmask table for cursor sprite.
+    ''
+    Public Unsafe Function GetCursorActiveMask(ByVal cursorType As UInt32) As Pointer To UInt16
+        Select Case cursorType
+            Case CURSOR_ARROW
+                GetCursorActiveMask = CPtr(Pointer To UInt16, AddressOf ArrowActive)
+            Case CURSOR_IBEAM
+                GetCursorActiveMask = CPtr(Pointer To UInt16, AddressOf IBeamActive)
+            Case CURSOR_RESIZE_EW
+                GetCursorActiveMask = CPtr(Pointer To UInt16, AddressOf ResizeEWActive)
+            Case CURSOR_RESIZE_NS
+                GetCursorActiveMask = CPtr(Pointer To UInt16, AddressOf ResizeNSActive)
+            Case CURSOR_RESIZE_NWSE
+                GetCursorActiveMask = CPtr(Pointer To UInt16, AddressOf ResizeNWSEActive)
+            Case CURSOR_RESIZE_NESW
+                GetCursorActiveMask = CPtr(Pointer To UInt16, AddressOf ResizeNESWActive)
+            Case Else
+                GetCursorActiveMask = CPtr(Pointer To UInt16, AddressOf ArrowActive)
+        End Select
+    End Function
+
+    ''
+    ' @brief Retrieve pointer to static color bitmask table for cursor sprite.
+    ''
+    Public Unsafe Function GetCursorColorMask(ByVal cursorType As UInt32) As Pointer To UInt16
+        Select Case cursorType
+            Case CURSOR_ARROW
+                GetCursorColorMask = CPtr(Pointer To UInt16, AddressOf ArrowColor)
+            Case CURSOR_IBEAM
+                GetCursorColorMask = CPtr(Pointer To UInt16, AddressOf IBeamColor)
+            Case CURSOR_RESIZE_EW
+                GetCursorColorMask = CPtr(Pointer To UInt16, AddressOf ResizeEWColor)
+            Case CURSOR_RESIZE_NS
+                GetCursorColorMask = CPtr(Pointer To UInt16, AddressOf ResizeNSColor)
+            Case CURSOR_RESIZE_NWSE
+                GetCursorColorMask = CPtr(Pointer To UInt16, AddressOf ResizeNWSEColor)
+            Case CURSOR_RESIZE_NESW
+                GetCursorColorMask = CPtr(Pointer To UInt16, AddressOf ResizeNESWColor)
+            Case Else
+                GetCursorColorMask = CPtr(Pointer To UInt16, AddressOf ArrowColor)
+        End Select
+    End Function
+
+    ''
+    ' @brief Retrieve pointers to the constant row bitmasks for the specified cursor sprite.
+    ' @param cursorType Target cursor index.
+    ' @param pAct Output pointer to 18-element active mask table.
+    ' @param pCol Output pointer to 18-element color mask table.
+    ''
+    Public Unsafe Sub GetCursorMasks(ByVal cursorType As UInt32, ByRef pAct As Pointer To UInt16, ByRef pCol As Pointer To UInt16)
+        pAct = GetCursorActiveMask(cursorType)
+        pCol = GetCursorColorMask(cursorType)
+    End Sub
+
+    ''
+    ' @brief Load row bitmasks for the specified cursor sprite into destination buffers.
     ' @param cursorType Target cursor index.
     ' @param pAct Pointer to 18-element UInt16 active mask buffer.
     ' @param pCol Pointer to 18-element UInt16 color mask buffer.
     ''
     Public Unsafe Sub LoadCursorMasks(ByVal cursorType As UInt32, ByVal pAct As Pointer To UInt16, ByVal pCol As Pointer To UInt16)
-        Select Case cursorType
-            Case CURSOR_ARROW
-                pAct(0)  = &H8000: pCol(0)  = &H0000 ' "X               "
-                pAct(1)  = &HC000: pCol(1)  = &H0000 ' "XX              "
-                pAct(2)  = &HE000: pCol(2)  = &H4000 ' "X.X             "
-                pAct(3)  = &HF000: pCol(3)  = &H6000 ' "X..X            "
-                pAct(4)  = &HF800: pCol(4)  = &H7000 ' "X...X           "
-                pAct(5)  = &HFC00: pCol(5)  = &H7800 ' "X....X          "
-                pAct(6)  = &HFE00: pCol(6)  = &H7C00 ' "X.....X         "
-                pAct(7)  = &HFF00: pCol(7)  = &H7E00 ' "X......X        "
-                pAct(8)  = &HFF80: pCol(8)  = &H7F00 ' "X.......X       "
-                pAct(9)  = &HFFC0: pCol(9)  = &H7F80 ' "X........X      "
-                pAct(10) = &HFFC0: pCol(10) = &H7C00 ' "X.....XXXX      "
-                pAct(11) = &HFE00: pCol(11) = &H6C00 ' "X..X..X         "
-                pAct(12) = &HEF00: pCol(12) = &H4600 ' "X.X X..X        "
-                pAct(13) = &HCF00: pCol(13) = &H0600 ' "XX  X..X        "
-                pAct(14) = &H8780: pCol(14) = &H0300 ' "X    X..X       "
-                pAct(15) = &H0780: pCol(15) = &H0300 ' "     X..X       "
-                pAct(16) = &H0300: pCol(16) = &H0000 ' "      XX        "
-                pAct(17) = &H0000: pCol(17) = &H0000 ' "                "
-
-            Case CURSOR_IBEAM
-                pAct(0)  = &H3F00: pCol(0)  = &H0000 ' "  XXXXXX        "
-                pAct(1)  = &H0C00: pCol(1)  = &H0000 ' "    XX          "
-                pAct(2)  = &H0C00: pCol(2)  = &H0000 ' "    XX          "
-                pAct(3)  = &H0C00: pCol(3)  = &H0000 ' "    XX          "
-                pAct(4)  = &H0C00: pCol(4)  = &H0000 ' "    XX          "
-                pAct(5)  = &H0C00: pCol(5)  = &H0000 ' "    XX          "
-                pAct(6)  = &H0C00: pCol(6)  = &H0000 ' "    XX          "
-                pAct(7)  = &H0C00: pCol(7)  = &H0000 ' "    XX          "
-                pAct(8)  = &H0C00: pCol(8)  = &H0000 ' "    XX          "
-                pAct(9)  = &H0C00: pCol(9)  = &H0000 ' "    XX          "
-                pAct(10) = &H0C00: pCol(10) = &H0000 ' "    XX          "
-                pAct(11) = &H0C00: pCol(11) = &H0000 ' "    XX          "
-                pAct(12) = &H0C00: pCol(12) = &H0000 ' "    XX          "
-                pAct(13) = &H3F00: pCol(13) = &H0000 ' "  XXXXXX        "
-                pAct(14) = &H0000: pCol(14) = &H0000 ' "                "
-                pAct(15) = &H0000: pCol(15) = &H0000 ' "                "
-                pAct(16) = &H0000: pCol(16) = &H0000 ' "                "
-                pAct(17) = &H0000: pCol(17) = &H0000 ' "                "
-
-            Case CURSOR_RESIZE_EW
-                pAct(0)  = &H0000: pCol(0)  = &H0000 ' "                "
-                pAct(1)  = &H0000: pCol(1)  = &H0000 ' "                "
-                pAct(2)  = &H0000: pCol(2)  = &H0000 ' "                "
-                pAct(3)  = &H0810: pCol(3)  = &H0000 ' "    X      X    "
-                pAct(4)  = &H1818: pCol(4)  = &H0000 ' "   XX      XX   "
-                pAct(5)  = &H3FFC: pCol(5)  = &H1008 ' "  X.XXXXXXXX.X  "
-                pAct(6)  = &H7FFE: pCol(6)  = &H3FFC ' " X............X "
-                pAct(7)  = &H3FFC: pCol(7)  = &H1008 ' "  X.XXXXXXXX.X  "
-                pAct(8)  = &H1818: pCol(8)  = &H0000 ' "   XX      XX   "
-                pAct(9)  = &H0810: pCol(9)  = &H0000 ' "    X      X    "
-                pAct(10) = &H0000: pCol(10) = &H0000 ' "                "
-                pAct(11) = &H0000: pCol(11) = &H0000 ' "                "
-                pAct(12) = &H0000: pCol(12) = &H0000 ' "                "
-                pAct(13) = &H0000: pCol(13) = &H0000 ' "                "
-                pAct(14) = &H0000: pCol(14) = &H0000 ' "                "
-                pAct(15) = &H0000: pCol(15) = &H0000 ' "                "
-                pAct(16) = &H0000: pCol(16) = &H0000 ' "                "
-                pAct(17) = &H0000: pCol(17) = &H0000 ' "                "
-
-            Case CURSOR_RESIZE_NS
-                pAct(0)  = &H0100: pCol(0)  = &H0000 ' "       X        "
-                pAct(1)  = &H0380: pCol(1)  = &H0100 ' "      X.X       "
-                pAct(2)  = &H07C0: pCol(2)  = &H0380 ' "     X...X      "
-                pAct(3)  = &H0FC0: pCol(3)  = &H0000 ' "    XXXXXX      "
-                pAct(4)  = &H0100: pCol(4)  = &H0000 ' "       X        "
-                pAct(5)  = &H0100: pCol(5)  = &H0000 ' "       X        "
-                pAct(6)  = &H0100: pCol(6)  = &H0000 ' "       X        "
-                pAct(7)  = &H0100: pCol(7)  = &H0000 ' "       X        "
-                pAct(8)  = &H0100: pCol(8)  = &H0000 ' "       X        "
-                pAct(9)  = &H0100: pCol(9)  = &H0000 ' "       X        "
-                pAct(10) = &H0FC0: pCol(10) = &H0000 ' "    XXXXXX      "
-                pAct(11) = &H07C0: pCol(11) = &H0380 ' "     X...X      "
-                pAct(12) = &H0380: pCol(12) = &H0100 ' "      X.X       "
-                pAct(13) = &H0100: pCol(13) = &H0000 ' "       X        "
-                pAct(14) = &H0000: pCol(14) = &H0000 ' "                "
-                pAct(15) = &H0000: pCol(15) = &H0000 ' "                "
-                pAct(16) = &H0000: pCol(16) = &H0000 ' "                "
-                pAct(17) = &H0000: pCol(17) = &H0000 ' "                "
-
-            Case CURSOR_RESIZE_NWSE
-                pAct(0)  = &HF000: pCol(0)  = &H0000 ' "XXXX            "
-                pAct(1)  = &HF000: pCol(1)  = &H6000 ' "X..X            "
-                pAct(2)  = &HF800: pCol(2)  = &H5000 ' "X.X.X           "
-                pAct(3)  = &H9C00: pCol(3)  = &H0800 ' "X  X.X          "
-                pAct(4)  = &H0E00: pCol(4)  = &H0400 ' "    X.X         "
-                pAct(5)  = &H0700: pCol(5)  = &H0200 ' "     X.X        "
-                pAct(6)  = &H0380: pCol(6)  = &H0100 ' "      X.X       "
-                pAct(7)  = &H01C0: pCol(7)  = &H0080 ' "       X.X      "
-                pAct(8)  = &H00E0: pCol(8)  = &H0040 ' "        X.X     "
-                pAct(9)  = &H0070: pCol(9)  = &H0020 ' "         X.X    "
-                pAct(10) = &H0039: pCol(10) = &H0010 ' "          X.X  X"
-                pAct(11) = &H001F: pCol(11) = &H000A ' "           X.X.X"
-                pAct(12) = &H000F: pCol(12) = &H0006 ' "            X..X"
-                pAct(13) = &H000F: pCol(13) = &H0000 ' "            XXXX"
-                pAct(14) = &H0000: pCol(14) = &H0000 ' "                "
-                pAct(15) = &H0000: pCol(15) = &H0000 ' "                "
-                pAct(16) = &H0000: pCol(16) = &H0000 ' "                "
-                pAct(17) = &H0000: pCol(17) = &H0000 ' "                "
-
-            Case CURSOR_RESIZE_NESW
-                pAct(0)  = &H000F: pCol(0)  = &H0000 ' "            XXXX"
-                pAct(1)  = &H000F: pCol(1)  = &H0006 ' "            X..X"
-                pAct(2)  = &H001F: pCol(2)  = &H000A ' "           X.X.X"
-                pAct(3)  = &H0039: pCol(3)  = &H0010 ' "          X.X  X"
-                pAct(4)  = &H0070: pCol(4)  = &H0020 ' "         X.X    "
-                pAct(5)  = &H00E0: pCol(5)  = &H0040 ' "        X.X     "
-                pAct(6)  = &H01C0: pCol(6)  = &H0080 ' "       X.X      "
-                pAct(7)  = &H0380: pCol(7)  = &H0100 ' "      X.X       "
-                pAct(8)  = &H0700: pCol(8)  = &H0200 ' "     X.X        "
-                pAct(9)  = &H0E00: pCol(9)  = &H0400 ' "    X.X         "
-                pAct(10) = &H9C00: pCol(10) = &H0800 ' "X  X.X          "
-                pAct(11) = &HF800: pCol(11) = &H5000 ' "X.X.X           "
-                pAct(12) = &HF000: pCol(12) = &H6000 ' "X..X            "
-                pAct(13) = &HF000: pCol(13) = &H0000 ' "XXXX            "
-                pAct(14) = &H0000: pCol(14) = &H0000 ' "                "
-                pAct(15) = &H0000: pCol(15) = &H0000 ' "                "
-                pAct(16) = &H0000: pCol(16) = &H0000 ' "                "
-                pAct(17) = &H0000: pCol(17) = &H0000 ' "                "
-
-            Case Else
-                LoadCursorMasks CURSOR_ARROW, pAct, pCol
-        End Select
+        Dim pSrcAct As Pointer To UInt16 = GetCursorActiveMask(cursorType)
+        Dim pSrcCol As Pointer To UInt16 = GetCursorColorMask(cursorType)
+        If pSrcAct = 0 Or pSrcCol = 0 Or pAct = 0 Or pCol = 0 Then Exit Sub
+        Dim r As Int32
+        For r = 0 To CURSOR_H - 1
+            pAct(r) = pSrcAct(r)
+            pCol(r) = pSrcCol(r)
+        Next r
     End Sub
 
     ' =========================================================================
@@ -199,9 +204,9 @@ Module CursorTheme
     Public Unsafe Sub DrawCursor(ByRef surf As Surface, ByVal x As Int32, ByVal y As Int32, ByVal cursorType As UInt32)
         If surf.Pixels = 0 Then Exit Sub
 
-        Dim activeMask(18) As UInt16
-        Dim colorMask(18)  As UInt16
-        LoadCursorMasks cursorType, @activeMask(0), @colorMask(0)
+        Dim pAct As Pointer To UInt16 = GetCursorActiveMask(cursorType)
+        Dim pCol As Pointer To UInt16 = GetCursorColorMask(cursorType)
+        If pAct = 0 Or pCol = 0 Then Exit Sub
 
         Dim cy As Int32 = 0
         Dim curY As Int32 = 0
@@ -219,8 +224,8 @@ Module CursorTheme
                 curY = y + cy
                 If curY >= 0 And curY < CType(Int32, surf.Height) Then
                     Dim rawRow As Pointer To Byte = CPtr(Pointer To Byte, surf.Pixels) + (CType(UInt32, curY) * surf.Pitch)
-                    actRow = activeMask(cy)
-                    colRow = colorMask(cy)
+                    actRow = pAct(cy)
+                    colRow = pCol(cy)
                     cx = 0
                     While cx < CURSOR_W
                         curX = x + cx
@@ -253,8 +258,8 @@ Module CursorTheme
                 curY = y + cy
                 If curY >= 0 And curY < CType(Int32, surf.Height) Then
                     Dim rowPtr As Pointer To UInt32 = surf.Pixels + (CType(UInt32, curY) * pitchPix)
-                    actRow = activeMask(cy)
-                    colRow = colorMask(cy)
+                    actRow = pAct(cy)
+                    colRow = pCol(cy)
                     cx = 0
                     While cx < CURSOR_W
                         curX = x + cx

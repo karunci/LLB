@@ -1,0 +1,28 @@
+' Project Name: PROS Terminal Shell
+' Filename: services/terminal/Terminal.llbproj
+' Summary: Standalone Ring 3 interactive terminal console application.
+
+[Project]
+Name    = "Terminal"
+Type    = "Executable"
+Version = "1.0.0"
+
+[Target]
+Arch = "x86_64-unknown-none-elf"
+
+[Output]
+OutDir  = "build"
+OutFile = "terminal.elf"
+
+[Entry]
+EntryPoint = "_start"
+
+[Linker]
+LinkerScript = "user_linker.ld"
+Libraries    = [
+    "../../lib/pros/build/libpros.a"
+]
+
+[Sources]
+Assembly = "brt0.S"
+Module   = "TerminalMain.bas"

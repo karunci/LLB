@@ -67,6 +67,13 @@ public:
     explicit StringExprASTNode(std::string v) : val(std::move(v)) {}
 };
 
+class ArrayLiteralExprASTNode : public ExprASTNode {
+public:
+    std::vector<std::unique_ptr<ExprASTNode>> elements;
+    explicit ArrayLiteralExprASTNode(std::vector<std::unique_ptr<ExprASTNode>> elems)
+        : elements(std::move(elems)) {}
+};
+
 class VariableExprASTNode : public ExprASTNode {
 public:
     std::string name;

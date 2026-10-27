@@ -25,4 +25,5 @@ Libraries    = [
 
 [Sources]
 Assembly = "brt0.S"
+Module   = "WindowTheme.bas"
 Module   = "WmMain.bas"

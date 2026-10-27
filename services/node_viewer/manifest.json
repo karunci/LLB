@@ -1,0 +1,8 @@
+{
+  "name": "node_viewer",
+  "version": "1.0.0",
+  "type": "application",
+  "entry": "node_viewer.elf",
+  "priority": 2,
+  "description": "PROS Ring 3 Neural Node Topology Viewer"
+}

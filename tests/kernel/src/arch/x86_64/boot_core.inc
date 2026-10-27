@@ -76,20 +76,14 @@ setup_page_tables:
     mov %eax, (%ebx)
     movl $0, 4(%ebx)
 
-    /* Map L3[0..15] -> page_table_l2 (each table is 4096 bytes)
-     * CRITICAL INVARIANT: L3[2] (2GB..3GB: 0x80000000 - 0xC0000000) MUST BE LEFT 0 (UNMAPPED)!
-     * VMM and KernelHeap dynamically manage 4KB page allocations in this 1GB range (heap at 0x81000000).
-     */
+    /* Map L3[0..15] -> page_table_l2 (each table is 4096 bytes) */
     mov $page_table_l2, %eax
     or $0x3, %eax
     mov $page_table_l3, %ebx
     xor %ecx, %ecx        /* ecx = index 0..15 */
 1:
-    cmpl $2, %ecx
-    je 2f                 /* Skip L3[2], leave it 0 */
     mov %eax, (%ebx)
     movl $0, 4(%ebx)
-2:
     add $4096, %eax
     add $8, %ebx
     inc %ecx
@@ -97,7 +91,6 @@ setup_page_tables:
     jne 1b
 
     /* Identity map 0 - 16GB across L2 tables (16 tables * 512 entries = 8192 entries)
-     * Skip Table 2 (entries 1024..1535, corresponding to 2GB..3GB), leaving them zero.
      * Use %edx to hold the upper 32 bits of physical address to avoid 32-bit overflow at 4GB!
      */
     mov $page_table_l2, %ebx
@@ -105,14 +98,8 @@ setup_page_tables:
     mov $0x83, %eax       /* Physical base 0 | Present | Writable | HugePage (2MB) */
     xor %edx, %edx        /* Physical base high 32 bits = 0 */
 3:
-    cmpl $1024, %ecx
-    jb 4f                 /* Entries 0..1023 (0..2GB): map normally */
-    cmpl $1536, %ecx
-    jb 5f                 /* Entries 1024..1535 (2GB..3GB): SKIP (leave 0 for heap) */
-4:
     mov %eax, (%ebx)
     mov %edx, 4(%ebx)
-5:
     add $0x200000, %eax   /* Add 2MB to lower 32 bits */
     adcl $0, %edx         /* Add carry to upper 32 bits (correctly handles >= 4GB!) */
     add $8, %ebx          /* Advance to next 8-byte entry */

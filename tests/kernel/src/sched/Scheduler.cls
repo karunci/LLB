@@ -35,10 +35,10 @@ Public Class Scheduler
     Private targetCoreIndex As UInt32
 
     ' Per-CPU Scheduler State (Index 0..MAX_SCHED_CPUS-1)
-    Private currentTaskAddrs(15) As UInt64
-    Private rtosQueueHeads(15)   As UInt64
-    Private gposQueueHeads(15)   As UInt64
-    Private idleTaskAddrs(15)    As UInt64
+    Private currentTaskAddrs(16) As UInt64
+    Private rtosQueueHeads(16)   As UInt64
+    Private gposQueueHeads(16)   As UInt64
+    Private idleTaskAddrs(16)    As UInt64
 
     ''
     ' @brief Helper to construct synthetic call frame on a thread stack for context switching.
@@ -597,7 +597,7 @@ Public Class Scheduler
                     Dim rIterAddr As UInt64 = rHeadAddr
                     Do
                         Dim rIter As Pointer To TaskControlBlock = CPtr(Pointer To TaskControlBlock, rIterAddr)
-                        If rIter.State = Sched.ThreadState.STATE_READY Then
+                        If rIter.State = Sched.ThreadState.STATE_READY And rIterAddr <> currentTaskAddrs(otherCore) Then
                             If rIter.NextTask <> rIterAddr Then
                                 Dim predAddr As UInt64 = rIterAddr
                                 While CPtr(Pointer To TaskControlBlock, predAddr).NextTask <> rIterAddr
@@ -633,7 +633,7 @@ Public Class Scheduler
                     Dim iterAddr As UInt64 = headAddr
                     Do
                         Dim iter As Pointer To TaskControlBlock = CPtr(Pointer To TaskControlBlock, iterAddr)
-                        If iter.State = Sched.ThreadState.STATE_READY Then
+                        If iter.State = Sched.ThreadState.STATE_READY And iterAddr <> currentTaskAddrs(otherCore) Then
                             If iter.NextTask <> iterAddr Then
                                 Dim gPredAddr As UInt64 = iterAddr
                                 While CPtr(Pointer To TaskControlBlock, gPredAddr).NextTask <> iterAddr
@@ -703,6 +703,19 @@ Public Class Scheduler
         ' Fallback to dedicated Idle task for this core
         If nextAddr = 0 Then
             nextAddr = idleTaskAddrs(coreId)
+        End If
+
+        ' Failsafe: if idle task for this core is not ready, fallback to Core 0 idle or previous task
+        If nextAddr = 0 Then
+            nextAddr = idleTaskAddrs(0)
+        End If
+        If nextAddr = 0 Then
+            nextAddr = prevAddr
+        End If
+
+        If nextAddr = 0 Then
+            Sync.SpinlockOps.ReleaseIrqRestore schedLock, flags
+            Exit Sub
         End If
 
         If prevAddr = nextAddr Then

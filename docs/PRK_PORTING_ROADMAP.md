@@ -994,6 +994,23 @@ tests/kernel/
 - [x] **Mandatory Revision Bumping:**
   - Bumped build revision to `REV: 2026.10.26-r34-re08` across kernel boot banner, serial logs, desktop menu bar, and system monitor window.
 
+## Phase 33: Full 0-16GB Identity Mapping, Array Bounds Correction & ACPI Magic Discrimination (`REV: 2026.10.26-r34-re09`)
+
+- [x] **Full 0-16GB Identity Paging (Eliminated L3[2] Unmapped Hole):**
+  - Mapped Table 2 into `L3[2]` in early boot assembly page tables across `boot_mb1.S`, `boot_mb2.S`, `boot.S`, and `boot_core.inc`.
+  - Restored full 0..16GB contiguous identity mapping, completely resolving UEFI GOP Linear Framebuffer page faults at `0x80000000` on native UEFI QEMU and bare-metal hardware.
+- [x] **Scheduler & GDT Per-CPU Array Bounds Fix (Size 16 vs 15):**
+  - Expanded `currentTaskAddrs`, `rtosQueueHeads`, `gposQueueHeads`, and `idleTaskAddrs` in `Scheduler.cls` from size 15 to 16, eliminating out-of-bounds corruption of `idleTaskAddrs(0)` when accessing CPU index 15.
+  - Expanded `gdtTables`, `gdtPointers`, `tssTables`, and `cpuScratchpads` in `Gdt.bas` from size 15 to 16.
+- [x] **Multiboot 1 / Multiboot 2 Discrimination in ACPI Initialization:**
+  - Passed `magic` to `Arch.Acpi.Initialize`, ensuring Multiboot 2 tag scanning (`LocateRsdpFromMbi`) is only executed for Multiboot 2 (`magic = 0x36D76289`), preventing MBI corruption under Multiboot 1.
+- [x] **Work-Stealing Active Task Invariant & SwitchContext NULL Protection:**
+  - In `Scheduler.cls::StealTask`, verified `iterAddr <> currentTaskAddrs(otherCore)` to avoid stealing actively executing tasks across cores.
+  - Added failsafe fallbacks in `SchedYieldInternal` ensuring `switch_context` is never invoked with NULL `nextAddr`.
+- [x] **Mandatory Revision Bumping:**
+  - Bumped build revision to `REV: 2026.10.26-r34-re09` across kernel boot banner, serial logs, desktop menu bar, and system monitor window.
+
+
 
 
 

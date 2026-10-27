@@ -194,10 +194,15 @@ Module Arch.Acpi
     '        fallback), then parse RSDT/XSDT to extract MADT and FADT.
     ' @param mbAddress Physical address of the Multiboot2 info structure passed by bootloader.
     ''
-    Public Unsafe Sub Initialize(ByVal mbAddress As UInt64)
+    Public Unsafe Sub Initialize(ByVal magic As UInt32, ByVal mbAddress As UInt64)
         Sync.SpinlockOps.Init acpiLock
 
-        If Not LocateRsdpFromMbi(mbAddress) Then
+        Dim found As Boolean = False
+        If magic = &H36D76289 Then
+            found = LocateRsdpFromMbi(mbAddress)
+        End If
+
+        If Not found Then
             Serial.PrintF "[ACPI] MBI RSDP not found; scanning BIOS range 0xE0000-0xFFFFF...\r\n"
             If Not LocateRsdpInBiosRange() Then
                 Serial.PrintF "[ACPI] Error: RSDP not found. Defaulting to 1 CPU.\r\n"

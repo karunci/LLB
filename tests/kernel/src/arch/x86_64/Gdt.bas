@@ -9,10 +9,10 @@ Module Arch.X86_64.Gdt
 
     Public Const MAX_GDT_CPUS As UInt32 = 16
 
-    Private gdtTables(15) As GdtTable
-    Private gdtPointers(15) As GdtPtr
-    Private tssTables(15) As TssEntry
-    Private cpuScratchpads(15) As CpuScratch
+    Private gdtTables(16) As GdtTable
+    Private gdtPointers(16) As GdtPtr
+    Private tssTables(16) As TssEntry
+    Private cpuScratchpads(16) As CpuScratch
 
     ''
     ' @brief Helper to construct standard 8-byte code/data descriptors.

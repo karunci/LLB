@@ -941,8 +941,11 @@ Public Class Scheduler
                             If currAddr = nextAddr Then
                                 gposQueueHeads(c) = 0
                             Else
-                                Dim prev As Pointer To TaskControlBlock = CPtr(Pointer To TaskControlBlock, prevAddr)
-                                prev.NextTask = nextAddr
+                                Dim gPredAddr As UInt64 = currAddr
+                                While CPtr(Pointer To TaskControlBlock, gPredAddr).NextTask <> currAddr
+                                    gPredAddr = CPtr(Pointer To TaskControlBlock, gPredAddr).NextTask
+                                Wend
+                                CPtr(Pointer To TaskControlBlock, gPredAddr).NextTask = nextAddr
                                 If gposQueueHeads(c) = currAddr Then
                                     gposQueueHeads(c) = nextAddr
                                 End If

@@ -980,6 +980,20 @@ tests/kernel/
 - [x] **Mandatory Revision Bumping:**
   - Bumped build revision to `REV: 2026.10.26-r34-re07` across kernel boot banner, serial logs, desktop menu bar, and system monitor window.
 
+## Phase 32: Circular List Unlink Fix, Cross-Core Expired Sleep Recovery & Responsiveness Calibration (`REV: 2026.10.26-r34-re08`)
+
+- [x] **Elimination of Circular Runqueue Unlink Corruption in `ReapTerminatedTasks`:**
+  - Diagnosed VirtualBox Guru Meditation 1155 (Triple Fault) caused by unlinking the head task without updating the circular tail pointer.
+  - Implemented full predecessor traversal loop (`While CPtr(Pointer To TaskControlBlock, gPredAddr).NextTask <> currAddr`) matching `StealTask`.
+  - Guarantees zero dangling pointers into freed `KHeap` memory, completely eliminating invalid CR3 / corrupted RSP triple faults.
+- [x] **Cross-Core Expired Sleep Task Recovery in Work-Stealing:**
+  - Integrated expired sleep timer evaluation inside `Scheduler.cls::StealTask` for both RTOS and GPOS runqueues.
+  - Idle cores actively wake and steal expired blocked threads on peer cores, ensuring no task remains sleeping on halted AP cores.
+- [x] **Liveness Heartbeat Pacing & Responsive Calibration:**
+  - Calibrated the 10-second verification loop in `tests/user_app/UserMain.bas` (`SYS_PROCESS_SLEEP 200`) to guarantee smooth, rhythmic per-second output under both software-emulated TCG (Termux/Windows) and hardware virtualization (VirtualBox/KVM).
+- [x] **Mandatory Revision Bumping:**
+  - Bumped build revision to `REV: 2026.10.26-r34-re08` across kernel boot banner, serial logs, desktop menu bar, and system monitor window.
+
 
 
 

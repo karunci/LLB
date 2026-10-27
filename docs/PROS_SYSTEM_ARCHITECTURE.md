@@ -283,8 +283,13 @@ The microkernel core provides the essential hardware abstractions and IPC primit
   2. `opengl.c` (OpenGL / GLES Acceleration)
   3. `vulkan.c` (Vulkan Acceleration)
   4. `sdl.c` (Workstation Hosted Simulation)
-- Maintains dirty rectangle damage tracking (`MAX_DIRTY_RECTS = 128`) to minimize memory bus bandwidth.
-- Renders software mouse cursor overlay (32x32 ARGB) on top of composite frames without tearing.
+- **Zero-Copy In-RAM Backbuffering:**
+  - Ring 3 Compositor allocates private in-RAM backbuffer (`backSurf`) at virtual address `0x88000000` via `AllocatePages` (`SYS_MEM_ALLOC_PAGES`).
+  - All sprite rasterization, cursor background saving/restoring, and text rendering are performed directly in cached System RAM at CPU L1/L2 speeds.
+  - Completely eliminates uncached PCIe non-posted reads across the bus during mouse movement.
+- **Direct 64-Bit Aligned Dirty Rectangle Burst Blit (`FlushDirtyRegion`):**
+  - Maintains bounding box damage tracking to flush only active dirty rectangles to the physical VRAM aperture (`0x78000000`) using 64-bit aligned memory writes and `sfence` barriers.
+- Renders software mouse cursor overlay (16x18 PRK arrow) on top of composite frames without tearing or bus stalls.
 
 ### C. Default GUI Theme Specification (Nord / Dark Palette)
 Matches PRK reference implementation:

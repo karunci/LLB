@@ -77,7 +77,11 @@ System calls in PROS use the AMD64 `syscall` / `sysretq` hardware instructions:
   - `%rdi`: Pointer to null-terminated node name string (e.g. `"srv.vfs"`).
   - Returns: Node ID or `0` if not registered.
 
-### Zero-Copy Shared Memory (SHMEM)
+### Zero-Copy Shared Memory & Dynamic Memory Allocation
+- `SYS_MEM_ALLOC_PAGES (26)`: Allocate anonymous physical RAM frames and map contiguously into calling task's address space.
+  - `%rdi`: Number of 4 KB pages to allocate (up to 8,192 pages = 32 MB).
+  - `%rsi`: Target virtual memory address (must be 4 KB page-aligned, e.g. `0x88000000`).
+  - Returns: Mapped base virtual address or `0` on allocation/validation failure.
 - `SYS_SHMEM_CREATE (60)`: Allocate zero-copy physical pages and map to calling task.
   - `%rdi`: Size in bytes (rounded up to 4 KB page alignment).
   - `%rsi`: Preferred virtual target address.

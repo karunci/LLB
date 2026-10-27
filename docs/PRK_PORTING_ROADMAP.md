@@ -1013,7 +1013,7 @@ tests/kernel/
 ## Phase 34: In-RAM Backbuffering, Dirty Rect Burst Blit & PIT Timer Calibration (`REV: 2026.10.27-r35-re01`)
 
 - [x] **Compositor Private In-RAM Backbuffering (`backSurf`):**
-  - Eliminated uncached PCIe MMIO VRAM read stalls by allocating an in-RAM backbuffer at `0x70000000` via `AllocatePages`.
+  - Eliminated uncached PCIe MMIO VRAM read stalls by allocating an in-RAM backbuffer at `0x88000000` via `AllocatePages`.
   - Redirected all GUI rasterization, 16x18 cursor sprite composition, cursor background saving/restoring, and text rendering entirely to cached System RAM at CPU cache speeds.
 - [x] **Direct 64-Bit Aligned Dirty Rectangle Burst Blit (`FlushDirtyRegion`):**
   - Implemented high-throughput userland dirty bounding box burst copy from `backSurf` to physical VRAM aperture (`frontSurf`) using aligned 64-bit QWORD pairs with an `sfence` memory barrier.

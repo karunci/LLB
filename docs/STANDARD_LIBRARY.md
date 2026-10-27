@@ -14,7 +14,7 @@ The library strictly follows LLB module and library binding rules:
 ## 2. Subsystem API Reference
 
 ### 2.1 Process Management (`Pros.Sys.Process`)
-Header export: `ProcessYield`, `ProcessSleep`, `GetPid`, `TerminateProcess`, `GetCoreCount`, `GetUptime`.
+Header export: `ProcessYield`, `ProcessSleep`, `GetPid`, `TerminateProcess`, `GetCoreCount`, `GetUptime`, `AllocatePages`.
 
 - `Sub ProcessYield()`: Relinquishes CPU quantum to next runnable task.
 - `Sub ProcessSleep(ByVal ms As UInt64)`: Puts task to sleep on kernel timer queue. Halts CPU when all tasks are sleeping.
@@ -22,6 +22,7 @@ Header export: `ProcessYield`, `ProcessSleep`, `GetPid`, `TerminateProcess`, `Ge
 - `Sub TerminateProcess(ByVal exitCode As UInt64)`: Exits calling process cleanly.
 - `Function GetCoreCount() As UInt64`: Returns total online SMP CPU cores.
 - `Function GetUptime() As UInt64`: Returns system uptime in milliseconds.
+- `Function AllocatePages(ByVal pageCount As UInt64, ByVal targetVaddr As UInt64) As Pointer To UInt32`: Allocates anonymous physical RAM pages and maps them contiguously into caller's address space.
 
 ### 2.2 Console I/O (`Pros.IO.Console`)
 Header export: `ConsoleWrite`, `ConsoleWriteLine`, `ConsolePrintWithUInt`.

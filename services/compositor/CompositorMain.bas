@@ -6,6 +6,7 @@
 '          smooth half-speed telemetry pulse, and restored minimalist Nord window.
 
 Import "../../include/pros.bas"
+Import "CursorTheme.bas"
 
 Module CompositorMain
 
@@ -17,9 +18,8 @@ Module CompositorMain
     Private backSurf As Surface
     Private hasDisplay As Boolean = False
 
-    ' PRK 16x18 Arrow Cursor State
-    Private Const CURSOR_W As Int32 = 16
-    Private Const CURSOR_H As Int32 = 18
+    ' PRK 16x18 Decoupled Cursor State
+    Private currentCursor As UInt32 = CURSOR_ARROW
 
     Private cursorX As Int32 = 512
     Private cursorY As Int32 = 384
@@ -387,106 +387,7 @@ Module CompositorMain
     End Sub
 
     Private Unsafe Sub DrawCursorArrow(ByVal x As Int32, ByVal y As Int32)
-        If backSurf.Pixels = 0 Then Exit Sub
-
-        ' PRK cursor_arrow bitmap:
-        ' activeMask: 1 = pixel present, 0 = transparent
-        ' colorMask:  1 = White (0xFFFFFFFF), 0 = Black border (0xFF000000)
-        Dim activeMask(18) As UInt16
-        Dim colorMask(18)  As UInt16
-
-        activeMask(0)  = &H8000: colorMask(0)  = &H0000 ' "X               "
-        activeMask(1)  = &HC000: colorMask(1)  = &H0000 ' "XX              "
-        activeMask(2)  = &HE000: colorMask(2)  = &H4000 ' "X.X             "
-        activeMask(3)  = &HF000: colorMask(3)  = &H6000 ' "X..X            "
-        activeMask(4)  = &HF800: colorMask(4)  = &H7000 ' "X...X           "
-        activeMask(5)  = &HFC00: colorMask(5)  = &H7800 ' "X....X          "
-        activeMask(6)  = &HFE00: colorMask(6)  = &H7C00 ' "X.....X         "
-        activeMask(7)  = &HFF00: colorMask(7)  = &H7E00 ' "X......X        "
-        activeMask(8)  = &HFF80: colorMask(8)  = &H7F00 ' "X.......X       "
-        activeMask(9)  = &HFFC0: colorMask(9)  = &H7F80 ' "X........X      "
-        activeMask(10) = &HFFC0: colorMask(10) = &H7C00 ' "X.....XXXX      "
-        activeMask(11) = &HFE00: colorMask(11) = &H6C00 ' "X..X..X         "
-        activeMask(12) = &HEF00: colorMask(12) = &H4600 ' "X.X X..X        "
-        activeMask(13) = &HCF00: colorMask(13) = &H0600 ' "XX  X..X        "
-        activeMask(14) = &H8780: colorMask(14) = &H0300 ' "X    X..X       "
-        activeMask(15) = &H0780: colorMask(15) = &H0300 ' "     X..X       "
-        activeMask(16) = &H0300: colorMask(16) = &H0000 ' "      XX        "
-        activeMask(17) = &H0000: colorMask(17) = &H0000 ' "                "
-
-        Dim cy As Int32 = 0
-        Dim curY As Int32 = 0
-        Dim cx As Int32 = 0
-        Dim curX As Int32 = 0
-        Dim actRow As UInt16 = 0
-        Dim colRow As UInt16 = 0
-        Dim shiftVal As Int32 = 0
-        Dim isDrawn As Boolean = False
-        Dim isWhite As Boolean = False
-
-        If backSurf.Bpp = 24 Then
-            cy = 0
-            While cy < CURSOR_H
-                curY = y + cy
-                If curY >= 0 And curY < CType(Int32, backSurf.Height) Then
-                    Dim rawRow As Pointer To Byte = CPtr(Pointer To Byte, backSurf.Pixels) + (CType(UInt32, curY) * backSurf.Pitch)
-                    actRow = activeMask(cy)
-                    colRow = colorMask(cy)
-                    cx = 0
-                    While cx < CURSOR_W
-                        curX = x + cx
-                        If curX >= 0 And curX < CType(Int32, backSurf.Width) Then
-                            shiftVal = 15 - cx
-                            isDrawn = ((actRow RShift shiftVal) And 1) <> 0
-                            If isDrawn Then
-                                isWhite = ((colRow RShift shiftVal) And 1) <> 0
-                                Dim bOff As UInt32 = CType(UInt32, curX) * 3
-                                If isWhite Then
-                                    rawRow(bOff) = &HFF
-                                    rawRow(bOff + 1) = &HFF
-                                    rawRow(bOff + 2) = &HFF
-                                Else
-                                    rawRow(bOff) = 0
-                                    rawRow(bOff + 1) = 0
-                                    rawRow(bOff + 2) = 0
-                                End If
-                            End If
-                        End If
-                        cx = cx + 1
-                    Wend
-                End If
-                cy = cy + 1
-            Wend
-        Else
-            Dim pitchPix As UInt32 = backSurf.Pitch / 4
-            cy = 0
-            While cy < CURSOR_H
-                curY = y + cy
-                If curY >= 0 And curY < CType(Int32, backSurf.Height) Then
-                    Dim rowPtr As Pointer To UInt32 = backSurf.Pixels + (CType(UInt32, curY) * pitchPix)
-                    actRow = activeMask(cy)
-                    colRow = colorMask(cy)
-                    cx = 0
-                    While cx < CURSOR_W
-                        curX = x + cx
-                        If curX >= 0 And curX < CType(Int32, backSurf.Width) Then
-                            shiftVal = 15 - cx
-                            isDrawn = ((actRow RShift shiftVal) And 1) <> 0
-                            If isDrawn Then
-                                isWhite = ((colRow RShift shiftVal) And 1) <> 0
-                                If isWhite Then
-                                    rowPtr(curX) = &HFFFFFFFF ' Crisp White Fill
-                                Else
-                                    rowPtr(curX) = &HFF000000 ' Sharp Black Border
-                                End If
-                            End If
-                        End If
-                        cx = cx + 1
-                    Wend
-                End If
-                cy = cy + 1
-            Wend
-        End If
+        CursorTheme.DrawCursor backSurf, x, y, currentCursor
     End Sub
 
     ''
@@ -628,7 +529,7 @@ Module CompositorMain
 
         DrawText5x7 backSurf, 16, 10, CPtr(Pointer To Byte, "PROS WORKSTATION  |  APPLICATIONS  NODES  SERVICES"), &HFFECEFF4
         RenderMouseCoordinates
-        DrawText5x7 backSurf, CType(Int32, dispInfo.Width) - 360, 10, CPtr(Pointer To Byte, "REV: 2026.10.27-r35-re01"), &HFF88C0D0
+        DrawText5x7 backSurf, CType(Int32, dispInfo.Width) - 360, 10, CPtr(Pointer To Byte, "REV: 2026.10.27-r35-re02"), &HFF88C0D0
         DrawText5x7 backSurf, CType(Int32, dispInfo.Width) - 170, 10, CPtr(Pointer To Byte, "SMP 4 CORES  ONLINE"), &HFFA3BE8C
 
         ' 3. Render Floating Desktop Window: "PROS System Monitor"
@@ -660,7 +561,7 @@ Module CompositorMain
         ' Card 1: Microkernel Architecture
         FillRect backSurf, wx + 16, wy + 40, ww - 32, 42, &HFF1E222A
         FillRect backSurf, wx + 16, wy + 40, 3, 42, &HFF81A1C1
-        DrawText5x7 backSurf, wx + 26, wy + 48, CPtr(Pointer To Byte, "KERNEL : PRK-LLB MICROKERNEL [REV: 2026.10.27-r35-re01]"), &HFF81A1C1
+        DrawText5x7 backSurf, wx + 26, wy + 48, CPtr(Pointer To Byte, "KERNEL : PRK-LLB MICROKERNEL [REV: 2026.10.27-r35-re02]"), &HFF81A1C1
         DrawText5x7 backSurf, wx + 26, wy + 64, CPtr(Pointer To Byte, "MODEL  : DUAL-PLANE NEURAL SYNAPSE ROUTING"), &HFFD8DEE9
 
         ' Card 2: Compositor Status

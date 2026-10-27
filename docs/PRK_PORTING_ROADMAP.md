@@ -1027,6 +1027,23 @@ tests/kernel/
 - [x] **Mandatory Revision Bumping:**
   - Bumped build revision to `REV: 2026.10.27-r35-re01` across kernel boot banner, serial logs, desktop menu bar, and system monitor window.
 
+## Phase 35: Decoupled Cursor Subsystem (`CursorTheme.bas`) & PRK Cursor Sprites (`REV: 2026.10.27-r35-re02`)
+
+- [x] **Decoupled Cursor Architecture (`services/compositor/CursorTheme.bas`):**
+  - Extracted cursor sprite definitions, dimensions (`16x18`), hotspot offsets, and rasterization algorithms out of `CompositorMain.bas` into standalone `CursorTheme.bas`.
+  - Added support for all 6 PRK reference cursor variants:
+    1. `CURSOR_ARROW` (Default Arrow Pointer, Hotspot: `0, 0`)
+    2. `CURSOR_IBEAM` (Text Input / I-Beam, Hotspot: `5, 6`)
+    3. `CURSOR_RESIZE_EW` (Horizontal East-West Resize, Hotspot: `8, 6`)
+    4. `CURSOR_RESIZE_NS` (Vertical North-South Resize, Hotspot: `7, 6`)
+    5. `CURSOR_RESIZE_NWSE` (Diagonal NorthWest-SouthEast Resize, Hotspot: `6, 6`)
+    6. `CURSOR_RESIZE_NESW` (Diagonal NorthEast-SouthWest Resize, Hotspot: `6, 6`)
+- [x] **Extensible Asset Architecture:**
+  - Prepared cursor pipeline for dynamic cursor loading (`.cur`, `.ico`, `.bmp`, `.png`) without bloating or modifying the core compositor presentation loop.
+- [x] **Mandatory Revision Bumping:**
+  - Bumped build revision to `REV: 2026.10.27-r35-re02` across kernel boot banner, serial logs, desktop menu bar, and system monitor window.
+
+
 
 
 

@@ -25,4 +25,5 @@ Libraries    = [
 
 [Sources]
 Assembly = "brt0.S"
+Module   = "CursorTheme.bas"
 Module   = "CompositorMain.bas"

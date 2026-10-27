@@ -106,6 +106,7 @@ Module ProsApi
     Public Declare Sub TerminateProcess Lib "libpros" Alias "Pros_Sys_Process_ExitProcess" (ByVal exitCode As UInt64)
     Public Declare Function GetCoreCount Lib "libpros" Alias "Pros_Sys_Process_GetCoreCount" () As UInt64
     Public Declare Function GetUptime Lib "libpros" Alias "Pros_Sys_Process_GetUptime" () As UInt64
+    Public Declare Function AllocatePages Lib "libpros" Alias "Pros_Sys_Process_AllocatePages" (ByVal pageCount As UInt64, ByVal targetVaddr As UInt64) As Pointer To UInt32
 
     ' Console I/O
     Public Declare Sub ConsoleWrite Lib "libpros" Alias "Pros_IO_Console_Write" (ByVal strPtr As Pointer To Byte)

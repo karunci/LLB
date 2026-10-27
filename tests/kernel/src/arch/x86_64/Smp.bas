@@ -215,7 +215,7 @@ Module Arch.Smp
         InitSyscallMsrs
 
         ' 6. Initialize Local APIC periodic preemption timer on this AP
-        Arch.X86_64.Apic.InitializeTimer 3, &H200000
+        Arch.X86_64.Apic.InitializeTimer 3, Arch.X86_64.Apic.GetCalibratedTicks()
 
         Serial.PrintF "[SMP] AP Core #%d online: GDT/TSS/LAPIC/Timer ready. Entering scheduler...\r\n", cpuId
 

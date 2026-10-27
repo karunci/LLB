@@ -1010,6 +1010,23 @@ tests/kernel/
 - [x] **Mandatory Revision Bumping:**
   - Bumped build revision to `REV: 2026.10.26-r34-re09` across kernel boot banner, serial logs, desktop menu bar, and system monitor window.
 
+## Phase 34: In-RAM Backbuffering, Dirty Rect Burst Blit & PIT Timer Calibration (`REV: 2026.10.27-r35-re01`)
+
+- [x] **Compositor Private In-RAM Backbuffering (`backSurf`):**
+  - Eliminated uncached PCIe MMIO VRAM read stalls by allocating an in-RAM backbuffer at `0x70000000` via `AllocatePages`.
+  - Redirected all GUI rasterization, 16x18 cursor sprite composition, cursor background saving/restoring, and text rendering entirely to cached System RAM at CPU cache speeds.
+- [x] **Direct 64-Bit Aligned Dirty Rectangle Burst Blit (`FlushDirtyRegion`):**
+  - Implemented high-throughput userland dirty bounding box burst copy from `backSurf` to physical VRAM aperture (`frontSurf`) using aligned 64-bit QWORD pairs with an `sfence` memory barrier.
+  - Eliminated full-screen redraw bottlenecks: only active dirty regions (cursor bounding box ~1.1 KB, telemetry badge ~20 KB, coordinates ~10 KB) are flushed per frame.
+- [x] **Microkernel Dynamic Page Allocation Syscall (`SYS_MEM_ALLOC_PAGES` #26):**
+  - Implemented native `SYS_MEM_ALLOC_PAGES` in `Syscall.bas`, allowing userspace processes to request contiguous virtual mappings backed by zeroed physical frames from `Buddy.AllocPages(0)`.
+  - Added userspace wrapper `AllocatePages(pageCount, targetVaddr)` to `lib/pros` and `include/pros.bas`.
+- [x] **Hardware Local APIC Timer PIT Channel 2 Calibration:**
+  - Implemented one-shot 10ms calibration in `Apic.bas::CalibrateTimer` using legacy 8254 PIT Channel 2 (11,932 counts at 1.193182 MHz) to measure exact LAPIC bus ticks per 10ms.
+  - Synchronized BSP and AP cores to the measured tick rate, ensuring `SchedEngine.OnTimerTick 10` advances in exact parity with real-world wall-clock seconds on any bare-metal CPU.
+- [x] **Mandatory Revision Bumping:**
+  - Bumped build revision to `REV: 2026.10.27-r35-re01` across kernel boot banner, serial logs, desktop menu bar, and system monitor window.
+
 
 
 

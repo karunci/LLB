@@ -13,6 +13,7 @@ Use Sched.Scheduler As SchedEngine
 Use Mem.SharedMemoryManager As Shmem
 Use Drivers.Framebuffer As FbDriver
 Use Mem.VirtualMemoryManager As VmmEngine
+Use Mem.BuddyAllocator As Buddy
 Use Drivers.Mouse As MouseDriver
 Use Drivers.Keyboard As Kbd
 
@@ -213,6 +214,52 @@ Namespace Sys
                         Dispatch = 0
                     Else
                         Dispatch = CType(UInt64, -1)
+                    End If
+
+                Case SYS_MEM_ALLOC_PAGES
+                    ' arg1 = pageCount (UInt64), arg2 = targetVaddr (UInt64)
+                    Dim reqPages As UInt64 = arg1
+                    Dim reqVaddr As UInt64 = arg2
+                    Dim totalBytes As UInt64 = reqPages * 4096
+                    If reqPages > 0 And reqPages <= 8192 And (reqVaddr And &HFFF) = 0 And ValidateUserBuffer(reqVaddr, totalBytes) Then
+                        Dim memCr3 As UInt64 = SchedEngine.GetCurrentCr3()
+                        Dim allocFail As Boolean = False
+                        Dim memPidx As UInt64 = 0
+                        While memPidx < reqPages
+                            Dim physFrame As UInt64 = Buddy.AllocPages(0)
+                            If physFrame = 0 Then
+                                allocFail = True
+                                Exit While
+                            End If
+
+                            ' Zero initialize allocated physical frame
+                            Dim framePtr As Volatile Pointer To UInt64 = CPtr(Volatile Pointer To UInt64, physFrame)
+                            Dim zIdx As UInt32 = 0
+                            While zIdx < 512
+                                framePtr(zIdx) = 0
+                                zIdx = zIdx + 1
+                            Wend
+
+                            ' Map frame into caller's page directory (PTE: Present | Writable | User = 7)
+                            VmmEngine.MapPage memCr3, reqVaddr + (memPidx * 4096), physFrame, &H07
+                            memPidx = memPidx + 1
+                        Wend
+
+                        If allocFail Then
+                            ' Roll back already mapped pages
+                            Dim memRollIdx As UInt64 = 0
+                            While memRollIdx < memPidx
+                                Dim resolved As UInt64 = VmmEngine.VirtToPhys(memCr3, reqVaddr + (memRollIdx * 4096))
+                                VmmEngine.UnmapPage memCr3, reqVaddr + (memRollIdx * 4096)
+                                If resolved <> 0 Then Buddy.FreePages resolved, 0
+                                memRollIdx = memRollIdx + 1
+                            Wend
+                            Dispatch = 0
+                        Else
+                            Dispatch = reqVaddr
+                        End If
+                    Else
+                        Dispatch = 0
                     End If
 
                 Case SYS_TIME_UPTIME

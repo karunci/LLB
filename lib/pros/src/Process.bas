@@ -58,6 +58,21 @@ Namespace Pros.Sys
             GetUptime = Pros.Sys.RawSyscall.Call0(SYS_TIME_UPTIME)
         End Function
 
+        ''
+        ' @brief Allocate anonymous physical RAM pages and map them into user space.
+        ' @param pageCount Number of 4KB pages to allocate.
+        ' @param targetVaddr Base virtual address to map to (must be page aligned).
+        ' @return Pointer to mapped memory, or 0 on failure.
+        ''
+        Public Unsafe Function AllocatePages(ByVal pageCount As UInt64, ByVal targetVaddr As UInt64) As Pointer To UInt32
+            Dim res As UInt64 = Pros.Sys.RawSyscall.Call2(SYS_MEM_ALLOC_PAGES, pageCount, targetVaddr)
+            If res <> 0 Then
+                AllocatePages = CPtr(Pointer To UInt32, res)
+            Else
+                AllocatePages = CPtr(Pointer To UInt32, 0)
+            End If
+        End Function
+
     End Module
 
 End Namespace

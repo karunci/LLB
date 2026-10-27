@@ -92,7 +92,7 @@ Module KernelMain
         ' Initialize COM1 line control & Serial UART driver with hardware probing
         Serial.Initialize
         If Serial.IsAvailable() Then
-            Serial.PrintF "\r\n[PRK] Booting Low-Level Basic Kernel [REV: 2026.10.26-r34-re09]!\r\n"
+            Serial.PrintF "\r\n[PRK] Booting Low-Level Basic Kernel [REV: 2026.10.27-r35-re01]!\r\n"
             Serial.PrintF "[PRK] Multiboot Verified. Long mode active.\r\n"
             Serial.PrintF "[UART] COM1 16550 UART Online!\r\n"
         End If
@@ -117,14 +117,14 @@ Module KernelMain
         If hasVgaText Then
             Serial.PrintF "[PRK] VGA Text Mode Terminal active (&HB8000).\r\n"
             Term.WriteLine CPtr(Pointer To Byte, "=========================================")
-            Term.WriteLine CPtr(Pointer To Byte, " PRK - LOW-LEVEL BASIC [REV: 2026.10.26-r34-re09] ")
+            Term.WriteLine CPtr(Pointer To Byte, " PRK - LOW-LEVEL BASIC [REV: 2026.10.27-r35-re01] ")
             Term.WriteLine CPtr(Pointer To Byte, "=========================================")
             Term.WriteChar 10
         ElseIf hasGopFb Then
             Serial.PrintF "[PRK] UEFI GOP Linear Framebuffer active (0x%x).\r\n", CType(UInt32, FB.GetFramebufferPhys() And &HFFFFFFFF)
             FB.ClearScreen &H00181824
             FB.DrawString 20, 20, CPtr(Pointer To Byte, "========================================="), &H0088C0D0, 1
-            FB.DrawString 20, 36, CPtr(Pointer To Byte, " PRK - LOW-LEVEL BASIC [REV: 2026.10.26-r34-re09] "), &H008FBCBB, 1
+            FB.DrawString 20, 36, CPtr(Pointer To Byte, " PRK - LOW-LEVEL BASIC [REV: 2026.10.27-r35-re01] "), &H008FBCBB, 1
             FB.DrawString 20, 52, CPtr(Pointer To Byte, "========================================="), &H0088C0D0, 1
         End If
 
@@ -281,10 +281,11 @@ Module KernelMain
         Arch.X86_64.IoApic.EnableMouse
         Serial.PrintF "[PRK] I/O APIC online. Keyboard IRQ 1 -> Vec 33, Mouse IRQ 12 -> Vec 44.\r\n"
 
-        ' Initialize Periodic LAPIC Timer (Vector 32) matching PRK kernel/apic.c
-        Serial.PrintF "[PRK] Initializing Local APIC Timer (Vector 32, count: 0x100000)...\r\n"
-        Arch.X86_64.Apic.InitializeTimer 3, &H100000
-        Serial.PrintF "[PRK] Local APIC Timer active.\r\n"
+        ' Initialize and Calibrate Periodic LAPIC Timer (Vector 32)
+        Serial.PrintF "[PRK] Calibrating and initializing Local APIC Timer (Vector 32)...\r\n"
+        Dim calCount As UInt32 = Arch.X86_64.Apic.CalibrateTimer()
+        Arch.X86_64.Apic.InitializeTimer 3, calCount
+        Serial.PrintF "[PRK] Local APIC Timer active (%u ticks per 10ms).\r\n", calCount
 
         ' Initialize Preemptive Scheduler & Core Runqueues
         SchedEngine.Initialize

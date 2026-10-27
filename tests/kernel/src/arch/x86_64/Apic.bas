@@ -38,6 +38,9 @@ Module Arch.X86_64.Apic
     ' Runtime flag: True when x2APIC MSR mode is active
     Private x2ApicActive As Boolean = False
 
+    ' Calibrated ticks for 10ms (100 Hz) tick rate
+    Private calibratedTickCount As UInt32 = 0
+
     ''
     ' @brief Check whether Local APIC is currently in x2APIC (MSR) mode.
     ' @return True if x2APIC active, False if legacy MMIO mode.
@@ -210,18 +213,83 @@ Module Arch.X86_64.Apic
     End Sub
 
     ''
+    ' @brief Calibrate LAPIC timer using PIT Channel 2 for an exact 10ms tick interval.
+    '        Measures elapsed LAPIC ticks over 11932 PIT cycles (10ms at 1.193182 MHz).
+    ' @return Number of LAPIC ticks per 10ms.
+    ''
+    Public Unsafe Function CalibrateTimer() As UInt32
+        ' 1. Configure PIT Channel 2 (one-shot mode 0, 16-bit binary)
+        ' Command 0xB0: Channel 2, LSB then MSB, Mode 0, Binary
+        Arch.X86_64.PortIO.OutB &H43, &HB0
+
+        ' Count = 11932 (10ms = 1193182 / 100)
+        Arch.X86_64.PortIO.OutB &H42, CType(Byte, 11932 And &HFF)
+        Arch.X86_64.PortIO.OutB &H42, CType(Byte, (11932 RShift 8) And &HFF)
+
+        ' 2. Prepare PIT Channel 2 Gate on Port 0x61
+        Dim p61 As Byte = Arch.X86_64.PortIO.InB(&H61)
+        Arch.X86_64.PortIO.OutB &H61, (p61 And &HFC) Or &H01 ' Gate high, speaker disabled
+
+        ' 3. Start LAPIC timer counting down from maximum (divide by 16)
+        LapicWrite LAPIC_TIMER_DIV, 3
+        LapicWrite LAPIC_TIMER_LVT, &H10020 ' Masked, vector 32
+        LapicWrite LAPIC_TIMER_INIT, &HFFFFFFFF
+
+        ' 4. Reset PIT gate to initiate countdown
+        Arch.X86_64.PortIO.OutB &H61, Arch.X86_64.PortIO.InB(&H61) And &HFE
+        Arch.X86_64.PortIO.OutB &H61, Arch.X86_64.PortIO.InB(&H61) Or &H01
+
+        ' 5. Wait for PIT Channel 2 OUT to go HIGH (bit 5 of Port 0x61)
+        Dim timeout As UInt32 = 1000000
+        While ((Arch.X86_64.PortIO.InB(&H61) And &H20) = 0) And timeout > 0
+            timeout = timeout - 1
+        Wend
+
+        ' 6. Read elapsed LAPIC ticks
+        Dim currVal As UInt32 = LapicRead(LAPIC_TIMER_CURR)
+        Dim elapsed As UInt32 = &HFFFFFFFF - currVal
+
+        ' 7. Reset and mask PIT Channel 2 gate
+        Arch.X86_64.PortIO.OutB &H61, Arch.X86_64.PortIO.InB(&H61) And &HFC
+
+        ' Stop LAPIC one-shot timer
+        LapicWrite LAPIC_TIMER_INIT, 0
+
+        If timeout > 0 And elapsed > 1000 And elapsed < &H20000000 Then
+            Serial.PrintF "[APIC] Calibrated LAPIC Timer via PIT: %u ticks per 10ms (100 Hz)\r\n", elapsed
+            calibratedTickCount = elapsed
+            CalibrateTimer = elapsed
+        Else
+            Serial.PrintF "[APIC] PIT calibration fallback: count = 0x100000\r\n"
+            calibratedTickCount = &H100000
+            CalibrateTimer = &H100000
+        End If
+    End Function
+
+    ''
+    ' @brief Get the cached calibrated tick count for 10ms.
+    ''
+    Public Function GetCalibratedTicks() As UInt32
+        If calibratedTickCount = 0 Then calibratedTickCount = &H100000
+        GetCalibratedTicks = calibratedTickCount
+    End Function
+
+    ''
     ' @brief Initialize Local APIC Periodic Timer (Vector 32).
-    '        Matches PRK apic_timer_init(): divide by 16, periodic vector 32, count 0x100000.
+    '        Matches PRK apic_timer_init(): divide by 16, periodic vector 32.
     ''
     Public Unsafe Sub InitializeTimer(ByVal divideVal As UInt32, ByVal initCount As UInt32)
+        Dim count As UInt32 = initCount
+        If count = 0 Then count = GetCalibratedTicks()
+
         ' Set timer divide configuration (3 = divide by 16)
         LapicWrite LAPIC_TIMER_DIV, divideVal
 
         ' Vector 32 (0x20) in periodic mode (bit 17 = 0x20000)
         LapicWrite LAPIC_TIMER_LVT, 32 Or &H20000
 
-        ' Initial tick counter (0x100000 matches PRK kernel/apic.c)
-        LapicWrite LAPIC_TIMER_INIT, initCount
+        ' Initial tick counter
+        LapicWrite LAPIC_TIMER_INIT, count
     End Sub
 
 End Module

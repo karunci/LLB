@@ -14,6 +14,7 @@ Module CompositorMain
     ' -------------------------------------------------------------------------
     Private dispInfo As DisplayInfo
     Private frontSurf As Surface
+    Private backSurf As Surface
     Private hasDisplay As Boolean = False
 
     ' PRK 16x18 Arrow Cursor State
@@ -214,25 +215,96 @@ Module CompositorMain
     End Sub
 
     ' -------------------------------------------------------------------------
+    ' Zero-Copy Hardware Presentation Engine (RAM Backbuffer -> VRAM Burst Blit)
+    ' -------------------------------------------------------------------------
+    ''
+    ' @brief Burst-blit a dirty bounding box from RAM backbuffer to physical VRAM aperture.
+    '        Uses 64-bit aligned memory writes and sfence barrier for maximum PCIe throughput.
+    ''
+    Private Unsafe Sub FlushDirtyRegion(ByVal rx As Int32, ByVal ry As Int32, ByVal rw As Int32, ByVal rh As Int32)
+        If frontSurf.Pixels = 0 Or backSurf.Pixels = 0 Then Exit Sub
+        If rw <= 0 Or rh <= 0 Then Exit Sub
+
+        ' Bounds clipping
+        Dim x0 As Int32 = rx
+        Dim y0 As Int32 = ry
+        Dim x1 As Int32 = rx + rw
+        Dim y1 As Int32 = ry + rh
+
+        If x0 < 0 Then x0 = 0
+        If y0 < 0 Then y0 = 0
+        If x1 > CType(Int32, dispInfo.Width) Then x1 = CType(Int32, dispInfo.Width)
+        If y1 > CType(Int32, dispInfo.Height) Then y1 = CType(Int32, dispInfo.Height)
+
+        If x0 >= x1 Or y0 >= y1 Then Exit Sub
+
+        Dim clipW As Int32 = x1 - x0
+        Dim clipH As Int32 = y1 - y0
+
+        If dispInfo.Bpp = 32 Then
+            Dim pitchPix As UInt32 = dispInfo.Pitch / 4
+            Dim py As Int32 = y0
+            While py < y1
+                Dim rowOffset As UInt32 = CType(UInt32, py) * pitchPix
+                Dim dstRow As Pointer To UInt32 = frontSurf.Pixels + rowOffset + CType(UInt32, x0)
+                Dim srcRow As Pointer To UInt32 = backSurf.Pixels + rowOffset + CType(UInt32, x0)
+
+                Dim qwords As Int32 = clipW / 2
+                Dim dstQword As Pointer To UInt64 = CPtr(Pointer To UInt64, dstRow)
+                Dim srcQword As Pointer To UInt64 = CPtr(Pointer To UInt64, srcRow)
+                Dim qi As Int32 = 0
+                While qi < qwords
+                    dstQword(qi) = srcQword(qi)
+                    qi = qi + 1
+                Wend
+
+                If (clipW And 1) <> 0 Then
+                    Dim tailIdx As Int32 = clipW - 1
+                    dstRow(tailIdx) = srcRow(tailIdx)
+                End If
+
+                py = py + 1
+            Wend
+        Else
+            Dim bppBytes As UInt32 = dispInfo.Bpp / 8
+            Dim rowBytes As UInt32 = CType(UInt32, clipW) * bppBytes
+            Dim py2 As Int32 = y0
+            While py2 < y1
+                Dim byteOff As UInt32 = (CType(UInt32, py2) * dispInfo.Pitch) + (CType(UInt32, x0) * bppBytes)
+                Dim dstBytes As Pointer To Byte = CPtr(Pointer To Byte, frontSurf.Pixels) + byteOff
+                Dim srcBytes As Pointer To Byte = CPtr(Pointer To Byte, backSurf.Pixels) + byteOff
+                Dim bi As UInt32 = 0
+                While bi < rowBytes
+                    dstBytes(bi) = srcBytes(bi)
+                    bi = bi + 1
+                Wend
+                py2 = py2 + 1
+            Wend
+        End If
+
+        Asm "sfence" : : : "memory"
+    End Sub
+
+    ' -------------------------------------------------------------------------
     ' PRK Standard Arrow Cursor Engine (16x18 Sprite matching gui/main.c)
     ' -------------------------------------------------------------------------
     Private Unsafe Sub SaveCursorBackground(ByVal x As Int32, ByVal y As Int32)
-        If frontSurf.Pixels = 0 Then Exit Sub
+        If backSurf.Pixels = 0 Then Exit Sub
         Dim cy As Int32 = 0
         Dim curY As Int32 = 0
         Dim cx As Int32 = 0
         Dim curX As Int32 = 0
 
-        If frontSurf.Bpp = 24 Then
+        If backSurf.Bpp = 24 Then
             cy = 0
             While cy < CURSOR_H
                 curY = y + cy
-                If curY >= 0 And curY < CType(Int32, frontSurf.Height) Then
-                    Dim rawRow As Pointer To Byte = CPtr(Pointer To Byte, frontSurf.Pixels) + (CType(UInt32, curY) * frontSurf.Pitch)
+                If curY >= 0 And curY < CType(Int32, backSurf.Height) Then
+                    Dim rawRow As Pointer To Byte = CPtr(Pointer To Byte, backSurf.Pixels) + (CType(UInt32, curY) * backSurf.Pitch)
                     cx = 0
                     While cx < CURSOR_W
                         curX = x + cx
-                        If curX >= 0 And curX < CType(Int32, frontSurf.Width) Then
+                        If curX >= 0 And curX < CType(Int32, backSurf.Width) Then
                             Dim bOff As UInt32 = CType(UInt32, curX) * 3
                             Dim b As UInt32 = CType(UInt32, rawRow(bOff))
                             Dim g As UInt32 = CType(UInt32, rawRow(bOff + 1))
@@ -245,16 +317,16 @@ Module CompositorMain
                 cy = cy + 1
             Wend
         Else
-            Dim pitchPix As UInt32 = frontSurf.Pitch / 4
+            Dim pitchPix As UInt32 = backSurf.Pitch / 4
             cy = 0
             While cy < CURSOR_H
                 curY = y + cy
-                If curY >= 0 And curY < CType(Int32, frontSurf.Height) Then
-                    Dim rowPtr As Pointer To UInt32 = frontSurf.Pixels + (CType(UInt32, curY) * pitchPix)
+                If curY >= 0 And curY < CType(Int32, backSurf.Height) Then
+                    Dim rowPtr As Pointer To UInt32 = backSurf.Pixels + (CType(UInt32, curY) * pitchPix)
                     cx = 0
                     While cx < CURSOR_W
                         curX = x + cx
-                        If curX >= 0 And curX < CType(Int32, frontSurf.Width) Then
+                        If curX >= 0 And curX < CType(Int32, backSurf.Width) Then
                             cursorSavedBg((cy * CURSOR_W) + cx) = rowPtr(curX)
                         End If
                         cx = cx + 1
@@ -266,22 +338,22 @@ Module CompositorMain
     End Sub
 
     Private Unsafe Sub RestoreCursorBackground(ByVal x As Int32, ByVal y As Int32)
-        If frontSurf.Pixels = 0 Then Exit Sub
+        If backSurf.Pixels = 0 Then Exit Sub
         Dim cy As Int32 = 0
         Dim curY As Int32 = 0
         Dim cx As Int32 = 0
         Dim curX As Int32 = 0
 
-        If frontSurf.Bpp = 24 Then
+        If backSurf.Bpp = 24 Then
             cy = 0
             While cy < CURSOR_H
                 curY = y + cy
-                If curY >= 0 And curY < CType(Int32, frontSurf.Height) Then
-                    Dim rawRow As Pointer To Byte = CPtr(Pointer To Byte, frontSurf.Pixels) + (CType(UInt32, curY) * frontSurf.Pitch)
+                If curY >= 0 And curY < CType(Int32, backSurf.Height) Then
+                    Dim rawRow As Pointer To Byte = CPtr(Pointer To Byte, backSurf.Pixels) + (CType(UInt32, curY) * backSurf.Pitch)
                     cx = 0
                     While cx < CURSOR_W
                         curX = x + cx
-                        If curX >= 0 And curX < CType(Int32, frontSurf.Width) Then
+                        If curX >= 0 And curX < CType(Int32, backSurf.Width) Then
                             Dim col As UInt32 = cursorSavedBg((cy * CURSOR_W) + cx)
                             Dim bOff As UInt32 = CType(UInt32, curX) * 3
                             rawRow(bOff) = CType(Byte, col And &HFF)
@@ -294,16 +366,16 @@ Module CompositorMain
                 cy = cy + 1
             Wend
         Else
-            Dim pitchPix As UInt32 = frontSurf.Pitch / 4
+            Dim pitchPix As UInt32 = backSurf.Pitch / 4
             cy = 0
             While cy < CURSOR_H
                 curY = y + cy
-                If curY >= 0 And curY < CType(Int32, frontSurf.Height) Then
-                    Dim rowPtr As Pointer To UInt32 = frontSurf.Pixels + (CType(UInt32, curY) * pitchPix)
+                If curY >= 0 And curY < CType(Int32, backSurf.Height) Then
+                    Dim rowPtr As Pointer To UInt32 = backSurf.Pixels + (CType(UInt32, curY) * pitchPix)
                     cx = 0
                     While cx < CURSOR_W
                         curX = x + cx
-                        If curX >= 0 And curX < CType(Int32, frontSurf.Width) Then
+                        If curX >= 0 And curX < CType(Int32, backSurf.Width) Then
                             rowPtr(curX) = cursorSavedBg((cy * CURSOR_W) + cx)
                         End If
                         cx = cx + 1
@@ -315,7 +387,7 @@ Module CompositorMain
     End Sub
 
     Private Unsafe Sub DrawCursorArrow(ByVal x As Int32, ByVal y As Int32)
-        If frontSurf.Pixels = 0 Then Exit Sub
+        If backSurf.Pixels = 0 Then Exit Sub
 
         ' PRK cursor_arrow bitmap:
         ' activeMask: 1 = pixel present, 0 = transparent
@@ -352,18 +424,18 @@ Module CompositorMain
         Dim isDrawn As Boolean = False
         Dim isWhite As Boolean = False
 
-        If frontSurf.Bpp = 24 Then
+        If backSurf.Bpp = 24 Then
             cy = 0
             While cy < CURSOR_H
                 curY = y + cy
-                If curY >= 0 And curY < CType(Int32, frontSurf.Height) Then
-                    Dim rawRow As Pointer To Byte = CPtr(Pointer To Byte, frontSurf.Pixels) + (CType(UInt32, curY) * frontSurf.Pitch)
+                If curY >= 0 And curY < CType(Int32, backSurf.Height) Then
+                    Dim rawRow As Pointer To Byte = CPtr(Pointer To Byte, backSurf.Pixels) + (CType(UInt32, curY) * backSurf.Pitch)
                     actRow = activeMask(cy)
                     colRow = colorMask(cy)
                     cx = 0
                     While cx < CURSOR_W
                         curX = x + cx
-                        If curX >= 0 And curX < CType(Int32, frontSurf.Width) Then
+                        If curX >= 0 And curX < CType(Int32, backSurf.Width) Then
                             shiftVal = 15 - cx
                             isDrawn = ((actRow RShift shiftVal) And 1) <> 0
                             If isDrawn Then
@@ -386,18 +458,18 @@ Module CompositorMain
                 cy = cy + 1
             Wend
         Else
-            Dim pitchPix As UInt32 = frontSurf.Pitch / 4
+            Dim pitchPix As UInt32 = backSurf.Pitch / 4
             cy = 0
             While cy < CURSOR_H
                 curY = y + cy
-                If curY >= 0 And curY < CType(Int32, frontSurf.Height) Then
-                    Dim rowPtr As Pointer To UInt32 = frontSurf.Pixels + (CType(UInt32, curY) * pitchPix)
+                If curY >= 0 And curY < CType(Int32, backSurf.Height) Then
+                    Dim rowPtr As Pointer To UInt32 = backSurf.Pixels + (CType(UInt32, curY) * pitchPix)
                     actRow = activeMask(cy)
                     colRow = colorMask(cy)
                     cx = 0
                     While cx < CURSOR_W
                         curX = x + cx
-                        If curX >= 0 And curX < CType(Int32, frontSurf.Width) Then
+                        If curX >= 0 And curX < CType(Int32, backSurf.Width) Then
                             shiftVal = 15 - cx
                             isDrawn = ((actRow RShift shiftVal) And 1) <> 0
                             If isDrawn Then
@@ -455,7 +527,7 @@ Module CompositorMain
         Else
             ledColor = &HFF00C853
         End If
-        FillRect frontSurf, badgeX + 4, badgeY + 4, 8, 18, ledColor
+        FillRect backSurf, badgeX + 4, badgeY + 4, 8, 18, ledColor
 
         ' 2. Redraw recessed dark channel for scanner pulse
         Dim trackX As Int32 = badgeX + 16
@@ -463,7 +535,7 @@ Module CompositorMain
         Dim trackW As Int32 = 120
         Dim trackH As Int32 = 16
         Dim pulseW As Int32 = 28
-        FillRect frontSurf, trackX, trackY, trackW, trackH, &HFF1B2028
+        FillRect backSurf, trackX, trackY, trackW, trackH, &HFF1B2028
 
         ' 3. Ping-pong animated scanner pulse with multi-layer glow
         Dim pulseX As Int32 = trackX + animPos
@@ -472,9 +544,9 @@ Module CompositorMain
             pulseX = (trackX + trackW) - pulseW
         End If
 
-        FillRect frontSurf, pulseX, trackY + 1, pulseW, trackH - 2, &HFF00897B
-        FillRect frontSurf, pulseX + 4, trackY + 3, pulseW - 8, trackH - 6, &HFF00E5FF
-        FillRect frontSurf, pulseX + 9, trackY + 5, pulseW - 18, trackH - 10, &HFFFFFFFF
+        FillRect backSurf, pulseX, trackY + 1, pulseW, trackH - 2, &HFF00897B
+        FillRect backSurf, pulseX + 4, trackY + 3, pulseW - 8, trackH - 6, &HFF00E5FF
+        FillRect backSurf, pulseX + 9, trackY + 5, pulseW - 18, trackH - 10, &HFFFFFFFF
 
         ' Advance animation at half-speed (2 pixels per frame)
         animPos = animPos + animDir
@@ -495,14 +567,17 @@ Module CompositorMain
             fpsBuf(fIdx) = 0
 
             ' Clear FPS text region and redraw dynamic counter
-            FillRect frontSurf, badgeX + 138, badgeY + 6, 60, 16, &HFF2E3440
-            DrawText5x7 frontSurf, badgeX + 140, badgeY + 10, @fpsBuf(0), &HFF88C0D0
+            FillRect backSurf, badgeX + 138, badgeY + 6, 60, 16, &HFF2E3440
+            DrawText5x7 backSurf, badgeX + 140, badgeY + 10, @fpsBuf(0), &HFF88C0D0
             lastRenderedFps = currentFps
         End If
+
+        FlushDirtyRegion badgeX, badgeY, 200, 26
 
         If restoreCursor Then
             SaveCursorBackground cursorX, cursorY
             DrawCursorArrow cursorX, cursorY
+            FlushDirtyRegion cursorX, cursorY, CURSOR_W, CURSOR_H
         End If
     End Sub
 
@@ -525,12 +600,14 @@ Module CompositorMain
         AppendUInt CType(UInt64, cursorY), @coordBuf(0), cIdx
         coordBuf(cIdx) = 0
 
-        FillRect frontSurf, 430, 6, 180, 14, &HFF232731
-        DrawText5x7 frontSurf, 434, 10, @coordBuf(0), &HFFEBCB8B
+        FillRect backSurf, 430, 6, 180, 14, &HFF232731
+        DrawText5x7 backSurf, 434, 10, @coordBuf(0), &HFFEBCB8B
+        FlushDirtyRegion 430, 6, 180, 14
 
         If restoreCursor Then
             SaveCursorBackground cursorX, cursorY
             DrawCursorArrow cursorX, cursorY
+            FlushDirtyRegion cursorX, cursorY, CURSOR_W, CURSOR_H
         End If
     End Sub
 
@@ -539,20 +616,20 @@ Module CompositorMain
     ' (Restored to exact previous theme and dimensions)
     ' -------------------------------------------------------------------------
     Private Unsafe Sub DrawDesktopScene()
-        If frontSurf.Pixels = 0 Then Exit Sub
+        If backSurf.Pixels = 0 Then Exit Sub
 
         ' 1. Clear boot splash to Nord Dark Background (#191D24)
-        FillRect frontSurf, 0, 0, dispInfo.Width, dispInfo.Height, &HFF191D24
+        FillRect backSurf, 0, 0, dispInfo.Width, dispInfo.Height, &HFF191D24
 
         ' 2. Top System Menu Bar (y: 0..26)
-        FillRect frontSurf, 0, 0, dispInfo.Width, 26, &HFF232731
-        FillRect frontSurf, 0, 25, dispInfo.Width, 1, &HFF4C566A
-        FillRect frontSurf, 0, 0, 4, 25, &HFF88C0D0
+        FillRect backSurf, 0, 0, dispInfo.Width, 26, &HFF232731
+        FillRect backSurf, 0, 25, dispInfo.Width, 1, &HFF4C566A
+        FillRect backSurf, 0, 0, 4, 25, &HFF88C0D0
 
-        DrawText5x7 frontSurf, 16, 10, CPtr(Pointer To Byte, "PROS WORKSTATION  |  APPLICATIONS  NODES  SERVICES"), &HFFECEFF4
+        DrawText5x7 backSurf, 16, 10, CPtr(Pointer To Byte, "PROS WORKSTATION  |  APPLICATIONS  NODES  SERVICES"), &HFFECEFF4
         RenderMouseCoordinates
-        DrawText5x7 frontSurf, CType(Int32, dispInfo.Width) - 360, 10, CPtr(Pointer To Byte, "REV: 2026.10.26-r34-re09"), &HFF88C0D0
-        DrawText5x7 frontSurf, CType(Int32, dispInfo.Width) - 170, 10, CPtr(Pointer To Byte, "SMP 4 CORES  ONLINE"), &HFFA3BE8C
+        DrawText5x7 backSurf, CType(Int32, dispInfo.Width) - 360, 10, CPtr(Pointer To Byte, "REV: 2026.10.27-r35-re01"), &HFF88C0D0
+        DrawText5x7 backSurf, CType(Int32, dispInfo.Width) - 170, 10, CPtr(Pointer To Byte, "SMP 4 CORES  ONLINE"), &HFFA3BE8C
 
         ' 3. Render Floating Desktop Window: "PROS System Monitor"
         Dim wx As Int32 = 60
@@ -561,41 +638,41 @@ Module CompositorMain
         Dim wh As Int32 = 280
 
         ' Outer drop-shadow effect
-        FillRect frontSurf, wx + 4, wy + 4, ww, wh, &HFF121419
+        FillRect backSurf, wx + 4, wy + 4, ww, wh, &HFF121419
 
         ' Window Frame Border
-        FillRect frontSurf, wx, wy, ww, wh, &HFF434C5E
-        FillRect frontSurf, wx + 1, wy + 1, ww - 2, wh - 2, &HFF2E3440
+        FillRect backSurf, wx, wy, ww, wh, &HFF434C5E
+        FillRect backSurf, wx + 1, wy + 1, ww - 2, wh - 2, &HFF2E3440
 
         ' Titlebar (h: 26)
-        FillRect frontSurf, wx + 1, wy + 1, ww - 2, 26, &HFF2E3440
-        FillRect frontSurf, wx + 1, wy + 1, 4, 26, &HFF5E81AC
-        DrawText5x7 frontSurf, wx + 16, wy + 10, CPtr(Pointer To Byte, "PROS SYSTEM MONITOR (RING 3 COMPOSITED)"), &HFFECEFF4
+        FillRect backSurf, wx + 1, wy + 1, ww - 2, 26, &HFF2E3440
+        FillRect backSurf, wx + 1, wy + 1, 4, 26, &HFF5E81AC
+        DrawText5x7 backSurf, wx + 16, wy + 10, CPtr(Pointer To Byte, "PROS SYSTEM MONITOR (RING 3 COMPOSITED)"), &HFFECEFF4
 
         ' Window Buttons (Minimize, Maximize, Close - minimalist squares)
-        FillRect frontSurf, (wx + ww) - 54, wy + 8, 10, 10, &HFF5E81AC ' Min
-        FillRect frontSurf, (wx + ww) - 38, wy + 8, 10, 10, &HFFA3BE8C ' Max
-        FillRect frontSurf, (wx + ww) - 22, wy + 8, 10, 10, &HFFBF616A ' Close
+        FillRect backSurf, (wx + ww) - 54, wy + 8, 10, 10, &HFF5E81AC ' Min
+        FillRect backSurf, (wx + ww) - 38, wy + 8, 10, 10, &HFFA3BE8C ' Max
+        FillRect backSurf, (wx + ww) - 22, wy + 8, 10, 10, &HFFBF616A ' Close
 
         ' Window Client Canvas
-        FillRect frontSurf, wx + 2, wy + 28, ww - 4, wh - 30, &HFF232731
+        FillRect backSurf, wx + 2, wy + 28, ww - 4, wh - 30, &HFF232731
 
         ' Card 1: Microkernel Architecture
-        FillRect frontSurf, wx + 16, wy + 40, ww - 32, 42, &HFF1E222A
-        FillRect frontSurf, wx + 16, wy + 40, 3, 42, &HFF81A1C1
-        DrawText5x7 frontSurf, wx + 26, wy + 48, CPtr(Pointer To Byte, "KERNEL : PRK-LLB MICROKERNEL [REV: 2026.10.26-r34-re09]"), &HFF81A1C1
-        DrawText5x7 frontSurf, wx + 26, wy + 64, CPtr(Pointer To Byte, "MODEL  : DUAL-PLANE NEURAL SYNAPSE ROUTING"), &HFFD8DEE9
+        FillRect backSurf, wx + 16, wy + 40, ww - 32, 42, &HFF1E222A
+        FillRect backSurf, wx + 16, wy + 40, 3, 42, &HFF81A1C1
+        DrawText5x7 backSurf, wx + 26, wy + 48, CPtr(Pointer To Byte, "KERNEL : PRK-LLB MICROKERNEL [REV: 2026.10.27-r35-re01]"), &HFF81A1C1
+        DrawText5x7 backSurf, wx + 26, wy + 64, CPtr(Pointer To Byte, "MODEL  : DUAL-PLANE NEURAL SYNAPSE ROUTING"), &HFFD8DEE9
 
         ' Card 2: Compositor Status
-        FillRect frontSurf, wx + 16, wy + 92, ww - 32, 42, &HFF1E222A
-        FillRect frontSurf, wx + 16, wy + 92, 3, 42, &HFFA3BE8C
-        DrawText5x7 frontSurf, wx + 26, wy + 100, CPtr(Pointer To Byte, "ENGINE : ZERO-COPY WINDOW SURFACE PIPELINE"), &HFFA3BE8C
-        DrawText5x7 frontSurf, wx + 26, wy + 116, CPtr(Pointer To Byte, "DRIVER : DIRECT LINEAR FRAMEBUFFER APERTURE"), &HFFECEFF4
+        FillRect backSurf, wx + 16, wy + 92, ww - 32, 42, &HFF1E222A
+        FillRect backSurf, wx + 16, wy + 92, 3, 42, &HFFA3BE8C
+        DrawText5x7 backSurf, wx + 26, wy + 100, CPtr(Pointer To Byte, "ENGINE : ZERO-COPY WINDOW SURFACE PIPELINE"), &HFFA3BE8C
+        DrawText5x7 backSurf, wx + 26, wy + 116, CPtr(Pointer To Byte, "DRIVER : DIRECT LINEAR FRAMEBUFFER APERTURE"), &HFFECEFF4
 
         ' Card 3: Display & Subsystem Status
-        FillRect frontSurf, wx + 16, wy + 144, ww - 32, 42, &HFF1E222A
-        FillRect frontSurf, wx + 16, wy + 144, 3, 42, &HFFEBCB8B
-        DrawText5x7 frontSurf, wx + 26, wy + 152, CPtr(Pointer To Byte, "INPUT  : INPUT_SRV DAEMON ONLINE (PS/2 MOUSE)"), &HFFEBCB8B
+        FillRect backSurf, wx + 16, wy + 144, ww - 32, 42, &HFF1E222A
+        FillRect backSurf, wx + 16, wy + 144, 3, 42, &HFFEBCB8B
+        DrawText5x7 backSurf, wx + 26, wy + 152, CPtr(Pointer To Byte, "INPUT  : INPUT_SRV DAEMON ONLINE (PS/2 MOUSE)"), &HFFEBCB8B
 
         Dim dBuf(64) As Byte
         Dim dIdx As UInt32 = 0
@@ -609,22 +686,25 @@ Module CompositorMain
         AppendUInt CType(UInt64, dispInfo.Pitch), @dBuf(0), dIdx
         AppendStr ")", @dBuf(0), dIdx
         dBuf(dIdx) = 0
-        DrawText5x7 frontSurf, wx + 26, wy + 168, @dBuf(0), &HFFECEFF4
+        DrawText5x7 backSurf, wx + 26, wy + 168, @dBuf(0), &HFFECEFF4
 
         ' Card 4: Ring 3 Performance
-        FillRect frontSurf, wx + 16, wy + 196, ww - 32, 42, &HFF1E222A
-        FillRect frontSurf, wx + 16, wy + 196, 3, 42, &HFFB48EAD
-        DrawText5x7 frontSurf, wx + 26, wy + 204, CPtr(Pointer To Byte, "SECURITY: CPL=3 USERLAND HARDWARE ISOLATION"), &HFFB48EAD
-        DrawText5x7 frontSurf, wx + 26, wy + 220, CPtr(Pointer To Byte, "SHARED MEMORY: SHMEM GRADIENTS MAPPED"), &HFFECEFF4
+        FillRect backSurf, wx + 16, wy + 196, ww - 32, 42, &HFF1E222A
+        FillRect backSurf, wx + 16, wy + 196, 3, 42, &HFFB48EAD
+        DrawText5x7 backSurf, wx + 26, wy + 204, CPtr(Pointer To Byte, "SECURITY: CPL=3 USERLAND HARDWARE ISOLATION"), &HFFB48EAD
+        DrawText5x7 backSurf, wx + 26, wy + 220, CPtr(Pointer To Byte, "SHARED MEMORY: SHMEM GRADIENTS MAPPED"), &HFFECEFF4
 
         ' 4. Initialize Telemetry Status Badge Container
         If dispInfo.Width > 220 And dispInfo.Height > 60 Then
             badgeX = CType(Int32, dispInfo.Width) - 210
             badgeY = CType(Int32, dispInfo.Height) - 34
-            FillRect frontSurf, badgeX, badgeY, 200, 26, &HFF2E3440
-            FillRect frontSurf, badgeX, badgeY, 200, 1, &HFF434C5E
+            FillRect backSurf, badgeX, badgeY, 200, 26, &HFF2E3440
+            FillRect backSurf, badgeX, badgeY, 200, 1, &HFF434C5E
             badgeActive = True
         End If
+
+        ' 5. Flush completed scene from RAM backbuffer to physical VRAM aperture
+        FlushDirtyRegion 0, 0, dispInfo.Width, dispInfo.Height
     End Sub
 
     ' -------------------------------------------------------------------------
@@ -692,6 +772,22 @@ Module CompositorMain
             Exit Function
         End If
 
+        ' 4b. Allocate Private In-RAM Backbuffer at 0x88000000
+        Dim bufferBytes As UInt64 = CType(UInt64, dispInfo.Height) * CType(UInt64, dispInfo.Pitch)
+        Dim pagesNeeded As UInt64 = (bufferBytes + 4095) / 4096
+        Dim backPtr As Pointer To UInt32 = AllocatePages(pagesNeeded, &H88000000)
+        If backPtr <> 0 Then
+            ConsoleWriteLine "[COMPOSITOR] Private RAM Backbuffer allocated at 0x88000000"
+            backSurf.Width = dispInfo.Width
+            backSurf.Height = dispInfo.Height
+            backSurf.Pitch = dispInfo.Pitch
+            backSurf.Bpp = dispInfo.Bpp
+            backSurf.Pixels = backPtr
+        Else
+            ConsoleWriteLine "[COMPOSITOR] WARN: Fallback to direct VRAM (AllocatePages returned null)"
+            backSurf = frontSurf
+        End If
+
         ' 5. Transition from Boot Splash to Graphical Desktop Canvas
         ConsoleWriteLine "[COMPOSITOR] Boot splash completed. Transitioning to PROS Desktop..."
         DrawDesktopScene
@@ -703,6 +799,7 @@ Module CompositorMain
         oldCursorY = cursorY
         SaveCursorBackground cursorX, cursorY
         DrawCursorArrow cursorX, cursorY
+        FlushDirtyRegion cursorX, cursorY, CURSOR_W, CURSOR_H
         cursorInitialized = True
         RenderMouseCoordinates
         ConsoleWriteLine "[COMPOSITOR] Hardware software cursor plane initialized at screen center."
@@ -741,11 +838,15 @@ Module CompositorMain
             ' B. 60 FPS Presentation Gate (strictly paced to 16ms intervals)
             If nowTime >= nextFrameTime Then
                 If mouseDirty Then
-                    RestoreCursorBackground cursorX, cursorY
+                    RestoreCursorBackground oldCursorX, oldCursorY
+                    FlushDirtyRegion oldCursorX, oldCursorY, CURSOR_W, CURSOR_H
                     cursorX = targetMx
                     cursorY = targetMy
                     SaveCursorBackground cursorX, cursorY
                     DrawCursorArrow cursorX, cursorY
+                    FlushDirtyRegion cursorX, cursorY, CURSOR_W, CURSOR_H
+                    oldCursorX = cursorX
+                    oldCursorY = cursorY
                     mouseDirty = False
                     RenderMouseCoordinates
                 End If

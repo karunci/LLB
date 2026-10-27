@@ -10,6 +10,7 @@ Namespace Pros.Sys
     Public Const SYS_PROCESS_GETPID  As UInt64 = 6
     Public Const SYS_PROCESS_EXIT    As UInt64 = 16
     Public Const SYS_GET_MOUSE       As UInt64 = 19
+    Public Const SYS_MEM_ALLOC_PAGES As UInt64 = 26
     Public Const SYS_TIME_UPTIME     As UInt64 = 28
     Public Const SYS_SMP_CORE_COUNT  As UInt64 = 34
 

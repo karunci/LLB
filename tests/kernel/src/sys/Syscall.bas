@@ -221,7 +221,7 @@ Namespace Sys
                     Dim reqPages As UInt64 = arg1
                     Dim reqVaddr As UInt64 = arg2
                     Dim totalBytes As UInt64 = reqPages * 4096
-                    If reqPages > 0 And reqPages <= 8192 And (reqVaddr And &HFFF) = 0 And ValidateUserBuffer(reqVaddr, totalBytes) Then
+                    If reqPages > 0 And reqPages <= 8192 And (reqVaddr And &HFFF) = 0 And ValidateUserBuffer(reqVaddr, totalBytes) And reqVaddr >= &H40000000 And (reqVaddr + totalBytes) <= &H78000000 Then
                         Dim memCr3 As UInt64 = SchedEngine.GetCurrentCr3()
                         Dim allocFail As Boolean = False
                         Dim memPidx As UInt64 = 0

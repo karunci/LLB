@@ -1234,6 +1234,22 @@ tests/kernel/
 - [x] **Mandatory Revision Bumping:**
   - Bumped build revision tag to `REV: 2026.10.28-r36-re01` across kernel boot banner, serial logs, desktop top menu bar, and system monitor window.
 
+### Phase 46: Compositor Sub-8-Byte Memcpy Invariant, Native fast_blit32, and PDPT[1] Boundary Isolation (2026-10-28)
+- **Status:** Completed & Verified
+- **Revision:** `REV: 2026.10.28-r36-re02`
+
+- [x] **Compositor Runtime `memcpy` Register Invariant (`services/compositor/brt0.S`):**
+  - Resolved fatal Ring 3 Page Fault (`RIP: 0x400034B4 | CR2: 0x88300000 | Error: 0x4`) where `memcpy` jumped directly to `2: rep movsb` on counts < 8 without initializing `%rcx = %rdx`.
+  - Replaced flawed preamble logic with clean fall-through register loading (`movq %rdx, %rcx; shrq $3, %rcx; rep movsq; movq %rdx, %rcx; andq $7, %rcx; rep movsb`), eliminating buffer overruns past the backbuffer boundary during 1-pixel dirty rect flushes.
+- [x] **PCIe MMIO Native 32-Bit Scanline Blitter (`fast_blit32`):**
+  - Implemented dedicated assembly primitive `fast_blit32` (`cld; movq %rdx, %rcx; rep movsl; ret`) for all VRAM aperture flushes in `CompositorMain.bas`.
+  - Ensures strictly 32-bit DWORD-aligned burst transfers across PCIe host bridges, eradicating green dashed border lines and desktop scanline stripes.
+- [x] **User Dynamic Buffer Space Boundary Isolation (`Syscall.bas`, `CompositorMain.bas`):**
+  - Relocated compositor `backSurf` allocation from `0x88000000` (`PDPT[2]`, which shared page directories with kernel identity mappings) to `0x54000000` (strictly within private user space `PDPT[1]`), adding an extra guard page.
+  - Enforced boundary validation in `SYS_MEM_ALLOC_PAGES` restricting dynamic user allocations between `0x40000000` and `0x78000000` to prevent user space encroachment on supervisor identity memory.
+- [x] **Mandatory Revision Bumping:**
+  - Incremented build revision tag to `REV: 2026.10.28-r36-re02` across Kernel boot banner, VGA/GOP logs, top system menu bar, and system monitor window.
+
 
 
 

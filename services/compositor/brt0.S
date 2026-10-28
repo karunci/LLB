@@ -67,29 +67,27 @@ memset:
 memcpy:
     cld
     movq %rdi, %r8
-    cmpq $8, %rdx
-    jb 2f
-
-    /* Align destination (%rdi) to 8-byte boundary */
-    movq %rdi, %rcx
-    andq $7, %rcx
-    jz 1f
-    negq %rcx
-    addq $8, %rcx
-    subq %rcx, %rdx
-    rep movsb
-
-1:
     movq %rdx, %rcx
     shrq $3, %rcx
     rep movsq
     movq %rdx, %rcx
     andq $7, %rcx
-
-2:
     rep movsb
     movq %r8, %rax
     ret
+
+.global fast_blit32
+.type fast_blit32, @function
+fast_blit32:
+    /* %rdi = dst DWORD pointer (MMIO VRAM)
+     * %rsi = src DWORD pointer (RAM backbuffer)
+     * %rdx = count of 32-bit pixels (DWORDs)
+     */
+    cld
+    movq %rdx, %rcx
+    rep movsl
+    ret
+
 
 .global strlen
 .type strlen, @function

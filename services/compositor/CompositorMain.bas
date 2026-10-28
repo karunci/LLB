@@ -12,6 +12,7 @@ Import "../wm/WindowTheme.bas"
 Module CompositorMain
 
     Public Declare Function memcpy Lib "libc" (ByVal dest As Pointer To Byte, ByVal src As Pointer To Byte, ByVal count As UInt64) As Pointer To Byte
+    Public Declare Sub fast_blit32 Lib "libc" (ByVal dst As Pointer To UInt32, ByVal src As Pointer To UInt32, ByVal count As UInt64)
 
     ' -------------------------------------------------------------------------
     ' Internal Data & State
@@ -302,15 +303,13 @@ Module CompositorMain
         Dim clipW As Int32 = x1 - x0
         Dim clipH As Int32 = y1 - y0
 
-        Dim bppBytes As UInt32 = dispInfo.Bpp / 8
-        If bppBytes = 0 Then bppBytes = 4
-        Dim rowBytes As UInt64 = CType(UInt64, clipW) * CType(UInt64, bppBytes)
+        Dim pitchPixels As UInt32 = dispInfo.Pitch / 4
         Dim py As Int32 = y0
         While py < y1
-            Dim byteOff As UInt64 = (CType(UInt64, py) * CType(UInt64, dispInfo.Pitch)) + (CType(UInt64, x0) * CType(UInt64, bppBytes))
-            Dim dstBytes As Pointer To Byte = CPtr(Pointer To Byte, frontSurf.Pixels) + byteOff
-            Dim srcBytes As Pointer To Byte = CPtr(Pointer To Byte, backSurf.Pixels) + byteOff
-            memcpy dstBytes, srcBytes, rowBytes
+            Dim pixOff As UInt64 = (CType(UInt64, py) * CType(UInt64, pitchPixels)) + CType(UInt64, x0)
+            Dim dstPtr As Pointer To UInt32 = frontSurf.Pixels + pixOff
+            Dim srcPtr As Pointer To UInt32 = backSurf.Pixels + pixOff
+            fast_blit32 dstPtr, srcPtr, CType(UInt64, clipW)
             py = py + 1
         Wend
 
@@ -622,7 +621,7 @@ Module CompositorMain
 
         DrawText5x7 backSurf, 16, 10, CPtr(Pointer To Byte, "PROS WORKSTATION  |  APPLICATIONS  NODES  SERVICES"), &HFFECEFF4
         RenderMouseCoordinates False
-        DrawText5x7 backSurf, CType(Int32, dispInfo.Width) - 360, 10, CPtr(Pointer To Byte, "REV: 2026.10.28-r36-re01"), &HFF88C0D0
+        DrawText5x7 backSurf, CType(Int32, dispInfo.Width) - 360, 10, CPtr(Pointer To Byte, "REV: 2026.10.28-r36-re02"), &HFF88C0D0
         DrawText5x7 backSurf, CType(Int32, dispInfo.Width) - 170, 10, CPtr(Pointer To Byte, "SMP 4 CORES  ONLINE"), &HFFA3BE8C
 
         ' 3. Render all active desktop windows from shared memory
@@ -703,12 +702,12 @@ Module CompositorMain
             Exit Function
         End If
 
-        ' 4b. Allocate Private In-RAM Backbuffer at 0x88000000
+        ' 4b. Allocate Private In-RAM Backbuffer at 0x54000000 (PDPT[1] isolated user space)
         Dim bufferBytes As UInt64 = CType(UInt64, dispInfo.Height) * CType(UInt64, dispInfo.Pitch)
-        Dim pagesNeeded As UInt64 = (bufferBytes + 4095) / 4096
-        Dim backPtr As Pointer To UInt32 = AllocatePages(pagesNeeded, &H88000000)
+        Dim pagesNeeded As UInt64 = ((bufferBytes + 4095) / 4096) + 1 ' +1 safety guard page
+        Dim backPtr As Pointer To UInt32 = AllocatePages(pagesNeeded, &H54000000)
         If backPtr <> 0 Then
-            ConsoleWriteLine "[COMPOSITOR] Private RAM Backbuffer allocated at 0x88000000"
+            ConsoleWriteLine "[COMPOSITOR] Private RAM Backbuffer allocated at 0x54000000"
             backSurf.Width = dispInfo.Width
             backSurf.Height = dispInfo.Height
             backSurf.Pitch = dispInfo.Pitch

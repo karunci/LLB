@@ -224,6 +224,8 @@ Namespace Sys
                     If reqPages > 0 And reqPages <= 8192 And (reqVaddr And &HFFF) = 0 And ValidateUserBuffer(reqVaddr, totalBytes) And reqVaddr >= &H40000000 And (reqVaddr + totalBytes) <= &H78000000 Then
                         Dim memCr3 As UInt64 = SchedEngine.GetCurrentCr3()
                         Dim allocFail As Boolean = False
+                        Dim physFrame0 As UInt64 = 0
+                        Dim physFrameLast As UInt64 = 0
                         Dim memPidx As UInt64 = 0
                         While memPidx < reqPages
                             Dim physFrame As UInt64 = Buddy.AllocPages(0)
@@ -231,6 +233,8 @@ Namespace Sys
                                 allocFail = True
                                 Exit While
                             End If
+                            If memPidx = 0 Then physFrame0 = physFrame
+                            physFrameLast = physFrame
 
                             ' Zero initialize allocated physical frame
                             Dim framePtr As Volatile Pointer To UInt64 = CPtr(Volatile Pointer To UInt64, physFrame)
@@ -244,6 +248,12 @@ Namespace Sys
                             VmmEngine.MapPage memCr3, reqVaddr + (memPidx * 4096), physFrame, &H07
                             memPidx = memPidx + 1
                         Wend
+
+                        If Not allocFail Then
+                            Serial.PrintF "[MEM_ALLOC_PAGES] PID %u: %u pages @ 0x%lx (Phys: 0x%lx .. 0x%lx)\r\n", _
+                                          CType(UInt32, SchedEngine.GetCurrentPid()), CType(UInt32, reqPages), reqVaddr, _
+                                          physFrame0, physFrameLast
+                        End If
 
                         If allocFail Then
                             ' Roll back already mapped pages
@@ -418,7 +428,7 @@ Namespace Sys
                         Dim pageCount As UInt64 = (lfbSize + 4095) / 4096
                         Dim pIdx As UInt64
                         For pIdx = 0 To pageCount - 1
-                            VmmEngine.MapPage callerCr3, arg1 + (pIdx * 4096), lfbPhys + (pIdx * 4096), &H07 ' Present | Writable | User (Cacheable Write-Combining)
+                            VmmEngine.MapPage callerCr3, arg1 + (pIdx * 4096), lfbPhys + (pIdx * 4096), &H1F ' Present | Writable | User | Write-Through | Cache-Disable (Uncacheable MMIO)
                         Next pIdx
                         Dispatch = 1
                     Else

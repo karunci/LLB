@@ -25,6 +25,7 @@ DisableStandardLibrary = true
 
 [Sources]
 Files = [
+    "src/fast_fill32.S",
     "src/Syscall.bas",
     "src/Process.bas",
     "src/Console.bas",

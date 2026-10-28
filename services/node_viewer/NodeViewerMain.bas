@@ -196,12 +196,15 @@ Module NodeViewerMain
         clientSurf.Pixels = pPixels
 
         ' 2. Register managed window with srv.wm
-        ProcessSleep 70
-        Dim winId As UInt32 = WmCreateWindow(400, 220, shmId, CPtr(Pointer To Byte, "PROS Neural Node Viewer"))
-        If winId = 0 Then
-            ProcessSleep 100
+        Dim winId As UInt32 = 0
+        Dim regTries As UInt32 = 0
+        While regTries < 25 And winId = 0
             winId = WmCreateWindow(400, 220, shmId, CPtr(Pointer To Byte, "PROS Neural Node Viewer"))
-        End If
+            If winId = 0 Then
+                ProcessSleep 40
+                regTries = regTries + 1
+            End If
+        Wend
 
         If winId = 0 Then
             ConsoleWriteLine "[NODE_VIEWER] ERR: Failed to create window via WindowManager!"

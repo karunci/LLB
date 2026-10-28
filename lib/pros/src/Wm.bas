@@ -23,7 +23,15 @@ Namespace Pros.Gui
         ' @return True if focus was granted.
         ''
         Public Unsafe Function RequestFocus(ByVal winId As UInt32) As Boolean
-            Dim wmNodeId As UInt64 = Pros.Nodes.NodeRegistry.Lookup(CPtr(Pointer To Byte, "srv.wm"))
+            Dim wmNodeId As UInt64 = 0
+            Dim lookupTries As UInt32 = 0
+            While lookupTries < 50 And wmNodeId = 0
+                wmNodeId = Pros.Nodes.NodeRegistry.Lookup(CPtr(Pointer To Byte, "srv.wm"))
+                If wmNodeId = 0 Then
+                    Pros.Sys.Process.Sleep 20
+                    lookupTries = lookupTries + 1
+                End If
+            Wend
             If wmNodeId = 0 Then
                 RequestFocus = False
                 Exit Function
@@ -91,7 +99,15 @@ Namespace Pros.Gui
         ' @return Assigned Window ID, or 0 on error.
         ''
         Public Unsafe Function CreateWindow(ByVal w As Int32, ByVal h As Int32, ByVal shmId As UInt64, ByVal titlePtr As Pointer To Byte) As UInt32
-            Dim wmNodeId As UInt64 = Pros.Nodes.NodeRegistry.Lookup(CPtr(Pointer To Byte, "srv.wm"))
+            Dim wmNodeId As UInt64 = 0
+            Dim lookupTries As UInt32 = 0
+            While lookupTries < 50 And wmNodeId = 0
+                wmNodeId = Pros.Nodes.NodeRegistry.Lookup(CPtr(Pointer To Byte, "srv.wm"))
+                If wmNodeId = 0 Then
+                    Pros.Sys.Process.Sleep 20
+                    lookupTries = lookupTries + 1
+                End If
+            Wend
             If wmNodeId = 0 Then
                 CreateWindow = 0
                 Exit Function
@@ -170,7 +186,15 @@ Namespace Pros.Gui
         ' @return True on success.
         ''
         Public Unsafe Function DestroyWindow(ByVal winId As UInt32) As Boolean
-            Dim wmNodeId As UInt64 = Pros.Nodes.NodeRegistry.Lookup(CPtr(Pointer To Byte, "srv.wm"))
+            Dim wmNodeId As UInt64 = 0
+            Dim lookupTries As UInt32 = 0
+            While lookupTries < 50 And wmNodeId = 0
+                wmNodeId = Pros.Nodes.NodeRegistry.Lookup(CPtr(Pointer To Byte, "srv.wm"))
+                If wmNodeId = 0 Then
+                    Pros.Sys.Process.Sleep 20
+                    lookupTries = lookupTries + 1
+                End If
+            Wend
             If wmNodeId = 0 Then
                 DestroyWindow = False
                 Exit Function

@@ -36,57 +36,57 @@ Module SysMonMain
             rows(0) = 14: rows(1) = 17: rows(2) = 17: rows(3) = 14: rows(4) = 17: rows(5) = 17: rows(6) = 14
         ElseIf ascii = 57 Then  ' '9'
             rows(0) = 14: rows(1) = 17: rows(2) = 17: rows(3) = 15: rows(4) = 1:  rows(5) = 1:  rows(6) = 14
-        ElseIf ascii = 65 Then  ' 'A'
+        ElseIf ascii = 65 Or ascii = 97 Then  ' 'A'/'a'
             rows(0) = 14: rows(1) = 17: rows(2) = 17: rows(3) = 31: rows(4) = 17: rows(5) = 17: rows(6) = 17
-        ElseIf ascii = 66 Then  ' 'B'
+        ElseIf ascii = 66 Or ascii = 98 Then  ' 'B'/'b'
             rows(0) = 30: rows(1) = 17: rows(2) = 17: rows(3) = 30: rows(4) = 17: rows(5) = 17: rows(6) = 30
-        ElseIf ascii = 67 Then  ' 'C'
+        ElseIf ascii = 67 Or ascii = 99 Then  ' 'C'/'c'
             rows(0) = 14: rows(1) = 17: rows(2) = 16: rows(3) = 16: rows(4) = 16: rows(5) = 17: rows(6) = 14
-        ElseIf ascii = 68 Then  ' 'D'
+        ElseIf ascii = 68 Or ascii = 100 Then ' 'D'/'d'
             rows(0) = 28: rows(1) = 18: rows(2) = 17: rows(3) = 17: rows(4) = 17: rows(5) = 18: rows(6) = 28
-        ElseIf ascii = 69 Then  ' 'E'
+        ElseIf ascii = 69 Or ascii = 101 Then ' 'E'/'e'
             rows(0) = 31: rows(1) = 16: rows(2) = 16: rows(3) = 30: rows(4) = 16: rows(5) = 16: rows(6) = 31
-        ElseIf ascii = 70 Then  ' 'F'
+        ElseIf ascii = 70 Or ascii = 102 Then ' 'F'/'f'
             rows(0) = 31: rows(1) = 16: rows(2) = 16: rows(3) = 30: rows(4) = 16: rows(5) = 16: rows(6) = 16
-        ElseIf ascii = 71 Then  ' 'G'
+        ElseIf ascii = 71 Or ascii = 103 Then ' 'G'/'g'
             rows(0) = 14: rows(1) = 17: rows(2) = 16: rows(3) = 23: rows(4) = 17: rows(5) = 17: rows(6) = 14
-        ElseIf ascii = 72 Then  ' 'H'
+        ElseIf ascii = 72 Or ascii = 104 Then ' 'H'/'h'
             rows(0) = 17: rows(1) = 17: rows(2) = 17: rows(3) = 31: rows(4) = 17: rows(5) = 17: rows(6) = 17
-        ElseIf ascii = 73 Then  ' 'I'
+        ElseIf ascii = 73 Or ascii = 105 Then ' 'I'/'i'
             rows(0) = 14: rows(1) = 4:  rows(2) = 4:  rows(3) = 4:  rows(4) = 4:  rows(5) = 4:  rows(6) = 14
-        ElseIf ascii = 74 Then  ' 'J'
+        ElseIf ascii = 74 Or ascii = 106 Then ' 'J'/'j'
             rows(0) = 7:  rows(1) = 2:  rows(2) = 2:  rows(3) = 2:  rows(4) = 2:  rows(5) = 18: rows(6) = 12
-        ElseIf ascii = 75 Then  ' 'K'
+        ElseIf ascii = 75 Or ascii = 107 Then ' 'K'/'k'
             rows(0) = 17: rows(1) = 18: rows(2) = 20: rows(3) = 24: rows(4) = 20: rows(5) = 18: rows(6) = 17
-        ElseIf ascii = 76 Then  ' 'L'
+        ElseIf ascii = 76 Or ascii = 108 Then ' 'L'/'l'
             rows(0) = 16: rows(1) = 16: rows(2) = 16: rows(3) = 16: rows(4) = 16: rows(5) = 16: rows(6) = 31
-        ElseIf ascii = 77 Then  ' 'M'
+        ElseIf ascii = 77 Or ascii = 109 Then ' 'M'/'m'
             rows(0) = 17: rows(1) = 27: rows(2) = 21: rows(3) = 21: rows(4) = 17: rows(5) = 17: rows(6) = 17
-        ElseIf ascii = 78 Then  ' 'N'
+        ElseIf ascii = 78 Or ascii = 110 Then ' 'N'/'n'
             rows(0) = 17: rows(1) = 25: rows(2) = 21: rows(3) = 19: rows(4) = 17: rows(5) = 17: rows(6) = 17
-        ElseIf ascii = 79 Then  ' 'O'
+        ElseIf ascii = 79 Or ascii = 111 Then ' 'O'/'o'
             rows(0) = 14: rows(1) = 17: rows(2) = 17: rows(3) = 17: rows(4) = 17: rows(5) = 17: rows(6) = 14
-        ElseIf ascii = 80 Then  ' 'P'
+        ElseIf ascii = 80 Or ascii = 112 Then ' 'P'/'p'
             rows(0) = 30: rows(1) = 17: rows(2) = 17: rows(3) = 30: rows(4) = 16: rows(5) = 16: rows(6) = 16
-        ElseIf ascii = 81 Then  ' 'Q'
+        ElseIf ascii = 81 Or ascii = 113 Then ' 'Q'/'q'
             rows(0) = 14: rows(1) = 17: rows(2) = 17: rows(3) = 17: rows(4) = 21: rows(5) = 18: rows(6) = 13
-        ElseIf ascii = 82 Then  ' 'R'
+        ElseIf ascii = 82 Or ascii = 114 Then ' 'R'/'r'
             rows(0) = 30: rows(1) = 17: rows(2) = 17: rows(3) = 30: rows(4) = 20: rows(5) = 18: rows(6) = 17
-        ElseIf ascii = 83 Then  ' 'S'
+        ElseIf ascii = 83 Or ascii = 115 Then ' 'S'/'s'
             rows(0) = 15: rows(1) = 16: rows(2) = 16: rows(3) = 14: rows(4) = 1:  rows(5) = 1:  rows(6) = 30
-        ElseIf ascii = 84 Then  ' 'T'
+        ElseIf ascii = 84 Or ascii = 116 Then ' 'T'/'t'
             rows(0) = 31: rows(1) = 4:  rows(2) = 4:  rows(3) = 4:  rows(4) = 4:  rows(5) = 4:  rows(6) = 4
-        ElseIf ascii = 85 Then  ' 'U'
+        ElseIf ascii = 85 Or ascii = 117 Then ' 'U'/'u'
             rows(0) = 17: rows(1) = 17: rows(2) = 17: rows(3) = 17: rows(4) = 17: rows(5) = 17: rows(6) = 14
-        ElseIf ascii = 86 Then  ' 'V'
+        ElseIf ascii = 86 Or ascii = 118 Then ' 'V'/'v'
             rows(0) = 17: rows(1) = 17: rows(2) = 17: rows(3) = 17: rows(4) = 10: rows(5) = 10: rows(6) = 4
-        ElseIf ascii = 87 Then  ' 'W'
+        ElseIf ascii = 87 Or ascii = 119 Then ' 'W'/'w'
             rows(0) = 17: rows(1) = 17: rows(2) = 21: rows(3) = 21: rows(4) = 21: rows(5) = 21: rows(6) = 10
-        ElseIf ascii = 88 Then  ' 'X'
+        ElseIf ascii = 88 Or ascii = 120 Then ' 'X'/'x'
             rows(0) = 17: rows(1) = 10: rows(2) = 4:  rows(3) = 4:  rows(4) = 4:  rows(5) = 10: rows(6) = 17
-        ElseIf ascii = 89 Then  ' 'Y'
+        ElseIf ascii = 89 Or ascii = 121 Then ' 'Y'/'y'
             rows(0) = 17: rows(1) = 17: rows(2) = 17: rows(3) = 10: rows(4) = 4:  rows(5) = 4:  rows(6) = 4
-        ElseIf ascii = 90 Then  ' 'Z'
+        ElseIf ascii = 90 Or ascii = 122 Then ' 'Z'/'z'
             rows(0) = 31: rows(1) = 1:  rows(2) = 2:  rows(3) = 4:  rows(4) = 8:  rows(5) = 16: rows(6) = 31
         ElseIf ascii = 58 Then  ' ':'
             rows(0) = 0:  rows(1) = 12: rows(2) = 12: rows(3) = 0:  rows(4) = 12: rows(5) = 12: rows(6) = 0
@@ -194,12 +194,15 @@ Module SysMonMain
         clientSurf.Pixels = pPixels
 
         ' 2. Register managed window with srv.wm
-        ProcessSleep 50
-        Dim winId As UInt32 = WmCreateWindow(480, 280, shmId, CPtr(Pointer To Byte, "PROS System Monitor"))
-        If winId = 0 Then
-            ProcessSleep 100
+        Dim winId As UInt32 = 0
+        Dim regTries As UInt32 = 0
+        While regTries < 25 And winId = 0
             winId = WmCreateWindow(480, 280, shmId, CPtr(Pointer To Byte, "PROS System Monitor"))
-        End If
+            If winId = 0 Then
+                ProcessSleep 40
+                regTries = regTries + 1
+            End If
+        Wend
 
         If winId = 0 Then
             ConsoleWriteLine "[SYS_MON] ERR: Failed to create window via WindowManager!"
@@ -216,7 +219,7 @@ Module SysMonMain
         FillRect clientSurf, 10, 10, 4, 65, &HFF88C0D0
         DrawText5x7 clientSurf, 22, 16, CPtr(Pointer To Byte, "PROS MICROKERNEL TELEMETRY [CPL=3]"), &HFFECEFF4
         DrawText5x7 clientSurf, 22, 30, CPtr(Pointer To Byte, "ARCH: x86_64 SMP (4 Cores Online)"), &HFF81A1C1
-        DrawText5x7 clientSurf, 22, 44, CPtr(Pointer To Byte, "KERNEL REV: 2026.10.28-r36-re02"), &HFFEBCB8B
+        DrawText5x7 clientSurf, 22, 44, CPtr(Pointer To Byte, "KERNEL REV: 2026.10.28-r36-re07"), &HFFEBCB8B
         DrawText5x7 clientSurf, 22, 58, CPtr(Pointer To Byte, "STATUS: SYSTEM HEALTH OPTIMAL"), &HFFA3BE8C
 
         ' Card 2: Neural Synapse Plane Card

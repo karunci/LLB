@@ -148,8 +148,9 @@ Namespace Mem
             Wend
 
             Sync.SpinlockOps.ReleaseIrqRestore registry(uSlot).Lock, objFlags
-            Serial.PrintF "[SHMEM] Created SHMID %u (%u pages, %u KB) for PID %u @ vaddr 0x%lx\r\n", _
-                          CType(UInt32, assignedId), pagesNeeded, pagesNeeded * 4, CType(UInt32, callerPid), targetVaddr
+            Serial.PrintF "[SHMEM] Created SHMID %u (%u pages, %u KB) for PID %u @ vaddr 0x%lx (Phys: 0x%lx .. 0x%lx)\r\n", _
+                          CType(UInt32, assignedId), pagesNeeded, pagesNeeded * 4, CType(UInt32, callerPid), targetVaddr, _
+                          registry(uSlot).PhysFrames(0), registry(uSlot).PhysFrames(pagesNeeded - 1)
             CreateShmem = CType(Int64, assignedId)
         End Function
 

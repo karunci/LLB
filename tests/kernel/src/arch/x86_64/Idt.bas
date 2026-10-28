@@ -35,22 +35,22 @@ Module Arch.Idt
     ' CPU Register Context pushed onto stack by hardware and isr_common_stub
     <Packed>
     Public Structure InterruptFrame
-        ' Pushed by isr_common_stub
-        Public R15 As UInt64
-        Public R14 As UInt64
-        Public R13 As UInt64
-        Public R12 As UInt64
-        Public R11 As UInt64
-        Public R10 As UInt64
-        Public R9 As UInt64
-        Public R8 As UInt64
-        Public Rbp As UInt64
-        Public Rdi As UInt64
-        Public Rsi As UInt64
-        Public Rdx As UInt64
-        Public Rcx As UInt64
-        Public Rbx As UInt64
+        ' Pushed by isr_common_stub (stack grows downward: RAX is at lowest address %rsp, R15 at %rsp + 112)
         Public Rax As UInt64
+        Public Rbx As UInt64
+        Public Rcx As UInt64
+        Public Rdx As UInt64
+        Public Rsi As UInt64
+        Public Rdi As UInt64
+        Public Rbp As UInt64
+        Public R8 As UInt64
+        Public R9 As UInt64
+        Public R10 As UInt64
+        Public R11 As UInt64
+        Public R12 As UInt64
+        Public R13 As UInt64
+        Public R14 As UInt64
+        Public R15 As UInt64
 
         ' Pushed by stub
         Public Vector As UInt64
@@ -68,8 +68,8 @@ Module Arch.Idt
     Private idtEntries(256) As IdtEntry
     Private idtr As IdtPtr
 
-    ' Custom Function Pointer Prototype for Interrupt Handlers
-    Public Delegate Sub InterruptHandler(ByRef frame As InterruptFrame)
+    ' Custom Function Pointer Prototype for Interrupt Handlers (passes explicit frame pointer)
+    Public Delegate Sub InterruptHandler(ByVal frame As Pointer To InterruptFrame)
     
     ' Dispatch table for custom handler callbacks
     Private isrHandlers(256) As Pointer To Byte
@@ -112,7 +112,7 @@ Module Arch.Idt
         If isrHandlers(vector) <> CPtr(Pointer To Byte, 0) Then
             Dim handlerFunc As InterruptHandler
             handlerFunc = CType(InterruptHandler, isrHandlers(vector))
-            handlerFunc(frame)
+            handlerFunc AddressOf frame
         ElseIf vector < 32 Then
             ' CPU Exception Handler
             If vector = 14 Then

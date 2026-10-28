@@ -61,7 +61,7 @@ Module WmMain
         Public Title(32)   As Byte
     End Structure
 
-    Private windows(15) As WindowItem
+    Private windows(16) As WindowItem
     Private windowCount As UInt32 = 0
     Private focusedWinId As UInt32 = 0
 

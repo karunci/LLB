@@ -164,12 +164,15 @@ Module TerminalMain
         clientSurf.Pixels = pPixels
 
         ' 2. Register managed window with srv.wm
-        ProcessSleep 60
-        Dim winId As UInt32 = WmCreateWindow(420, 240, shmId, CPtr(Pointer To Byte, "PROS Terminal Console"))
-        If winId = 0 Then
-            ProcessSleep 100
+        Dim winId As UInt32 = 0
+        Dim regTries As UInt32 = 0
+        While regTries < 25 And winId = 0
             winId = WmCreateWindow(420, 240, shmId, CPtr(Pointer To Byte, "PROS Terminal Console"))
-        End If
+            If winId = 0 Then
+                ProcessSleep 40
+                regTries = regTries + 1
+            End If
+        Wend
 
         If winId = 0 Then
             ConsoleWriteLine "[TERMINAL] ERR: Failed to create window via WindowManager!"

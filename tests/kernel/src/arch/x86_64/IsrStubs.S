@@ -30,8 +30,34 @@ isr_common_stub:
     push %rbx
     push %rax
 
-    /* If interrupted from Ring 3 (CS RPL 3 at 144(%rsp)), switch to kernel GS base and data segments */
-    testb $3, 144(%rsp)
+    /* Allocate 256 bytes on stack for all 16 SSE/XMM registers (%xmm0..%xmm15)
+     * Stack alignment check:
+     * CPU pushed: SS (8), RSP (8), RFLAGS (8), CS (8), RIP (8) = 40 bytes (8 mod 16).
+     * Stub pushed: ErrorCode (8), Vector (8) = 16 bytes (8 mod 16).
+     * Pushed 15 GP registers: 15 * 8 = 120 bytes. (8 + 120 = 128 = 0 mod 16).
+     * Therefore, %rsp is strictly 16-byte aligned here!
+     * Allocating 256 bytes preserves 16-byte alignment (256 mod 16 == 0).
+     */
+    subq $256, %rsp
+    movups %xmm0, 0(%rsp)
+    movups %xmm1, 16(%rsp)
+    movups %xmm2, 32(%rsp)
+    movups %xmm3, 48(%rsp)
+    movups %xmm4, 64(%rsp)
+    movups %xmm5, 80(%rsp)
+    movups %xmm6, 96(%rsp)
+    movups %xmm7, 112(%rsp)
+    movups %xmm8, 128(%rsp)
+    movups %xmm9, 144(%rsp)
+    movups %xmm10, 160(%rsp)
+    movups %xmm11, 176(%rsp)
+    movups %xmm12, 192(%rsp)
+    movups %xmm13, 208(%rsp)
+    movups %xmm14, 224(%rsp)
+    movups %xmm15, 240(%rsp)
+
+    /* If interrupted from Ring 3 (CS RPL 3 at 400(%rsp)), switch to kernel GS base and data segments */
+    testb $3, 400(%rsp)
     jz 1f
     swapgs
     mov $0x10, %ax
@@ -40,12 +66,14 @@ isr_common_stub:
     mov %ax, %fs
 1:
 
-    /* Pass pointer to InterruptFrame stack structure in %rdi (System V AMD64 ABI) */
-    mov %rsp, %rdi
+    /* Pass pointer to InterruptFrame stack structure in %rdi (System V AMD64 ABI)
+     * InterruptFrame starts at %rsp + 256.
+     */
+    leaq 256(%rsp), %rdi
     call Arch_Idt_IsrDispatcher
 
-    /* If returning to Ring 3 (CS RPL 3 at 144(%rsp)), restore user data segments and GS base */
-    testb $3, 144(%rsp)
+    /* If returning to Ring 3 (CS RPL 3 at 400(%rsp)), restore user data segments and GS base */
+    testb $3, 400(%rsp)
     jz 2f
     mov $0x1B, %ax
     mov %ax, %ds
@@ -53,6 +81,25 @@ isr_common_stub:
     mov %ax, %fs
     swapgs
 2:
+
+    /* Restore all 16 SSE/XMM registers (%xmm0..%xmm15) */
+    movups 0(%rsp), %xmm0
+    movups 16(%rsp), %xmm1
+    movups 32(%rsp), %xmm2
+    movups 48(%rsp), %xmm3
+    movups 64(%rsp), %xmm4
+    movups 80(%rsp), %xmm5
+    movups 96(%rsp), %xmm6
+    movups 112(%rsp), %xmm7
+    movups 128(%rsp), %xmm8
+    movups 144(%rsp), %xmm9
+    movups 160(%rsp), %xmm10
+    movups 176(%rsp), %xmm11
+    movups 192(%rsp), %xmm12
+    movups 208(%rsp), %xmm13
+    movups 224(%rsp), %xmm14
+    movups 240(%rsp), %xmm15
+    addq $256, %rsp
 
     /* Restore general-purpose registers (pop %rax restores genuine user %rax) */
     pop %rax

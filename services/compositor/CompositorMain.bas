@@ -28,8 +28,8 @@ Module CompositorMain
     ' Shared Memory Window Pipeline State
     Private pWindowTable As Pointer To WindowTable = 0
     Private lastRenderedRevision As UInt32 = 0
-    Private clientSurfaces(15) As Pointer To UInt32
-    Private clientShmIds(15) As UInt64
+    Private clientSurfaces(32) As Pointer To UInt32
+    Private clientShmIds(32) As UInt64
     Private synWm As UInt64 = 0
     Private wmNodeId As UInt64 = 0
     Private desktopDirty As Boolean = False
@@ -57,12 +57,12 @@ Module CompositorMain
     Private nextAnimTime As UInt64 = 0
 
     ' Dirty Bounding Box Optimization State (Indexed strictly by Window ID: 1..16)
-    Private winTrackKnown(16) As Boolean
-    Private winTrackX(16) As Int32
-    Private winTrackY(16) As Int32
-    Private winTrackW(16) As Int32
-    Private winTrackH(16) As Int32
-    Private winTrackState(16) As Int32
+    Private winTrackKnown(32) As Boolean
+    Private winTrackX(32) As Int32
+    Private winTrackY(32) As Int32
+    Private winTrackW(32) As Int32
+    Private winTrackH(32) As Int32
+    Private winTrackState(32) As Int32
 
     ''
     ' @brief Append unsigned 64-bit integer formatted as ASCII into buffer.
@@ -261,16 +261,21 @@ Module CompositorMain
         While row < blitH
             Dim curY As Int32 = dstY + row
             If curY >= 0 And curY < CType(Int32, backSurf.Height) Then
-                Dim dstRow As Pointer To UInt32 = backSurf.Pixels + (CType(UInt32, curY) * pitchPix)
+                Dim baseDstRow As Pointer To UInt32 = backSurf.Pixels + (CType(UInt32, curY) * pitchPix)
                 Dim srcRow As Pointer To UInt32 = pSrcPixels + (CType(UInt32, row) * CType(UInt32, surfW))
-                Dim col As Int32 = 0
-                While col < blitW
-                    Dim curX As Int32 = dstX + col
-                    If curX >= 0 And curX < CType(Int32, backSurf.Width) Then
-                        dstRow(curX) = srcRow(col)
-                    End If
-                    col = col + 1
-                Wend
+                If dstX >= 0 And (dstX + blitW) <= CType(Int32, backSurf.Width) Then
+                    Dim dstScanPtr As Pointer To UInt32 = baseDstRow + CType(UInt32, dstX)
+                    fast_blit32 dstScanPtr, srcRow, CType(UInt64, blitW)
+                Else
+                    Dim col As Int32 = 0
+                    While col < blitW
+                        Dim curX As Int32 = dstX + col
+                        If curX >= 0 And curX < CType(Int32, backSurf.Width) Then
+                            baseDstRow(curX) = srcRow(col)
+                        End If
+                        col = col + 1
+                    Wend
+                End If
             End If
             row = row + 1
         Wend
@@ -580,7 +585,7 @@ Module CompositorMain
                 ' 3. Attach and Blit Client Buffer if present
                 If win.ShmId <> 0 Then
                     Dim wId As UInt32 = win.WinId
-                    If wId < 16 Then
+                    If wId > 0 And wId <= 16 Then
                         If clientSurfaces(wId) = 0 Or clientShmIds(wId) <> win.ShmId Then
                             Dim clientVaddr As UInt64 = &H68000000 + (CType(UInt64, wId) * &H00400000)
                             If ShmemAttach(win.ShmId, clientVaddr) <> 0 Then
@@ -621,7 +626,7 @@ Module CompositorMain
 
         DrawText5x7 backSurf, 16, 10, CPtr(Pointer To Byte, "PROS WORKSTATION  |  APPLICATIONS  NODES  SERVICES"), &HFFECEFF4
         RenderMouseCoordinates False
-        DrawText5x7 backSurf, CType(Int32, dispInfo.Width) - 360, 10, CPtr(Pointer To Byte, "REV: 2026.10.28-r36-re02"), &HFF88C0D0
+        DrawText5x7 backSurf, CType(Int32, dispInfo.Width) - 360, 10, CPtr(Pointer To Byte, "REV: 2026.10.28-r36-re07"), &HFF88C0D0
         DrawText5x7 backSurf, CType(Int32, dispInfo.Width) - 170, 10, CPtr(Pointer To Byte, "SMP 4 CORES  ONLINE"), &HFFA3BE8C
 
         ' 3. Render all active desktop windows from shared memory
@@ -908,7 +913,7 @@ Module CompositorMain
                         While twi < pWindowTable.Count
                             Dim twdesc As Pointer To WindowDescriptor = AddressOf pWindowTable.Windows(twi)
                             Dim wId As UInt32 = twdesc.WinId
-                            If wId < 16 Then
+                            If wId > 0 And wId <= 16 Then
                                 If Not winTrackKnown(wId) Then
                                     anyWindowMoved = True
                                     dirtyX0 = 0
@@ -994,6 +999,7 @@ Module CompositorMain
                     Dim dirtyH As Int32 = dirtyY1 - dirtyY0
                     If dirtyW > 0 And dirtyH > 0 Then
                         FlushDirtyRegion dirtyX0, dirtyY0, dirtyW, dirtyH
+                        FlushDirtyRegion 430, 6, 180, 14
                         If badgeActive Then
                             FlushDirtyRegion badgeX, badgeY, 200, 26
                         End If

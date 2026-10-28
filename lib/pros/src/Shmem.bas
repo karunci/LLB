@@ -26,7 +26,7 @@ Namespace Pros.Memory
         ''
         Public Unsafe Function Attach(ByVal shmid As UInt64, ByVal targetVaddr As UInt64) As UInt64
             Dim res As UInt64 = Pros.Sys.RawSyscall.Call2(Pros.Sys.SYS_SHMEM_ATTACH, shmid, targetVaddr)
-            If res = 0 Or res = targetVaddr Then
+            If res = targetVaddr Then
                 Attach = targetVaddr
             Else
                 Attach = 0

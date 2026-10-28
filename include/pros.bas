@@ -89,7 +89,7 @@ Module ProsApi
     Public Structure WindowTable
         Public Revision    As UInt32
         Public Count       As UInt32
-        Public Windows(15) As WindowDescriptor
+        Public Windows(16) As WindowDescriptor
     End Structure
     <Packed>
     Public Structure AxonPacket

@@ -98,7 +98,7 @@ System calls in PROS use the AMD64 `syscall` / `sysretq` hardware instructions:
 - `SYS_FB_GET_INFO (70)`: Query GOP Linear Framebuffer geometry.
   - `%rdi`: Pointer to `DisplayInfo` structure (Width, Height, Pitch, Bpp, PhysAddr).
   - Returns: `1` on success, `0` on error.
-- `SYS_FB_MAP (71)`: Map physical linear framebuffer aperture into Ring 3 address space.
+- `SYS_FB_MAP (71)`: Map physical linear framebuffer aperture into Ring 3 address space with uncacheable MMIO attributes (`0x1F`: Present, Writable, User, Write-Through, Cache-Disable) matching PRK reference semantics to prevent PCIe bus write-combining conflicts.
   - `%rdi`: Target virtual address (e.g. `0x78000000`).
   - Returns: Virtual address pointer to pixel buffer.
 - `SYS_GET_MOUSE (19)`: Poll live PS/2 hardware mouse coordinates and button flags.

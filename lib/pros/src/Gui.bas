@@ -27,6 +27,8 @@ Namespace Pros.Gui
 
     Public Module Graphics
 
+        Public Declare Sub fast_fill32(ByVal dst As Pointer To UInt32, ByVal color As UInt32, ByVal count As UInt64)
+
         ''
         ' @brief Fill a rectangular region with solid ARGB color.
         ''
@@ -68,14 +70,11 @@ Namespace Pros.Gui
                 Wend
             Else
                 Dim pitchPixels As UInt32 = surf.Pitch / 4
+                Dim lineLen As UInt64 = CType(UInt64, x1 - x0)
                 py = y0
                 While py < y1
-                    Dim rowPtr As Pointer To UInt32 = surf.Pixels + (CType(UInt32, py) * pitchPixels)
-                    px = x0
-                    While px < x1
-                        rowPtr(px) = color
-                        px = px + 1
-                    Wend
+                    Dim rowPtr As Pointer To UInt32 = surf.Pixels + (CType(UInt32, py) * pitchPixels) + CType(UInt32, x0)
+                    fast_fill32 rowPtr, color, lineLen
                     py = py + 1
                 Wend
             End If

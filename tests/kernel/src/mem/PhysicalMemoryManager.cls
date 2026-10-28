@@ -177,8 +177,8 @@ Namespace Mem
                     Dim origEnd As UInt64 = CType(UInt64, modPtr.ModEnd)
                     Dim modLen As UInt64 = origEnd - origStart
 
-                    ' Relocate initrd archive to safe buffer at 96MB (&H6000000)
-                    Dim safeReloc As UInt64 = &H6000000
+                    ' Relocate initrd archive to safe buffer at 192MB (&H0C000000)
+                    Dim safeReloc As UInt64 = &H0C000000
                     Dim srcP As Pointer To Byte = CPtr(Pointer To Byte, origStart)
                     Dim dstP As Pointer To Byte = CPtr(Pointer To Byte, safeReloc)
                     Dim bi As UInt64
@@ -214,8 +214,12 @@ Namespace Mem
                             Dim addr As UInt64 = startAddr
                             While addr < endAddr
                                 If addr >= &H1000000 And addr < &H400000000 Then
-                                    ' Protect loaded initrd archive from being freed to PMM pool
-                                    If Not (initrdStartPhys <> 0 And addr >= initrdStartPhys And addr < initrdEndPhys) Then
+                                    ' Exclude BuddyAllocator User Pool (64MB - 128MB) and Initrd archive
+                                    If addr >= &H4000000 And addr < &H8000000 Then
+                                        ' Reserved exclusively for Buddy Allocator (User/Shmem/Demand)
+                                    ElseIf initrdStartPhys <> 0 And addr >= initrdStartPhys And addr < initrdEndPhys Then
+                                        ' Reserved for Initrd archive
+                                    Else
                                         Me.FreePage addr
                                     End If
                                 End If
@@ -256,10 +260,23 @@ Namespace Mem
                 If tagType = 3 Then
                     Dim mStartPtr As Pointer To UInt32 = CPtr(Pointer To UInt32, currOffset + 8)
                     Dim mEndPtr As Pointer To UInt32 = CPtr(Pointer To UInt32, currOffset + 12)
-                    initrdStartPhys = CType(UInt64, mStartPtr(0))
-                    initrdEndPhys = CType(UInt64, mEndPtr(0))
-                    Serial.PrintF "[MULTIBOOT2] Found Initrd Module at 0x%lx - 0x%lx (%u bytes)\r\n", _
-                                  initrdStartPhys, initrdEndPhys, CType(UInt32, initrdEndPhys - initrdStartPhys)
+                    Dim mb2Start As UInt64 = CType(UInt64, mStartPtr(0))
+                    Dim mb2End As UInt64 = CType(UInt64, mEndPtr(0))
+                    Dim mb2Len As UInt64 = mb2End - mb2Start
+
+                    ' Relocate initrd archive to safe buffer at 192MB (&H0C000000)
+                    Dim mb2Reloc As UInt64 = &H0C000000
+                    Dim mb2Src As Pointer To Byte = CPtr(Pointer To Byte, mb2Start)
+                    Dim mb2Dst As Pointer To Byte = CPtr(Pointer To Byte, mb2Reloc)
+                    Dim mb2Bi As UInt64
+                    For mb2Bi = 0 To mb2Len - 1
+                        mb2Dst(mb2Bi) = mb2Src(mb2Bi)
+                    Next mb2Bi
+
+                    initrdStartPhys = mb2Reloc
+                    initrdEndPhys = mb2Reloc + mb2Len
+                    Serial.PrintF "[MULTIBOOT2] Found Initrd Module at 0x%lx (Relocated to safe buffer 0x%lx, %u bytes)\r\n", _
+                                  mb2Start, initrdStartPhys, CType(UInt32, mb2Len)
                 ElseIf tagType = 6 Then
                     Dim entrySizePtr As Pointer To UInt32
                     entrySizePtr = CPtr(Pointer To UInt32, currOffset + 8)
@@ -282,7 +299,12 @@ Namespace Mem
                                 addr = startAddr
                                 While addr < endAddr
                                     If addr >= &H1000000 And addr < &H400000000 Then
-                                        If Not (initrdStartPhys <> 0 And addr >= initrdStartPhys And addr < initrdEndPhys) Then
+                                        ' Exclude BuddyAllocator User Pool (64MB - 128MB) and Initrd archive
+                                        If addr >= &H4000000 And addr < &H8000000 Then
+                                            ' Reserved exclusively for Buddy Allocator (User/Shmem/Demand)
+                                        ElseIf initrdStartPhys <> 0 And addr >= initrdStartPhys And addr < initrdEndPhys Then
+                                            ' Reserved for Initrd archive
+                                        Else
                                             Me.FreePage addr
                                         End If
                                     End If

@@ -622,7 +622,7 @@ Module CompositorMain
 
         DrawText5x7 backSurf, 16, 10, CPtr(Pointer To Byte, "PROS WORKSTATION  |  APPLICATIONS  NODES  SERVICES"), &HFFECEFF4
         RenderMouseCoordinates False
-        DrawText5x7 backSurf, CType(Int32, dispInfo.Width) - 360, 10, CPtr(Pointer To Byte, "REV: 2026.10.27-r35-re11"), &HFF88C0D0
+        DrawText5x7 backSurf, CType(Int32, dispInfo.Width) - 360, 10, CPtr(Pointer To Byte, "REV: 2026.10.28-r36-re01"), &HFF88C0D0
         DrawText5x7 backSurf, CType(Int32, dispInfo.Width) - 170, 10, CPtr(Pointer To Byte, "SMP 4 CORES  ONLINE"), &HFFA3BE8C
 
         ' 3. Render all active desktop windows from shared memory
@@ -703,12 +703,12 @@ Module CompositorMain
             Exit Function
         End If
 
-        ' 4b. Allocate Private In-RAM Backbuffer at 0x50000000
+        ' 4b. Allocate Private In-RAM Backbuffer at 0x88000000
         Dim bufferBytes As UInt64 = CType(UInt64, dispInfo.Height) * CType(UInt64, dispInfo.Pitch)
         Dim pagesNeeded As UInt64 = (bufferBytes + 4095) / 4096
-        Dim backPtr As Pointer To UInt32 = AllocatePages(pagesNeeded, &H50000000)
+        Dim backPtr As Pointer To UInt32 = AllocatePages(pagesNeeded, &H88000000)
         If backPtr <> 0 Then
-            ConsoleWriteLine "[COMPOSITOR] Private RAM Backbuffer allocated at 0x50000000"
+            ConsoleWriteLine "[COMPOSITOR] Private RAM Backbuffer allocated at 0x88000000"
             backSurf.Width = dispInfo.Width
             backSurf.Height = dispInfo.Height
             backSurf.Pitch = dispInfo.Pitch

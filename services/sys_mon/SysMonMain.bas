@@ -216,7 +216,7 @@ Module SysMonMain
         FillRect clientSurf, 10, 10, 4, 65, &HFF88C0D0
         DrawText5x7 clientSurf, 22, 16, CPtr(Pointer To Byte, "PROS MICROKERNEL TELEMETRY [CPL=3]"), &HFFECEFF4
         DrawText5x7 clientSurf, 22, 30, CPtr(Pointer To Byte, "ARCH: x86_64 SMP (4 Cores Online)"), &HFF81A1C1
-        DrawText5x7 clientSurf, 22, 44, CPtr(Pointer To Byte, "KERNEL REV: 2026.10.27-r35-re11"), &HFFEBCB8B
+        DrawText5x7 clientSurf, 22, 44, CPtr(Pointer To Byte, "KERNEL REV: 2026.10.28-r36-re01"), &HFFEBCB8B
         DrawText5x7 clientSurf, 22, 58, CPtr(Pointer To Byte, "STATUS: SYSTEM HEALTH OPTIMAL"), &HFFA3BE8C
 
         ' Card 2: Neural Synapse Plane Card

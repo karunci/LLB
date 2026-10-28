@@ -92,7 +92,7 @@ Module KernelMain
         ' Initialize COM1 line control & Serial UART driver with hardware probing
         Serial.Initialize
         If Serial.IsAvailable() Then
-            Serial.PrintF "\r\n[PRK] Booting Low-Level Basic Kernel [REV: 2026.10.27-r35-re11]!\r\n"
+            Serial.PrintF "\r\n[PRK] Booting Low-Level Basic Kernel [REV: 2026.10.28-r36-re01]!\r\n"
             Serial.PrintF "[PRK] Multiboot Verified. Long mode active.\r\n"
             Serial.PrintF "[UART] COM1 16550 UART Online!\r\n"
         End If
@@ -117,14 +117,14 @@ Module KernelMain
         If hasVgaText Then
             Serial.PrintF "[PRK] VGA Text Mode Terminal active (&HB8000).\r\n"
             Term.WriteLine CPtr(Pointer To Byte, "=========================================")
-            Term.WriteLine CPtr(Pointer To Byte, " PRK - LOW-LEVEL BASIC [REV: 2026.10.27-r35-re11] ")
+            Term.WriteLine CPtr(Pointer To Byte, " PRK - LOW-LEVEL BASIC [REV: 2026.10.28-r36-re01] ")
             Term.WriteLine CPtr(Pointer To Byte, "=========================================")
             Term.WriteChar 10
         ElseIf hasGopFb Then
             Serial.PrintF "[PRK] UEFI GOP Linear Framebuffer active (0x%x).\r\n", CType(UInt32, FB.GetFramebufferPhys() And &HFFFFFFFF)
             FB.ClearScreen &H00181824
             FB.DrawString 20, 20, CPtr(Pointer To Byte, "========================================="), &H0088C0D0, 1
-            FB.DrawString 20, 36, CPtr(Pointer To Byte, " PRK - LOW-LEVEL BASIC [REV: 2026.10.27-r35-re11] "), &H008FBCBB, 1
+            FB.DrawString 20, 36, CPtr(Pointer To Byte, " PRK - LOW-LEVEL BASIC [REV: 2026.10.28-r36-re01] "), &H008FBCBB, 1
             FB.DrawString 20, 52, CPtr(Pointer To Byte, "========================================="), &H0088C0D0, 1
         End If
 
@@ -177,7 +177,7 @@ Module KernelMain
 
         ' Initialize and verify Multi-Order Buddy Page Allocator (Phase 1)
         Serial.PrintF "[PRK] Initializing Binary Buddy Allocator...\r\n"
-        Buddy.Initialize &H1000000, &H4000000 ' 64MB window starting at 16MB
+        Buddy.Initialize &H4000000, &H4000000 ' 64MB window starting at 64MB (64MB - 128MB)
         Buddy.DumpStats
 
         ' Test allocating Order 3 (8 contiguous pages = 32KB)
@@ -423,7 +423,7 @@ Module KernelMain
         FB.FillRect rightColX + 16, 292, barWidth, 10, &H003B4252
         FB.FillRect rightColX + 16, 292, fillW, 10, &H00A3BE8C
 
-        FB.DrawString rightColX + 16, 310, "Buddy Pool : 64 MB (16 MB - 80 MB, Order 0..10)", &H00D8DEE9, 1
+        FB.DrawString rightColX + 16, 310, "Buddy Pool : 64 MB (64 MB - 128 MB, Order 0..10)", &H00D8DEE9, 1
         FB.DrawString rightColX + 16, 328, "Kernel Heap: 8 MB @ 0x81000000 (16-Byte Aligned)", &H00EBCB8B, 1
         FB.DrawString rightColX + 16, 346, "Page Table : 4-Level PML4 Isolated User Address Space", &H00B48EAD, 1
 

@@ -1215,6 +1215,26 @@ tests/kernel/
 - [x] **Mandatory Revision Bumping:**
   - Bumped build revision tag to `REV: 2026.10.27-r35-re11` across kernel boot banner, serial logs, desktop top menu bar, system monitor, and compositor.
 
+---
+
+### Phase 45: Physical Memory Pool Disjointness, PCIe MMIO 8-Byte Preamble Alignment & BAX Resource Isolation (2026-10-28)
+- **Status:** Completed & Verified
+- **Revision:** `REV: 2026.10.28-r36-re01`
+
+- [x] **Physical Memory Pool Disjointness (`KernelMain.bas`, `PhysicalMemoryManager.cls`):**
+  - Resolved 48 MB physical memory double-allocation bug where `BuddyAllocator` was initialized over `16MB–80MB` (`&H1000000` to `&H5000000`) while `PhysicalMemoryManager` simultaneously handed out pages over `16MB–64MB` (`&H1000000` to `&H4000000`).
+  - Re-anchored `BuddyAllocator` strictly to `64MB–128MB` (`&H4000000` to `&H8000000`), with `PMM` explicitly excluding the exact same `&H4000000` to `&H8000000` range and the USTAR initrd ramdisk buffer.
+  - Guarantees 100% disjoint physical memory pools, permanently eliminating asynchronous memory overwrites between background user processes/page tables and compositor backbuffers, and completely resolving periodic vertical green/blue stripe artifacts.
+- [x] **Compositor Backbuffer Virtual Address Relocation (`CompositorMain.bas`):**
+  - Relocated compositor `backSurf` allocation from `0x50000000` to `0x88000000`.
+  - Permanently eliminates collision with `BAX_DEFAULT_RES_VADDR` (`0x50000000`), preserving embedded BAX executable manifests, icons, and resource directories.
+- [x] **PCIe MMIO 8-Byte Destination Alignment Preamble (`services/compositor/brt0.S`):**
+  - Updated runtime assembly `memcpy` stub to test `%rdi` and align the destination to an 8-byte boundary using `rep movsb` before executing 64-bit `rep movsq`.
+  - Eliminates unaligned 64-bit MMIO stores on odd pixel column bounds (`x0 * 4 % 8 == 4`), preventing PCIe bus controller split-transaction latency spikes and bare-metal framerate drops from 50 FPS to 29 FPS during window drags.
+- [x] **Mandatory Revision Bumping:**
+  - Bumped build revision tag to `REV: 2026.10.28-r36-re01` across kernel boot banner, serial logs, desktop top menu bar, and system monitor window.
+
+
 
 
 

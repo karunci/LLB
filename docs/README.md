@@ -14,6 +14,19 @@ The reference compiler toolchain (`llbc`) is designed to be **fully self-hosting
 
 ---
 
+### System Architecture & Roadmaps Index
+
+| Roadmap / Specification | Scope & Architectural Responsibilities |
+| :--- | :--- |
+| **[Kernel Roadmap](KERNEL_ROADMAP.md)** | Microkernel, HAL, x86_64 CPU core, PMM, VMM, Buddy, Preemptive SMP Scheduler, Syscall Dispatch. |
+| **[Core System Services Roadmap](CORE_SYSTEM_ROADMAP.md)** | Core Daemons: Synapse IPC, VFS, Device Manager, Service Manager, Display Compositor, Window Manager. |
+| **[System Applications Roadmap](SYSTEM_ROADMAP.md)** | Userland ecosystem: Terminal, System Monitor, Node Topology Viewer, BAX packaging, and user tools. |
+| **[Runtime & Standard Library Roadmap](STDLIB_AND_RUNTIME_ROADMAP.md)** | lib/runtime/brt0.S, complete mem* suite, pure LLB Standard Library (libpros), Type modernization, Dynamic Library Loader (.bdl). |
+| **[Compiler & Language Roadmap](LLBC_ROADMAP.md)** | llbc-stage0 & llbc-stage1, VB6 feature parity, LLVM 21 codegen, embedded LLD linker, language reference. |
+| **[System Architecture Overview](PROS_SYSTEM_ARCHITECTURE.md)** | High-level PROS hybrid architecture, dual-plane neural nodes, and memory maps. |
+
+---
+
 ### Language Semantics & Execution Model
 
 #### Compilation Pipeline & Toolchain Architecture
@@ -1107,4 +1120,4 @@ Low-Level Basic (`LLB` / `llbc`) is engineered using an AI-assisted pair-program
 - **Strict Verification Standards:** All code, compiler outputs, and kernel ELF binaries are tested against bare-metal execution targets in QEMU (including 10/10 `LibLLB_Metal` static archive verification checks), 30 compiler rejection tests, 11 CLI options tests, `LibLLB` dynamic shared library standalone test execution, and 66 comprehensive automated test suites. See [STANDARD_LIBRARY.md](STANDARD_LIBRARY.md) for complete standard library specifications.
 
 For full disclosure regarding our development model and licensing restrictions, see [AI_DISCLOSURE.md](../AI_DISCLOSURE.md).
-
+

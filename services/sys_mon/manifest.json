@@ -1,8 +1,0 @@
-{
-  "name": "sys_mon",
-  "version": "1.0.0",
-  "type": "application",
-  "entry": "sys_mon.elf",
-  "priority": 2,
-  "description": "PROS Ring 3 System Telemetry & Monitor Application"
-}

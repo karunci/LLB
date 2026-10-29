@@ -51,3 +51,28 @@ add_custom_command(TARGET llbc-stage0 POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E create_symlink $<TARGET_FILE_NAME:llbc-stage0> ${CMAKE_BINARY_DIR}/llbc
     COMMENT "Creating llbc symlink -> llbc-stage0"
 )
+
+# Automated CTest Suite
+enable_testing()
+
+add_test(NAME BuildTestSuite
+    COMMAND $<TARGET_FILE:llbc-stage0> ${CMAKE_CURRENT_SOURCE_DIR}/tests/userland/TestSuite.llbproj --no-script
+)
+
+add_test(NAME RunTestSuite
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/userland/build/testsuite
+)
+
+add_test(NAME CliOptions
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/userland/test_cli_options.sh
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tests/userland
+)
+
+add_test(NAME Rejections
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/userland/test_rejections.sh
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tests/userland
+)
+
+set_tests_properties(RunTestSuite PROPERTIES DEPENDS BuildTestSuite)
+set_tests_properties(CliOptions PROPERTIES DEPENDS BuildTestSuite)
+set_tests_properties(Rejections PROPERTIES DEPENDS BuildTestSuite)

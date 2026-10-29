@@ -9,8 +9,8 @@ Namespace Pros.Driver
 
     <Packed>
     Public Structure DisplayInfo
-        Public Width    As UInt32
-        Public Height   As UInt32
+        Public Width    As Int32
+        Public Height   As Int32
         Public Pitch    As UInt32
         Public Bpp      As UInt32
         Public PhysAddr As UInt64

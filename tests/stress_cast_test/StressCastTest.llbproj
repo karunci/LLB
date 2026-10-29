@@ -1,0 +1,24 @@
+' Project Name: Low-Level Basic / Stress Cast Test Suite
+' Filename: tests/stress_cast_test/StressCastTest.llbproj
+' Summary: Manifest for adversarial stress-testing of concise type casting, classic VB conversions,
+'          prefix pointer casts, string conversions, and backward compatibility.
+
+[Project]
+Name    = "StressCastTest"
+Type    = "Executable"
+Version = "1.0.0"
+
+[Output]
+OutDir  = "build"
+OutFile = "stress_cast_test"
+
+[Entry]
+EntryPoint = "StressCastMain.Main"
+
+[Sources]
+Module = "src/StressCastMain.bas"
+
+[CompilerOptions]
+Optimize            = "O0"
+EmitDebugSymbols    = True
+AllowUnsafePointers = True

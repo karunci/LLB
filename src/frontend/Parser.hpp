@@ -94,6 +94,8 @@ private:
     UseDirective parseUseStatement();
 
     std::unordered_map<std::string, TypeSpec> m_typeAliases;
+    std::unordered_set<std::string> m_definedTypes;
+    bool isCastTypeName(const std::string& name, TypeSpec& outType) const;
 
     // Statements
     std::unique_ptr<ASTNode> parseStatement();

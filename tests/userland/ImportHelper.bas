@@ -12,6 +12,12 @@ Module ImportHelper
         LogHigh = 30
     End Enum
 
+    ' Public 64-bit constants for cross-module import regression tests
+    Public Const IMPORTED_HEX_MAX As UInt64 = &HFFFFFFFFFFFFFFFF
+    Public Const IMPORTED_DEC_MAX As UInt64 = 18446744073709551615
+    Public Const IMPORTED_INT64_MAX As Int64 = 9223372036854775807
+    Public Const IMPORTED_INT64_MIN As Int64 = -9223372036854775807 - 1
+
     Public Structure Vector2D
         Public X As Int32
         Public Y As Int32

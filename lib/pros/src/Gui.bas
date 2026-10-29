@@ -18,8 +18,8 @@ Namespace Pros.Gui
 
     <Packed>
     Public Structure Surface
-        Public Width     As UInt32
-        Public Height    As UInt32
+        Public Width     As Int32
+        Public Height    As Int32
         Public Pitch     As UInt32
         Public Bpp       As UInt32
         Public Pixels    As Pointer To UInt32
@@ -43,8 +43,8 @@ Namespace Pros.Gui
 
             If x0 < 0 Then x0 = 0
             If y0 < 0 Then y0 = 0
-            If x1 > CType(Int32, surf.Width) Then x1 = CType(Int32, surf.Width)
-            If y1 > CType(Int32, surf.Height) Then y1 = CType(Int32, surf.Height)
+            If x1 > surf.Width Then x1 = surf.Width
+            If y1 > surf.Height Then y1 = surf.Height
 
             If x0 >= x1 Or y0 >= y1 Then Exit Sub
 
@@ -101,14 +101,14 @@ Namespace Pros.Gui
                 While row < h
                     curDy = dy + row
                     curSy = sy + row
-                    If curDy >= 0 And curDy < CType(Int32, dst.Height) And curSy >= 0 And curSy < CType(Int32, src.Height) Then
+                    If curDy >= 0 And curDy < dst.Height And curSy >= 0 And curSy < src.Height Then
                         Dim dstRaw As Pointer To Byte = CPtr(Pointer To Byte, dst.Pixels) + (CType(UInt32, curDy) * dst.Pitch)
                         Dim srcRaw As Pointer To Byte = CPtr(Pointer To Byte, src.Pixels) + (CType(UInt32, curSy) * src.Pitch)
                         col = 0
                         While col < w
                             curDx = dx + col
                             curSx = sx + col
-                            If curDx >= 0 And curDx < CType(Int32, dst.Width) And curSx >= 0 And curSx < CType(Int32, src.Width) Then
+                            If curDx >= 0 And curDx < dst.Width And curSx >= 0 And curSx < src.Width Then
                                 Dim dOff As UInt32 = CType(UInt32, curDx) * 3
                                 Dim sOff As UInt32 = CType(UInt32, curSx) * 3
                                 dstRaw(dOff) = srcRaw(sOff)
@@ -128,14 +128,14 @@ Namespace Pros.Gui
                 While row < h
                     curDy = dy + row
                     curSy = sy + row
-                    If curDy >= 0 And curDy < CType(Int32, dst.Height) And curSy >= 0 And curSy < CType(Int32, src.Height) Then
+                    If curDy >= 0 And curDy < dst.Height And curSy >= 0 And curSy < src.Height Then
                         Dim dstRow As Pointer To UInt32 = dst.Pixels + (CType(UInt32, curDy) * dstPitchPixels)
                         Dim srcRow As Pointer To UInt32 = src.Pixels + (CType(UInt32, curSy) * srcPitchPixels)
                         col = 0
                         While col < w
                             curDx = dx + col
                             curSx = sx + col
-                            If curDx >= 0 And curDx < CType(Int32, dst.Width) And curSx >= 0 And curSx < CType(Int32, src.Width) Then
+                            If curDx >= 0 And curDx < dst.Width And curSx >= 0 And curSx < src.Width Then
                                 dstRow(curDx) = srcRow(curSx)
                             End If
                             col = col + 1

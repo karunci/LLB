@@ -502,9 +502,26 @@ else
     ERR_COUNT=$((ERR_COUNT + 1))
 fi
 
+# 31. Dereference of non-pointer expression rejection
+cat << 'CODE' > bad_deref_nonptr.bas
+Module TestBadDeref
+    Public Sub Foo()
+        Dim x As Int32 = 42
+        Dim y As Int32 = *x
+    End Sub
+End Module
+CODE
+$LLBC bad_deref_nonptr.bas 2>&1 | grep -q "Cannot dereference non-pointer expression"
+if [ $? -eq 0 ]; then
+    echo "[PASS] Rejection 31: Dereference of non-pointer correctly rejected"
+else
+    echo "[FAIL] Rejection 31: Dereference of non-pointer not rejected"
+    ERR_COUNT=$((ERR_COUNT + 1))
+fi
+
 # Clean up temp files (sources in cwd, objects in build/)
-rm -f bad_uninit.bas bad_multi_singleuse.bas bad_undef_method.bas bad_private_member.bas \
-      bad_uninit.o bad_multi_singleuse.o bad_undef_method.o bad_private_member.o \
+rm -f bad_uninit.bas bad_multi_singleuse.bas bad_undef_method.bas bad_private_member.bas bad_deref_nonptr.bas \
+      bad_uninit.o bad_multi_singleuse.o bad_undef_method.o bad_private_member.o bad_deref_nonptr.o \
       "$BUILD_DIR"/bad_*
 
 echo "========================================="

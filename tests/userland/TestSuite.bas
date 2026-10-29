@@ -28,6 +28,14 @@ Module TestSuite
     Private Const PI_APPROX As Double = 3.14159
     Dim g_initializedCounter As Int32 = 777
 
+    ' Module-level 64-bit constants for mixed comparison & equality regression tests
+    Public Const KMAGIC_NUM As UInt64 = &HFFFFFFFFFFFFFFFF
+    Public Const KMAGIC_DEC As UInt64 = 18446744073709551615
+    Public Const K_HEX_MAX As UInt64 = &HFFFFFFFFFFFFFFFF
+    Public Const K_DEC_MAX As UInt64 = 18446744073709551615
+    Public Const K_INT64_MAX As Int64 = 9223372036854775807
+    Public Const K_INT64_MIN As Int64 = -9223372036854775807 - 1
+
     Public Declare Function puts(ByVal str As Pointer To Byte) As Int32
     Public Declare Function putsLib Lib "c" Alias "puts" (ByVal str As Pointer To Byte) As Int32
     Public Declare Function AddNumbers Lib "SharedLib" (ByVal a As Int32, ByVal b As Int32) As Int32
@@ -1409,6 +1417,16 @@ SkipMiddle:
         v.X = 12
         v.Y = 34
 
+        ' Verify imported constants
+        If IMPORTED_HEX_MAX <> &HFFFFFFFFFFFFFFFF Or IMPORTED_DEC_MAX <> 18446744073709551615 Then
+            TestImports = False
+            Exit Function
+        End If
+        If ImportHelper.IMPORTED_HEX_MAX <> &HFFFFFFFFFFFFFFFF Or ImportHelper.IMPORTED_DEC_MAX <> 18446744073709551615 Then
+            TestImports = False
+            Exit Function
+        End If
+
         If area = 40 And score = 60 And v.X = 12 And v.Y = 34 Then
             TestImports = True
         Else
@@ -1949,6 +1967,478 @@ SkipMiddle:
         End If
 
         TestAggregateInitializers = True
+    End Function
+
+    ' Test 68: Concise Cast Syntax
+    Public Unsafe Function TestConciseCasts() As Boolean
+        ' 1. Direct Primitive Type Conversions
+        Dim b As Byte = Byte(300)
+        If b <> 44 Then
+            Print "TestConciseCasts failed at 1.1: b=", b
+            TestConciseCasts = False
+            Exit Function
+        End If
+
+        Dim u16 As UInt16 = UInt16(70000)
+        If u16 <> 4464 Then
+            Print "TestConciseCasts failed at 1.2: u16=", u16
+            TestConciseCasts = False
+            Exit Function
+        End If
+
+        Dim s16 As Int16 = Int16(-1234)
+        If s16 <> -1234 Then
+            Print "TestConciseCasts failed at 1.3: s16=", s16
+            TestConciseCasts = False
+            Exit Function
+        End If
+
+        Dim u32 As UInt32 = UInt32(100000)
+        If u32 <> 100000 Then
+            Print "TestConciseCasts failed at 1.4: u32=", u32
+            TestConciseCasts = False
+            Exit Function
+        End If
+
+        Dim s32 As Int32 = Int32(-50000)
+        If s32 <> -50000 Then
+            Print "TestConciseCasts failed at 1.5: s32=", s32
+            TestConciseCasts = False
+            Exit Function
+        End If
+
+        Dim u64 As UInt64 = UInt64(9876543210)
+        If u64 <> 9876543210 Then
+            Print "TestConciseCasts failed at 1.6: u64=", u64
+            TestConciseCasts = False
+            Exit Function
+        End If
+
+        Dim s64 As Int64 = Int64(-9876543210)
+        If s64 <> -9876543210 Then
+            Print "TestConciseCasts failed at 1.7: s64=", s64
+            TestConciseCasts = False
+            Exit Function
+        End If
+
+        Dim sng As Single = Single(12.5)
+        If sng < 12.4 Or sng > 12.6 Then
+            Print "TestConciseCasts failed at 1.8: sng=", sng
+            TestConciseCasts = False
+            Exit Function
+        End If
+
+        Dim dbl As Double = Double(25.75)
+        If dbl < 25.74 Or dbl > 25.76 Then
+            Print "TestConciseCasts failed at 1.9: dbl=", dbl
+            TestConciseCasts = False
+            Exit Function
+        End If
+
+        Dim bl As Boolean = Boolean(1)
+        If Not bl Then
+            Print "TestConciseCasts failed at 1.10: bl=", bl
+            TestConciseCasts = False
+            Exit Function
+        End If
+
+        ' 2. Classic VB Conversion Functions
+        Dim cb As Byte = CByte(200)
+        If cb <> 200 Then
+            Print "TestConciseCasts failed at 2.1: cb=", cb
+            TestConciseCasts = False
+            Exit Function
+        End If
+
+        Dim cu16 As UInt16 = CUShort(50000)
+        If cu16 <> 50000 Then
+            Print "TestConciseCasts failed at 2.2: cu16=", cu16
+            TestConciseCasts = False
+            Exit Function
+        End If
+
+        Dim cs16 As Int16 = CShort(-500)
+        If cs16 <> -500 Then
+            Print "TestConciseCasts failed at 2.3: cs16=", cs16
+            TestConciseCasts = False
+            Exit Function
+        End If
+
+        Dim cu32 As UInt32 = CUInt(4000000000)
+        If cu32 <> 4000000000 Then
+            Print "TestConciseCasts failed at 2.4: cu32=", cu32
+            TestConciseCasts = False
+            Exit Function
+        End If
+
+        Dim cs32 As Int32 = CInt(-42)
+        If cs32 <> -42 Then
+            Print "TestConciseCasts failed at 2.5: cs32=", cs32
+            TestConciseCasts = False
+            Exit Function
+        End If
+
+        Dim cu64 As UInt64 = CULng(1234567890123456)
+        If cu64 <> 1234567890123456 Then
+            Print "TestConciseCasts failed at 2.6: cu64=", cu64
+            TestConciseCasts = False
+            Exit Function
+        End If
+
+        Dim cs64 As Int64 = CLng(-1234567890123456)
+        If cs64 <> -1234567890123456 Then
+            Print "TestConciseCasts failed at 2.7: cs64=", cs64
+            TestConciseCasts = False
+            Exit Function
+        End If
+
+        Dim csngVal As Single = CSng(1.5)
+        If csngVal < 1.4 Or csngVal > 1.6 Then
+            Print "TestConciseCasts failed at 2.8: csngVal=", csngVal
+            TestConciseCasts = False
+            Exit Function
+        End If
+
+        Dim cdblVal As Double = CDbl(3.14159)
+        If cdblVal < 3.14 Or cdblVal > 3.15 Then
+            Print "TestConciseCasts failed at 2.9: cdblVal=", cdblVal
+            TestConciseCasts = False
+            Exit Function
+        End If
+
+        Dim cboolVal As Boolean = CBool(0)
+        If cboolVal Then
+            Print "TestConciseCasts failed at 2.10: cboolVal=", cboolVal
+            TestConciseCasts = False
+            Exit Function
+        End If
+
+        ' 3. Pointer Prefix Cast Shorthand (*TypeName(expr)) & Leading Asterisk Type (*Byte)
+        Dim val64 As UInt64 = &H1122334455667788
+        Dim pByte As *Byte = *Byte(AddressOf val64)
+        Dim pU64 As *UInt64 = *UInt64(AddressOf val64)
+        If pU64(0) <> &H1122334455667788 Then
+            Print "TestConciseCasts failed at 3.1: pU64(0)=", pU64(0)
+            TestConciseCasts = False
+            Exit Function
+        End If
+        If pByte(0) <> &H88 Then
+            Print "TestConciseCasts failed at 3.2: pByte(0)=", pByte(0)
+            TestConciseCasts = False
+            Exit Function
+        End If
+
+        ' 4. Backward Compatibility: CType and CPtr
+        Dim legacyType As UInt64 = CType(UInt64, 42)
+        Dim legacyPtr As Pointer To Byte = CPtr(Pointer To Byte, AddressOf val64)
+        If legacyType <> 42 Or legacyPtr(0) <> &H88 Then
+            Print "TestConciseCasts failed at 4: legacyType=", legacyType
+            TestConciseCasts = False
+            Exit Function
+        End If
+
+        ' 5. Single-argument function call dereference (*Func(arg) vs *TypeName(arg))
+        g_starFnCalled = False
+        Dim testVal As Int32 = 424242
+        Dim derefResult As Int32 = *HelperReturnPtr(AddressOf testVal)
+        If Not g_starFnCalled Or derefResult <> 424242 Then
+            Print "TestConciseCasts failed at 5.1: g_starFnCalled=", g_starFnCalled, ", derefResult=", derefResult
+            TestConciseCasts = False
+            Exit Function
+        End If
+
+        ' Parenthesized function call dereference *(Func(arg))
+        g_starFnCalled = False
+        Dim parenDerefResult As Int32 = *(HelperReturnPtr(AddressOf testVal))
+        If Not g_starFnCalled Or parenDerefResult <> 424242 Then
+            Print "TestConciseCasts failed at 5.2: g_starFnCalled=", g_starFnCalled, ", parenDerefResult=", parenDerefResult
+            TestConciseCasts = False
+            Exit Function
+        End If
+
+        TestConciseCasts = True
+    End Function
+
+    Public g_starFnCalled As Boolean = False
+    Public Function HelperReturnPtr(ByVal p As Pointer To Int32) As Pointer To Int32
+        g_starFnCalled = True
+        HelperReturnPtr = p
+    End Function
+
+    ' Helper for TestImplicitWideningAndComparisons
+    Public Function HelperWidenU64(ByVal val As UInt64) As UInt64
+        HelperWidenU64 = val
+    End Function
+
+    Public Function HelperWidenS64(ByVal val As Int64) As Int64
+        HelperWidenS64 = val
+    End Function
+
+    ' Test 69: Implicit Widening & Mixed Signed/Unsigned Comparisons
+    Public Function TestImplicitWideningAndComparisons() As Boolean
+        ' 1. Implicit Call Argument Widening
+        Dim bVal As Byte = 250
+        Dim u16Val As UInt16 = 60000
+        Dim u32Val As UInt32 = 3000000000
+        Dim s16Val As Int16 = -12345
+        Dim s32Val As Int32 = -123456789
+
+        ' Widening unsigned arguments to UInt64
+        If HelperWidenU64(bVal) <> 250 Then
+            TestImplicitWideningAndComparisons = False
+            Exit Function
+        End If
+        If HelperWidenU64(u16Val) <> 60000 Then
+            TestImplicitWideningAndComparisons = False
+            Exit Function
+        End If
+        If HelperWidenU64(u32Val) <> 3000000000 Then
+            TestImplicitWideningAndComparisons = False
+            Exit Function
+        End If
+
+        ' Widening signed arguments to Int64 (must preserve sign bit)
+        If HelperWidenS64(s16Val) <> -12345 Then
+            TestImplicitWideningAndComparisons = False
+            Exit Function
+        End If
+        If HelperWidenS64(s32Val) <> -123456789 Then
+            TestImplicitWideningAndComparisons = False
+            Exit Function
+        End If
+
+        ' 2. Mixed Signed/Unsigned Comparisons (Signed vs Unsigned bounds checks)
+        Dim curY As Int32 = -5
+        Dim h As UInt32 = 768
+
+        ' -5 < 768 must evaluate to True (previously evaluated to False due to unsigned icmp)
+        If Not (curY < h) Then
+            TestImplicitWideningAndComparisons = False
+            Exit Function
+        End If
+        If curY > h Then
+            TestImplicitWideningAndComparisons = False
+            Exit Function
+        End If
+        If Not (curY <= h) Then
+            TestImplicitWideningAndComparisons = False
+            Exit Function
+        End If
+        If curY >= h Then
+            TestImplicitWideningAndComparisons = False
+            Exit Function
+        End If
+        If curY = h Then
+            TestImplicitWideningAndComparisons = False
+            Exit Function
+        End If
+        If Not (curY <> h) Then
+            TestImplicitWideningAndComparisons = False
+            Exit Function
+        End If
+
+        ' Positive curY within bounds
+        Dim curYPos As Int32 = 100
+        If Not (curYPos < h) Then
+            TestImplicitWideningAndComparisons = False
+            Exit Function
+        End If
+
+        ' Positive curY out of bounds
+        Dim curYOut As Int32 = 800
+        If curYOut < h Then
+            TestImplicitWideningAndComparisons = False
+            Exit Function
+        End If
+
+        ' 3. Equality with Identical Bit Patterns (Two's Complement)
+        Dim negOne As Int32 = -1
+        Dim maxU32 As UInt32 = 4294967295
+        If negOne = maxU32 Then
+            ' -1 and +4294967295 share 0xFFFFFFFF bit pattern but are NOT equal!
+            TestImplicitWideningAndComparisons = False
+            Exit Function
+        End If
+        If Not (negOne <> maxU32) Then
+            TestImplicitWideningAndComparisons = False
+            Exit Function
+        End If
+        If Not (negOne < maxU32) Then
+            TestImplicitWideningAndComparisons = False
+            Exit Function
+        End If
+
+        ' 4. Comparison of Int32 with UInt64
+        Dim u64Bound As UInt64 = 1000
+        If Not (curY < u64Bound) Then
+            TestImplicitWideningAndComparisons = False
+            Exit Function
+        End If
+
+        ' 5. Full 64-bit Hex and Decimal Literals
+        Dim maxHex As UInt64 = &HFFFFFFFFFFFFFFFF
+        If maxHex <> &HFFFFFFFFFFFFFFFF Or maxHex <= 4294967295 Then
+            TestImplicitWideningAndComparisons = False
+            Exit Function
+        End If
+
+        Dim maxDec As UInt64 = 18446744073709551615
+        If maxDec <> &HFFFFFFFFFFFFFFFF Or maxDec <> maxHex Then
+            TestImplicitWideningAndComparisons = False
+            Exit Function
+        End If
+
+        ' -------------------------------------------------------------------------
+        ' 6. Module-Level Declared Constants in Mixed Comparisons & Equality
+        ' -------------------------------------------------------------------------
+        Dim s64Val As Int64 = -1
+        s32Val = -1
+        s16Val = -1
+
+        ' 6.1 Direct literal & concise cast comparisons against K_HEX_MAX / KMAGIC_NUM
+        If Not (-1 < K_HEX_MAX) Then
+            Print "Test 69 failed at 6.1.1: -1 < K_HEX_MAX is False"
+            TestImplicitWideningAndComparisons = False
+            Exit Function
+        End If
+        If Not (-1 < KMAGIC_NUM) Then
+            Print "Test 69 failed at 6.1.1b: -1 < KMAGIC_NUM is False"
+            TestImplicitWideningAndComparisons = False
+            Exit Function
+        End If
+        If -1 > K_HEX_MAX Or -1 = K_HEX_MAX Or Not (-1 <> K_HEX_MAX) Then
+            Print "Test 69 failed at 6.1.2: -1 comparison inversion against K_HEX_MAX"
+            TestImplicitWideningAndComparisons = False
+            Exit Function
+        End If
+        If Not (Int64(-1) < K_HEX_MAX) Or Not (CLng(-1) < K_HEX_MAX) Then
+            Print "Test 69 failed at 6.1.3: Concise cast Int64(-1) < K_HEX_MAX is False"
+            TestImplicitWideningAndComparisons = False
+            Exit Function
+        End If
+
+        ' 6.2 Signed variable comparisons against K_HEX_MAX
+        If Not (s64Val < K_HEX_MAX) Then
+            Print "Test 69 failed at 6.2.1: s64Val(-1) < K_HEX_MAX is False"
+            TestImplicitWideningAndComparisons = False
+            Exit Function
+        End If
+        If Not (s64Val < KMAGIC_NUM) Then
+            Print "Test 69 failed at 6.2.1b: s64Val(-1) < KMAGIC_NUM is False"
+            TestImplicitWideningAndComparisons = False
+            Exit Function
+        End If
+        If Not (s64Val < KMAGIC_DEC) Then
+            Print "Test 69 failed at 6.2.1c: s64Val(-1) < KMAGIC_DEC is False"
+            TestImplicitWideningAndComparisons = False
+            Exit Function
+        End If
+        If Not (K_HEX_MAX > s64Val) Or s64Val = K_HEX_MAX Or Not (s64Val <> K_HEX_MAX) Then
+            Print "Test 69 failed at 6.2.2: s64Val(-1) vs K_HEX_MAX comparison logic error"
+            TestImplicitWideningAndComparisons = False
+            Exit Function
+        End If
+        If Not (s32Val < K_HEX_MAX) Or Not (s16Val < K_HEX_MAX) Then
+            Print "Test 69 failed at 6.2.3: Narrow signed variable < K_HEX_MAX is False"
+            TestImplicitWideningAndComparisons = False
+            Exit Function
+        End If
+
+        ' 6.3 Exact equality between UInt64 variable and K_HEX_MAX / KMAGIC_NUM (same bit pattern 0xFFFFFFFFFFFFFFFF)
+        Dim uVal As UInt64 = &HFFFFFFFFFFFFFFFF
+        If Not (uVal = K_HEX_MAX) Then
+            Print "Test 69 failed at 6.3.1: (uVal As UInt64) = K_HEX_MAX evaluated to False! Asymmetric sign extension detected"
+            TestImplicitWideningAndComparisons = False
+            Exit Function
+        End If
+        If Not (uVal = KMAGIC_NUM) Then
+            Print "Test 69 failed at 6.3.1b: (uVal As UInt64) = KMAGIC_NUM evaluated to False!"
+            TestImplicitWideningAndComparisons = False
+            Exit Function
+        End If
+        If uVal <> K_HEX_MAX Or uVal < K_HEX_MAX Or uVal > K_HEX_MAX Then
+            Print "Test 69 failed at 6.3.2: uVal vs K_HEX_MAX equality predicates failed"
+            TestImplicitWideningAndComparisons = False
+            Exit Function
+        End If
+        If uVal <> KMAGIC_NUM Then
+            Print "Test 69 failed at 6.3.2b: uVal <> KMAGIC_NUM evaluated to True!"
+            TestImplicitWideningAndComparisons = False
+            Exit Function
+        End If
+        If Not (uVal - 1 < K_HEX_MAX) Then
+            Print "Test 69 failed at 6.3.3: uVal - 1 < K_HEX_MAX is False"
+            TestImplicitWideningAndComparisons = False
+            Exit Function
+        End If
+
+        ' 6.4 Module Const K_DEC_MAX vs Int64.Max and Int64.Min
+        Dim s64Max As Int64 = 9223372036854775807
+        Dim s64Min As Int64 = -9223372036854775807 - 1
+        If Not (K_INT64_MAX < K_DEC_MAX) Then
+            Print "Test 69 failed at 6.4.1: Const K_INT64_MAX < Const K_DEC_MAX is False"
+            TestImplicitWideningAndComparisons = False
+            Exit Function
+        End If
+        If Not (K_INT64_MIN < K_DEC_MAX) Or Not (K_DEC_MAX > K_INT64_MIN) Then
+            Print "Test 69 failed at 6.4.2: Const K_INT64_MIN < Const K_DEC_MAX is False"
+            TestImplicitWideningAndComparisons = False
+            Exit Function
+        End If
+        If Not (s64Max < K_DEC_MAX) Or Not (s64Min < K_DEC_MAX) Then
+            Print "Test 69 failed at 6.4.3: Variables s64Max/s64Min < K_DEC_MAX is False"
+            TestImplicitWideningAndComparisons = False
+            Exit Function
+        End If
+        If Not (K_DEC_MAX = K_HEX_MAX) Or K_DEC_MAX <> K_HEX_MAX Then
+            Print "Test 69 failed at 6.4.4: Const K_DEC_MAX = Const K_HEX_MAX is False"
+            TestImplicitWideningAndComparisons = False
+            Exit Function
+        End If
+
+        ' -------------------------------------------------------------------------
+        ' 7. Imported Module Constants Across Module Boundaries
+        ' -------------------------------------------------------------------------
+        ' 7.1 Unqualified imported constant comparisons
+        If Not (s64Val < IMPORTED_HEX_MAX) Then
+            Print "Test 69 failed at 7.1.1: s64Val < IMPORTED_HEX_MAX is False"
+            TestImplicitWideningAndComparisons = False
+            Exit Function
+        End If
+        If Not (Int64(-1) < IMPORTED_HEX_MAX) Then
+            Print "Test 69 failed at 7.1.2: Int64(-1) < IMPORTED_HEX_MAX is False"
+            TestImplicitWideningAndComparisons = False
+            Exit Function
+        End If
+        If Not (uVal = IMPORTED_HEX_MAX) Then
+            Print "Test 69 failed at 7.1.3: uVal = IMPORTED_HEX_MAX is False"
+            TestImplicitWideningAndComparisons = False
+            Exit Function
+        End If
+        If Not (s64Max < IMPORTED_DEC_MAX) Or Not (s64Min < IMPORTED_DEC_MAX) Then
+            Print "Test 69 failed at 7.1.4: s64Max/s64Min < IMPORTED_DEC_MAX is False"
+            TestImplicitWideningAndComparisons = False
+            Exit Function
+        End If
+
+        ' 7.2 Qualified imported constant comparisons
+        If Not (s64Val < ImportHelper.IMPORTED_HEX_MAX) Then
+            Print "Test 69 failed at 7.2.1: s64Val < ImportHelper.IMPORTED_HEX_MAX is False"
+            TestImplicitWideningAndComparisons = False
+            Exit Function
+        End If
+        If Not (uVal = ImportHelper.IMPORTED_HEX_MAX) Then
+            Print "Test 69 failed at 7.2.2: uVal = ImportHelper.IMPORTED_HEX_MAX is False"
+            TestImplicitWideningAndComparisons = False
+            Exit Function
+        End If
+        If Not (s64Max < ImportHelper.IMPORTED_DEC_MAX) Then
+            Print "Test 69 failed at 7.2.3: s64Max < ImportHelper.IMPORTED_DEC_MAX is False"
+            TestImplicitWideningAndComparisons = False
+            Exit Function
+        End If
+
+        TestImplicitWideningAndComparisons = True
     End Function
 
     ' Main Entry Point
@@ -2495,13 +2985,29 @@ SkipMiddle:
             failCount = failCount + 1
         End If
 
+        ' 68. Concise Cast Syntax (TypeName(x), C*Type*(x), *TypeName(x))
+        If TestConciseCasts() Then
+            puts CPtr(Pointer To Byte, "Test 68 > [PASS] Concise Cast Syntax (TypeName(x), C*Type*(x), *TypeName(x))")
+        Else
+            puts CPtr(Pointer To Byte, "Test 68 > [FAIL] Concise Cast Syntax")
+            failCount = failCount + 1
+        End If
+
+        ' 69. Implicit Widening & Mixed Signed/Unsigned Comparisons
+        If TestImplicitWideningAndComparisons() Then
+            puts CPtr(Pointer To Byte, "Test 69 > [PASS] Implicit Widening & Mixed Signed/Unsigned Comparisons")
+        Else
+            puts CPtr(Pointer To Byte, "Test 69 > [FAIL] Implicit Widening & Mixed Signed/Unsigned Comparisons")
+            failCount = failCount + 1
+        End If
+
         puts CPtr(Pointer To Byte, "================================================")
         If failCount = 0 Then
-            puts CPtr(Pointer To Byte, "   ALL 67 TEST SUITES PASSED SUCCESSFULLY!      ")
+            puts CPtr(Pointer To Byte, "   ALL 69 TEST SUITES PASSED SUCCESSFULLY!      ")
             puts CPtr(Pointer To Byte, "================================================")
             Main = 0
         Else
-            Print "   TEST SUITE FINISHED WITH ", failCount, " FAILURE(S) OUT OF 67"
+            Print "   TEST SUITE FINISHED WITH ", failCount, " FAILURE(S) OUT OF 69"
             puts CPtr(Pointer To Byte, "================================================")
             Main = 1
         End If

@@ -222,14 +222,14 @@ Module CursorTheme
             cy = 0
             While cy < CURSOR_H
                 curY = y + cy
-                If curY >= 0 And curY < CType(Int32, surf.Height) Then
+                If curY >= 0 And curY < surf.Height Then
                     Dim rawRow As Pointer To Byte = CPtr(Pointer To Byte, surf.Pixels) + (CType(UInt32, curY) * surf.Pitch)
                     actRow = pAct(cy)
                     colRow = pCol(cy)
                     cx = 0
                     While cx < CURSOR_W
                         curX = x + cx
-                        If curX >= 0 And curX < CType(Int32, surf.Width) Then
+                        If curX >= 0 And curX < surf.Width Then
                             shiftVal = 15 - cx
                             isDrawn = ((actRow RShift shiftVal) And 1) <> 0
                             If isDrawn Then
@@ -256,14 +256,14 @@ Module CursorTheme
             cy = 0
             While cy < CURSOR_H
                 curY = y + cy
-                If curY >= 0 And curY < CType(Int32, surf.Height) Then
+                If curY >= 0 And curY < surf.Height Then
                     Dim rowPtr As Pointer To UInt32 = surf.Pixels + (CType(UInt32, curY) * pitchPix)
                     actRow = pAct(cy)
                     colRow = pCol(cy)
                     cx = 0
                     While cx < CURSOR_W
                         curX = x + cx
-                        If curX >= 0 And curX < CType(Int32, surf.Width) Then
+                        If curX >= 0 And curX < surf.Width Then
                             shiftVal = 15 - cx
                             isDrawn = ((actRow RShift shiftVal) And 1) <> 0
                             If isDrawn Then

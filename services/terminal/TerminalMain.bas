@@ -51,7 +51,7 @@ Module TerminalMain
             user_main = 2
             Exit Function
         End If
-        ConsolePrintWithUInt "[TERMINAL] Registered window with WindowManager -> ID #", CType(UInt64, winId), "\r\n"
+        ConsolePrintWithUInt "[TERMINAL] Registered window with WindowManager -> ID #", winId, "\r\n"
 
         ' 3. Render Static Terminal Layout
         FillRect clientSurf, 0, 0, CANVAS_W, CANVAS_H, &HFF1E222A

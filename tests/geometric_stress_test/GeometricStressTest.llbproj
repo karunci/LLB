@@ -1,0 +1,29 @@
+' Project Name: Low-Level Basic Geometric & Screen Dimension Stress Test
+' Filename: tests/geometric_stress_test/GeometricStressTest.llbproj
+' Summary: Adversarial stress test for geometric clipping, signed Int32 dimensions, and drawing routines.
+
+[Project]
+Name    = "test_geometric_stress"
+Type    = "Executable"
+Version = "1.0.0"
+
+[Target]
+Arch = "x86_64-unknown-none-elf"
+
+[Output]
+OutDir  = "build"
+OutFile = "test_geometric_stress.elf"
+
+[Entry]
+EntryPoint = "_start"
+
+[Linker]
+LinkerScript = "user_linker.ld"
+Libraries    = [
+    "../../lib/pros/build/libpros.a"
+]
+
+[Sources]
+Assembly = "../../lib/runtime/brt0.S"
+Assembly = "../../lib/runtime/mem.S"
+Module   = "src/GeometricStressMain.bas"

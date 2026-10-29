@@ -51,7 +51,7 @@ Module NodeViewerMain
             user_main = 2
             Exit Function
         End If
-        ConsolePrintWithUInt "[NODE_VIEWER] Registered window with WindowManager -> ID #", CType(UInt64, winId), "\r\n"
+        ConsolePrintWithUInt "[NODE_VIEWER] Registered window with WindowManager -> ID #", winId, "\r\n"
 
         ' 3. Render Static Table Layout
         FillRect clientSurf, 0, 0, CANVAS_W, CANVAS_H, &HFF242933

@@ -1,0 +1,25 @@
+' Project Name: Low-Level Basic Empirical 64-Bit Literal Stress Test
+' Filename: tests/stress_64bit_literals/Stress64BitLiterals.llbproj
+' Summary: Project manifest for empirical challenger testing 64-bit literals,
+'          bit retention, non-collapse, and mixed signed/unsigned comparisons.
+
+[Project]
+Name    = "Stress64BitLiterals"
+Type    = "Executable"
+Version = "1.0.0"
+
+[Output]
+OutDir  = "build"
+OutFile = "stress_64bit_literals"
+
+[Entry]
+EntryPoint = "Stress64BitLiterals.Main"
+
+[Sources]
+Module = "Stress64BitLiterals.bas"
+
+[CompilerOptions]
+Optimize            = "O0"
+EmitDebugSymbols    = True
+AllowUnsafePointers = True
+

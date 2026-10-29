@@ -52,7 +52,8 @@ Optimize            = "O0"
 EmitDebugSymbols    = True
 AllowUnsafePointers = True
 
-[Script]
-; Post-build test scripts: run automatically after compilation and linking succeed
-Cmd = "test_cli_options.sh"
-Cmd = "test_rejections.sh"
+; [Script] section omitted to avoid redundant script execution during automated testing.
+; Post-build CLI and Rejection test suites are independently managed and orchestrated
+; by CTest (Test #3: CliOptions and Test #4: Rejections) or can be executed directly via:
+;   bash tests/userland/test_cli_options.sh
+;   bash tests/userland/test_rejections.sh

@@ -49,9 +49,21 @@ int64_t Parser::evalCondPrimary() {
         std::string num = m_currentToken.text;
         consume();
         if (num.size() >= 2 && (num[0] == '&' && (num[1] == 'H' || num[1] == 'h'))) {
-            return std::stoll(num.substr(2), nullptr, 16);
+            try {
+                return static_cast<int64_t>(std::stoull(num.substr(2), nullptr, 16));
+            } catch (...) {
+                return 0;
+            }
         }
-        return std::stoll(num, nullptr, 10);
+        try {
+            return std::stoll(num, nullptr, 10);
+        } catch (...) {
+            try {
+                return static_cast<int64_t>(std::stoull(num, nullptr, 10));
+            } catch (...) {
+                return 0;
+            }
+        }
     }
 
     if (m_currentToken.type == TokenType::KwTrue || checkKeyword("True")) {
@@ -337,16 +349,22 @@ TypeSpec Parser::parseTypeSpec() {
         spec.isVolatile = true;
     }
 
-    while (m_currentToken.type == TokenType::KwPointer || checkKeyword("Pointer")) {
-        consume();
-        if (m_currentToken.type == TokenType::KwTo || checkKeyword("To")) {
+    while (m_currentToken.type == TokenType::Asterisk ||
+           m_currentToken.type == TokenType::KwPointer || checkKeyword("Pointer")) {
+        if (m_currentToken.type == TokenType::Asterisk) {
             consume();
             spec.pointerDepth++;
         } else {
-            // Bare 'Pointer' (opaque pointer / void* / ptr)
-            spec.pointerDepth++;
-            spec.name = "Byte";
-            return spec;
+            consume();
+            if (m_currentToken.type == TokenType::KwTo || checkKeyword("To")) {
+                consume();
+                spec.pointerDepth++;
+            } else {
+                // Bare 'Pointer' (opaque pointer / void* / ptr)
+                spec.pointerDepth++;
+                spec.name = "Byte";
+                return spec;
+            }
         }
     }
 
@@ -396,9 +414,127 @@ void Parser::parseTypeAlias() {
     expect(TokenType::Equal, "Expected '=' in TypeAlias definition");
     TypeSpec targetType = parseTypeSpec();
     m_typeAliases[aliasName] = targetType;
+    m_definedTypes.insert(aliasName);
+    m_definedTypes.insert(toLower(aliasName));
     if (m_currentModule) {
         m_currentModule->typeAliases[aliasName] = targetType;
     }
+}
+
+bool Parser::isCastTypeName(const std::string& name, TypeSpec& outType) const {
+    std::string lower = toLower(name);
+
+    // Direct primitive types
+    if (lower == "byte" || lower == "ubyte" || lower == "uint8" || lower == "int8" || lower == "sbyte") {
+        outType = TypeSpec{"Byte"};
+        return true;
+    }
+    if (lower == "int16" || lower == "short" || lower == "integer") {
+        outType = TypeSpec{"Int16"};
+        return true;
+    }
+    if (lower == "uint16" || lower == "ushort" || lower == "uinteger") {
+        outType = TypeSpec{"UInt16"};
+        return true;
+    }
+    if (lower == "int32" || lower == "long") {
+        outType = TypeSpec{"Int32"};
+        return true;
+    }
+    if (lower == "uint32" || lower == "ulong") {
+        outType = TypeSpec{"UInt32"};
+        return true;
+    }
+    if (lower == "int64" || lower == "long64") {
+        outType = TypeSpec{"Int64"};
+        return true;
+    }
+    if (lower == "uint64" || lower == "ulong64") {
+        outType = TypeSpec{"UInt64"};
+        return true;
+    }
+    if (lower == "single" || lower == "float") {
+        outType = TypeSpec{"Single"};
+        return true;
+    }
+    if (lower == "double") {
+        outType = TypeSpec{"Double"};
+        return true;
+    }
+    if (lower == "boolean" || lower == "bool") {
+        outType = TypeSpec{"Boolean"};
+        return true;
+    }
+    if (lower == "pointer" || lower == "uintptr" || lower == "intptr") {
+        outType = TypeSpec{"Byte"};
+        outType.pointerDepth = 1;
+        return true;
+    }
+
+    // Classic VB conversion functions
+    if (lower == "cbyte") {
+        outType = TypeSpec{"Byte"};
+        return true;
+    }
+    if (lower == "cshort") {
+        outType = TypeSpec{"Int16"};
+        return true;
+    }
+    if (lower == "cushort") {
+        outType = TypeSpec{"UInt16"};
+        return true;
+    }
+    if (lower == "cint") {
+        outType = TypeSpec{"Int32"};
+        return true;
+    }
+    if (lower == "cuint") {
+        outType = TypeSpec{"UInt32"};
+        return true;
+    }
+    if (lower == "clng") {
+        outType = TypeSpec{"Int64"};
+        return true;
+    }
+    if (lower == "culng") {
+        outType = TypeSpec{"UInt64"};
+        return true;
+    }
+    if (lower == "csng") {
+        outType = TypeSpec{"Single"};
+        return true;
+    }
+    if (lower == "cdbl") {
+        outType = TypeSpec{"Double"};
+        return true;
+    }
+    if (lower == "cbool") {
+        outType = TypeSpec{"Boolean"};
+        return true;
+    }
+
+    // Module TypeAlias lookup (e.g. TypeAlias ProcessId = UInt64)
+    auto aliasIt = m_typeAliases.find(name);
+    if (aliasIt == m_typeAliases.end()) {
+        for (const auto& kv : m_typeAliases) {
+            if (toLower(kv.first) == lower) {
+                aliasIt = m_typeAliases.find(kv.first);
+                break;
+            }
+        }
+    }
+    if (aliasIt != m_typeAliases.end()) {
+        outType = aliasIt->second;
+        return true;
+    }
+
+    // User-defined Structures & Classes
+    if (m_definedTypes.count(name) || m_definedTypes.count(lower)) {
+        outType = TypeSpec{name};
+        return true;
+    }
+
+    return false;
 }
 
 ImportDirective Parser::parseImportStatement() {
@@ -1833,6 +1969,46 @@ std::unique_ptr<ExprASTNode> Parser::parseUnary() {
         }
         return std::make_unique<AddressOfExprASTNode>(std::move(expr));
     }
+    if (m_currentToken.type == TokenType::Asterisk) {
+        size_t starLine = m_currentToken.line;
+        size_t starCol = m_currentToken.column;
+        int ptrDepth = 0;
+        while (m_currentToken.type == TokenType::Asterisk) {
+            consume();
+            ptrDepth++;
+        }
+        auto innerExpr = parseUnary();
+        if (auto cast = dynamic_cast<CastExprASTNode*>(innerExpr.get())) {
+            cast->targetType.pointerDepth += ptrDepth;
+            cast->kind = CastExprASTNode::CastKind::CPtr;
+            return innerExpr;
+        }
+        if (auto call = dynamic_cast<CallExprASTNode*>(innerExpr.get())) {
+            if (call->calleeExpr == nullptr && call->args.size() == 1 &&
+                call->namedArgs.empty() && call->typeArgs.empty()) {
+                TypeSpec targetType;
+                if (isCastTypeName(call->funcName, targetType)) {
+                    targetType.pointerDepth += ptrDepth;
+                    auto castNode = std::make_unique<CastExprASTNode>(
+                        CastExprASTNode::CastKind::CPtr,
+                        std::move(targetType),
+                        std::move(call->args[0])
+                    );
+                    castNode->line = starLine;
+                    castNode->column = starCol;
+                    return castNode;
+                }
+            }
+        }
+        // Fallback: unary pointer dereference
+        for (int i = 0; i < ptrDepth; ++i) {
+            auto unNode = std::make_unique<UnaryExprASTNode>("*", std::move(innerExpr));
+            unNode->line = starLine;
+            unNode->column = starCol;
+            innerExpr = std::move(unNode);
+        }
+        return innerExpr;
+    }
     return parsePostfixExpr();
 }
 
@@ -1887,6 +2063,25 @@ std::unique_ptr<ExprASTNode> Parser::parsePostfixExpr() {
                 } while (match(TokenType::Comma));
             }
             expect(TokenType::RParen, "Expected ')' after argument list");
+
+            // Concise cast conversion: TypeName(expr), C*Type*(expr), Alias(expr)
+            if (callNode->calleeExpr == nullptr && callNode->args.size() == 1 &&
+                callNode->namedArgs.empty() && callNode->typeArgs.empty()) {
+                TypeSpec targetType;
+                if (isCastTypeName(callNode->funcName, targetType)) {
+                    auto kind = (targetType.pointerDepth > 0) ? CastExprASTNode::CastKind::CPtr : CastExprASTNode::CastKind::CType;
+                    auto castNode = std::make_unique<CastExprASTNode>(
+                        kind,
+                        std::move(targetType),
+                        std::move(callNode->args[0])
+                    );
+                    castNode->line = callNode->line;
+                    castNode->column = callNode->column;
+                    expr = std::move(castNode);
+                    continue;
+                }
+            }
+
             expr = std::move(callNode);
             continue;
         }
@@ -1936,13 +2131,18 @@ std::unique_ptr<ExprASTNode> Parser::parsePrimaryExpr() {
         std::string text = m_currentToken.text;
         if (text.size() >= 2 && text[0] == '&' && (text[1] == 'H' || text[1] == 'h')) {
             int64_t val = 0;
+            std::string hint = "";
             try {
-                val = static_cast<int64_t>(std::stoull(text.substr(2), nullptr, 16));
+                uint64_t uval = std::stoull(text.substr(2), nullptr, 16);
+                val = static_cast<int64_t>(uval);
+                if (text.size() > 10 || uval > 4294967295ULL) {
+                    hint = "uint64";
+                }
             } catch (...) {
                 val = 0;
             }
             consume();
-            return std::make_unique<NumberExprASTNode>(val);
+            return std::make_unique<NumberExprASTNode>(val, hint);
         }
 
         if (text.find('.') != std::string::npos || text.find('e') != std::string::npos || text.find('E') != std::string::npos) {
@@ -1960,13 +2160,19 @@ std::unique_ptr<ExprASTNode> Parser::parsePrimaryExpr() {
             return std::make_unique<NumberExprASTNode>(val, hint);
         }
         int64_t val = 0;
+        std::string hint = "";
         try {
             val = std::stoll(text, nullptr, 10);
         } catch (...) {
-            val = 0;
+            try {
+                val = static_cast<int64_t>(std::stoull(text, nullptr, 10));
+                hint = "uint64";
+            } catch (...) {
+                val = 0;
+            }
         }
         consume();
-        return std::make_unique<NumberExprASTNode>(val);
+        return std::make_unique<NumberExprASTNode>(val, hint);
     }
 
     // Boolean Literals
@@ -2354,6 +2560,8 @@ std::unique_ptr<StructureNode> Parser::parseStructure(bool isPacked, int alignme
 
     structNode->name = m_currentToken.text;
     expect(TokenType::Identifier, "Expected structure name");
+    m_definedTypes.insert(structNode->name);
+    m_definedTypes.insert(toLower(structNode->name));
 
     // Generic parameter definition: Structure Box(Of T)
     if (match(TokenType::LParen)) {
@@ -2477,6 +2685,8 @@ std::unique_ptr<StructureNode> Parser::parseUnion(bool isPacked, int alignment) 
 
     unionNode->name = m_currentToken.text;
     expect(TokenType::Identifier, "Expected union name");
+    m_definedTypes.insert(unionNode->name);
+    m_definedTypes.insert(toLower(unionNode->name));
 
     while (m_currentToken.type != TokenType::Eof) {
         while (match(TokenType::Colon)) {}
@@ -2584,6 +2794,8 @@ std::unique_ptr<EnumNode> Parser::parseEnum(bool isPublic) {
 
     enumNode->name = m_currentToken.text;
     expect(TokenType::Identifier, "Expected enum name");
+    m_definedTypes.insert(enumNode->name);
+    m_definedTypes.insert(toLower(enumNode->name));
 
     int64_t nextValue = 0;
     while (m_currentToken.type != TokenType::Eof) {
@@ -2611,7 +2823,11 @@ std::unique_ptr<EnumNode> Parser::parseEnum(bool isPublic) {
                     if (numText.size() >= 2 && numText[0] == '&' && (numText[1] == 'H' || numText[1] == 'h')) {
                         val = static_cast<int64_t>(std::stoull(numText.substr(2), nullptr, 16));
                     } else {
-                        val = std::stoll(numText, nullptr, 10);
+                        try {
+                            val = std::stoll(numText, nullptr, 10);
+                        } catch (...) {
+                            val = static_cast<int64_t>(std::stoull(numText, nullptr, 10));
+                        }
                     }
                 } catch (...) {
                     val = 0;
@@ -2931,6 +3147,10 @@ std::unique_ptr<ModuleNode> Parser::parseModule() {
     }
     moduleNode->name = modName;
     m_definedProcedures.clear();
+    if (moduleNode->isClass || moduleNode->isInterface) {
+        m_definedTypes.insert(modName);
+        m_definedTypes.insert(toLower(modName));
+    }
 
     if (moduleNode->isInterface) {
         auto iface = std::make_unique<InterfaceNode>();

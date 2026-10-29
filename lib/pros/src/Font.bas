@@ -147,11 +147,11 @@ Namespace Pros.Drawing
         ''
         Public Unsafe Sub DrawGlyph5x7(ByRef surf As Surface, ByVal gx As Int32, ByVal gy As Int32, ByVal ascii As Byte, ByVal color As UInt32)
             If surf.Pixels = 0 Then Exit Sub
-            If surf.Width = 0 Or surf.Height = 0 Then Exit Sub
+            If surf.Width <= 0 Or surf.Height <= 0 Then Exit Sub
 
             ' Complete off-screen clipping
-            If gx + 5 <= 0 Or gx >= CType(Int32, surf.Width) Then Exit Sub
-            If gy + 7 <= 0 Or gy >= CType(Int32, surf.Height) Then Exit Sub
+            If gx + 5 <= 0 Or gx >= surf.Width Then Exit Sub
+            If gy + 7 <= 0 Or gy >= surf.Height Then Exit Sub
 
             Dim uAscii As UInt32 = CType(UInt32, ascii)
             If uAscii < 32 Or uAscii > 126 Then Exit Sub
@@ -175,13 +175,13 @@ Namespace Pros.Drawing
             Dim r As Int32 = 0
             While r < 7
                 Dim py As Int32 = gy + r
-                If py >= 0 And py < CType(Int32, surf.Height) Then
+                If py >= 0 And py < surf.Height Then
                     Dim rowVal As Byte = font5x7(baseOffset + CType(UInt32, r))
                     If rowVal <> 0 Then
                         Dim c As Int32 = 0
                         While c < 5
                             Dim px As Int32 = gx + c
-                            If px >= 0 And px < CType(Int32, surf.Width) Then
+                            If px >= 0 And px < surf.Width Then
                                 Dim bitMask As Byte = CType(Byte, 16 RShift c)
                                 If (rowVal And bitMask) <> 0 Then
                                     If is24bpp Then
@@ -233,9 +233,9 @@ Namespace Pros.Drawing
         ''
         Public Unsafe Sub DrawGlyph8x16(ByRef surf As Surface, ByVal gx As Int32, ByVal gy As Int32, ByVal ascii As Byte, ByVal color As UInt32)
             If surf.Pixels = 0 Then Exit Sub
-            If surf.Width = 0 Or surf.Height = 0 Then Exit Sub
-            If gx + 8 <= 0 Or gx >= CType(Int32, surf.Width) Then Exit Sub
-            If gy + 16 <= 0 Or gy >= CType(Int32, surf.Height) Then Exit Sub
+            If surf.Width <= 0 Or surf.Height <= 0 Then Exit Sub
+            If gx + 8 <= 0 Or gx >= surf.Width Then Exit Sub
+            If gy + 16 <= 0 Or gy >= surf.Height Then Exit Sub
             If ascii > 127 Then Exit Sub
 
             Dim fontBase As Pointer To Byte = GetFont8x16Base()
@@ -257,13 +257,13 @@ Namespace Pros.Drawing
             Dim r As Int32 = 0
             While r < 16
                 Dim py As Int32 = gy + r
-                If py >= 0 And py < CType(Int32, surf.Height) Then
+                If py >= 0 And py < surf.Height Then
                     Dim rowVal As Byte = fontBase(baseOffset + CType(UInt64, r))
                     If rowVal <> 0 Then
                         Dim c As Int32 = 0
                         While c < 8
                             Dim px As Int32 = gx + c
-                            If px >= 0 And px < CType(Int32, surf.Width) Then
+                            If px >= 0 And px < surf.Width Then
                                 Dim bitMask As Byte = CType(Byte, &H80 RShift c)
                                 If (rowVal And bitMask) <> 0 Then
                                     If is24bpp Then

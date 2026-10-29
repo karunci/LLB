@@ -16,7 +16,7 @@ Module DispServiceMain
 
         Dim fpsBuf(16) As Byte
         Dim fIdx As UInt32 = 0
-        AppendUInt CType(UInt64, fpsVal), @fpsBuf(0), fIdx
+        AppendUInt fpsVal, @fpsBuf(0), fIdx
         AppendStr " FPS", @fpsBuf(0), fIdx
         fpsBuf(fIdx) = 0
         DrawText5x7 surf, startX, startY, @fpsBuf(0), color
@@ -47,15 +47,15 @@ Module DispServiceMain
             Dim resBuf(64) As Byte
             Dim rIdx As UInt32 = 0
             AppendStr "[DISP_SRV] Resolution: ", @resBuf(0), rIdx
-            AppendUInt CType(UInt64, disp.Width), @resBuf(0), rIdx
+            AppendUInt disp.Width, @resBuf(0), rIdx
             AppendStr "x", @resBuf(0), rIdx
-            AppendUInt CType(UInt64, disp.Height), @resBuf(0), rIdx
+            AppendUInt disp.Height, @resBuf(0), rIdx
             AppendStr " @ ", @resBuf(0), rIdx
-            AppendUInt CType(UInt64, disp.Bpp), @resBuf(0), rIdx
+            AppendUInt disp.Bpp, @resBuf(0), rIdx
             AppendStr " BPP", @resBuf(0), rIdx
             resBuf(rIdx) = 0
             ConsoleWriteLine @resBuf(0)
-            ConsolePrintWithUInt "[DISP_SRV] Framebuffer Pitch: ", CType(UInt64, disp.Pitch), " bytes\r\n"
+            ConsolePrintWithUInt "[DISP_SRV] Framebuffer Pitch: ", disp.Pitch, " bytes\r\n"
             Dim apBuf(64) As Byte
             Dim aIdx As UInt32 = 0
             AppendStr "[DISP_SRV] Physical Aperture: 0x", @apBuf(0), aIdx

@@ -215,7 +215,7 @@ Module ProsApi
     <Packed>
     Public Structure WindowTable
         Public Revision    As UInt32
-        Public Count       As UInt32
+        Public Count       As Int32
         Public Windows(16) As WindowDescriptor
     End Structure
 
@@ -254,8 +254,8 @@ Module ProsApi
 
     <Packed>
     Public Structure Surface
-        Public Width     As UInt32
-        Public Height    As UInt32
+        Public Width     As Int32
+        Public Height    As Int32
         Public Pitch     As UInt32
         Public Bpp       As UInt32
         Public Pixels    As Pointer To UInt32
@@ -271,8 +271,8 @@ Module ProsApi
 
     <Packed>
     Public Structure DisplayInfo
-        Public Width    As UInt32
-        Public Height   As UInt32
+        Public Width    As Int32
+        Public Height   As Int32
         Public Pitch    As UInt32
         Public Bpp      As UInt32
         Public PhysAddr As PhysicalAddress

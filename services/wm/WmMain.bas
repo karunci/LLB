@@ -62,7 +62,7 @@ Module WmMain
     End Structure
 
     Private windows(16) As WindowItem
-    Private windowCount As UInt32 = 0
+    Private windowCount As Int32 = 0
     Private focusedWinId As UInt32 = 0
 
     ' Shared Memory WindowTable pointer (published to srv.compositor)
@@ -83,7 +83,7 @@ Module WmMain
         If pWindowTable = 0 Then Exit Sub
         pWindowTable.Revision = pWindowTable.Revision + 1
         pWindowTable.Count = windowCount
-        Dim i As UInt32 = 0
+        Dim i As Int32 = 0
         While i < windowCount
             pWindowTable.Windows(i).WinId = windows(i).Id
             pWindowTable.Windows(i).OwnerPid = windows(i).OwnerPid
@@ -114,7 +114,7 @@ Module WmMain
     ' @return Pointer to WindowItem or 0 if not found.
     ''
     Public Unsafe Function FindWindow(ByVal winId As UInt32) As Pointer To WindowItem
-        Dim i As UInt32 = 0
+        Dim i As Int32 = 0
         While i < windowCount
             If windows(i).Id = winId Then
                 FindWindow = CPtr(Pointer To WindowItem, AddressOf windows(i))
@@ -138,7 +138,7 @@ Module WmMain
             Exit Function
         End If
 
-        Dim idx As UInt32 = windowCount
+        Dim idx As Int32 = windowCount
         windows(idx).Id = id
         windows(idx).OwnerPid = ownerPid
         windows(idx).X = x
@@ -189,23 +189,23 @@ Module WmMain
         End If
 
         Dim foundIdx As Int32 = -1
-        Dim i As UInt32 = 0
+        Dim i As Int32 = 0
         While i < windowCount
             If windows(i).Id = winId Then
-                foundIdx = CType(Int32, i)
+                foundIdx = i
                 Exit While
             End If
             i = i + 1
         Wend
 
-        If foundIdx < 0 Or foundIdx = CType(Int32, windowCount - 1) Then
+        If foundIdx < 0 Or foundIdx = (windowCount - 1) Then
             RaiseWindow = (foundIdx >= 0)
             Exit Function
         End If
 
         ' Shift windows down and place raised window at top
         Dim target As WindowItem = windows(foundIdx)
-        Dim s As UInt32 = CType(UInt32, foundIdx)
+        Dim s As Int32 = foundIdx
         While s < (windowCount - 1)
             windows(s) = windows(s + 1)
             s = s + 1
@@ -306,10 +306,10 @@ Module WmMain
     ''
     Public Unsafe Function DestroyWindow(ByVal winId As UInt32) As Boolean
         Dim foundIdx As Int32 = -1
-        Dim i As UInt32 = 0
+        Dim i As Int32 = 0
         While i < windowCount
             If windows(i).Id = winId Then
-                foundIdx = CType(Int32, i)
+                foundIdx = i
                 Exit While
             End If
             i = i + 1
@@ -320,7 +320,7 @@ Module WmMain
             Exit Function
         End If
 
-        Dim s As UInt32 = CType(UInt32, foundIdx)
+        Dim s As Int32 = foundIdx
         While s < (windowCount - 1)
             windows(s) = windows(s + 1)
             s = s + 1
@@ -366,7 +366,7 @@ Module WmMain
             Dim hitTarget As Pointer To WindowItem = 0
             Dim hitCode As UInt32 = HIT_NONE
 
-            Dim i As Int32 = CType(Int32, windowCount) - 1
+            Dim i As Int32 = windowCount - 1
             While i >= 0
                 Dim pWin As Pointer To WindowItem = CPtr(Pointer To WindowItem, AddressOf windows(i))
                 If pWin.State <> WIN_STATE_MINIMIZED Then
@@ -570,8 +570,8 @@ Module WmMain
                     Dim shmId As UInt64 = pShm(0)
 
                     Dim newId As UInt32 = windowCount + 1
-                    Dim newX As Int32 = 60 + CType(Int32, windowCount * 50)
-                    Dim newY As Int32 = 60 + CType(Int32, windowCount * 40)
+                    Dim newX As Int32 = 60 + (windowCount * 50)
+                    Dim newY As Int32 = 60 + (windowCount * 40)
                     If (newX + w) > 1024 Then newX = 40
                     If (newY + h) > 768 Then newY = 40
 
@@ -637,7 +637,7 @@ Module WmMain
                     Dim pMx As Pointer To Int32 = CPtr(Pointer To Int32, @reqPkt.Payload(0))
                     Dim pMy As Pointer To Int32 = CPtr(Pointer To Int32, @reqPkt.Payload(4))
                     Dim pBtn As Pointer To Int32 = CPtr(Pointer To Int32, @reqPkt.Payload(8))
-                    Dim changed As Boolean = ProcessMouseInteraction(pMx(0), pMy(0), CType(Byte, pBtn(0)), 1024, 768)
+                    Dim changed As Boolean = ProcessMouseInteraction(pMx(0), pMy(0), Byte(pBtn(0)), 1024, 768)
                     If changed Then
                         SyncWindowTable
                         If synComp <> 0 Then

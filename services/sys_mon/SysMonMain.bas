@@ -51,7 +51,7 @@ Module SysMonMain
             user_main = 2
             Exit Function
         End If
-        ConsolePrintWithUInt "[SYS_MON] Registered window with WindowManager -> ID #", CType(UInt64, winId), "\r\n"
+        ConsolePrintWithUInt "[SYS_MON] Registered window with WindowManager -> ID #", winId, "\r\n"
 
         ' 3. Render Static Card Backgrounds
         FillRect clientSurf, 0, 0, CANVAS_W, CANVAS_H, &HFF232731
@@ -61,7 +61,7 @@ Module SysMonMain
         FillRect clientSurf, 10, 10, 4, 65, &HFF88C0D0
         DrawText5x7 clientSurf, 22, 16, "PROS MICROKERNEL TELEMETRY [CPL=3]", &HFFECEFF4
         DrawText5x7 clientSurf, 22, 30, "ARCH: x86_64 SMP (4 Cores Online)", &HFF81A1C1
-        DrawText5x7 clientSurf, 22, 44, "KERNEL REV: 2026.10.29-r37-re02", &HFFEBCB8B
+        DrawText5x7 clientSurf, 22, 44, "KERNEL REV: 2026.10.29-r37-re03", &HFFEBCB8B
         DrawText5x7 clientSurf, 22, 58, "STATUS: SYSTEM HEALTH OPTIMAL", &HFFA3BE8C
 
         ' Card 2: Neural Synapse Plane Card

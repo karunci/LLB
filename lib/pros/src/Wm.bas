@@ -271,7 +271,7 @@ Namespace Pros.Gui
             reqPkt.SourceNode = clientNodeId
             reqPkt.TargetNode = compNodeId
             Dim pPayload As Pointer To Int32 = CPtr(Pointer To Int32, @reqPkt.Payload(0))
-            pPayload(0) = CType(Int32, winId)
+            pPayload(0) = Int32(winId)
             pPayload(1) = rx
             pPayload(2) = ry
             pPayload(3) = rw

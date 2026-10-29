@@ -88,17 +88,17 @@ Module CompositorMain
         Dim row As Int32 = 0
         While row < blitH
             Dim curY As Int32 = dstY + row
-            If curY >= 0 And curY < CType(Int32, backSurf.Height) Then
+            If curY >= 0 And curY < backSurf.Height Then
                 Dim baseDstRow As Pointer To UInt32 = backSurf.Pixels + (CType(UInt32, curY) * pitchPix)
                 Dim srcRow As Pointer To UInt32 = pSrcPixels + (CType(UInt32, row) * CType(UInt32, surfW))
-                If dstX >= 0 And (dstX + blitW) <= CType(Int32, backSurf.Width) Then
+                If dstX >= 0 And (dstX + blitW) <= backSurf.Width Then
                     Dim dstScanPtr As Pointer To UInt32 = baseDstRow + CType(UInt32, dstX)
-                    fast_blit32 dstScanPtr, srcRow, CType(UInt64, blitW)
+                    fast_blit32 dstScanPtr, srcRow, blitW
                 Else
                     Dim col As Int32 = 0
                     While col < blitW
                         Dim curX As Int32 = dstX + col
-                        If curX >= 0 And curX < CType(Int32, backSurf.Width) Then
+                        If curX >= 0 And curX < backSurf.Width Then
                             baseDstRow(curX) = srcRow(col)
                         End If
                         col = col + 1
@@ -128,8 +128,8 @@ Module CompositorMain
 
         If x0 < 0 Then x0 = 0
         If y0 < 0 Then y0 = 0
-        If x1 > CType(Int32, dispInfo.Width) Then x1 = CType(Int32, dispInfo.Width)
-        If y1 > CType(Int32, dispInfo.Height) Then y1 = CType(Int32, dispInfo.Height)
+        If x1 > dispInfo.Width Then x1 = dispInfo.Width
+        If y1 > dispInfo.Height Then y1 = dispInfo.Height
 
         If x0 >= x1 Or y0 >= y1 Then Exit Sub
 
@@ -142,7 +142,7 @@ Module CompositorMain
             Dim pixOff As UInt64 = (CType(UInt64, py) * CType(UInt64, pitchPixels)) + CType(UInt64, x0)
             Dim dstPtr As Pointer To UInt32 = frontSurf.Pixels + pixOff
             Dim srcPtr As Pointer To UInt32 = backSurf.Pixels + pixOff
-            fast_blit32 dstPtr, srcPtr, CType(UInt64, clipW)
+            fast_blit32 dstPtr, srcPtr, clipW
             py = py + 1
         Wend
 
@@ -163,12 +163,12 @@ Module CompositorMain
             cy = 0
             While cy < CURSOR_H
                 curY = y + cy
-                If curY >= 0 And curY < CType(Int32, backSurf.Height) Then
+                If curY >= 0 And curY < backSurf.Height Then
                     Dim rawRow As Pointer To Byte = CPtr(Pointer To Byte, backSurf.Pixels) + (CType(UInt32, curY) * backSurf.Pitch)
                     cx = 0
                     While cx < CURSOR_W
                         curX = x + cx
-                        If curX >= 0 And curX < CType(Int32, backSurf.Width) Then
+                        If curX >= 0 And curX < backSurf.Width Then
                             Dim bOff As UInt32 = CType(UInt32, curX) * 3
                             Dim b As UInt32 = CType(UInt32, rawRow(bOff))
                             Dim g As UInt32 = CType(UInt32, rawRow(bOff + 1))
@@ -185,12 +185,12 @@ Module CompositorMain
             cy = 0
             While cy < CURSOR_H
                 curY = y + cy
-                If curY >= 0 And curY < CType(Int32, backSurf.Height) Then
+                If curY >= 0 And curY < backSurf.Height Then
                     Dim rowPtr As Pointer To UInt32 = backSurf.Pixels + (CType(UInt32, curY) * pitchPix)
                     cx = 0
                     While cx < CURSOR_W
                         curX = x + cx
-                        If curX >= 0 And curX < CType(Int32, backSurf.Width) Then
+                        If curX >= 0 And curX < backSurf.Width Then
                             cursorSavedBg((cy * CURSOR_W) + cx) = rowPtr(curX)
                         End If
                         cx = cx + 1
@@ -212,12 +212,12 @@ Module CompositorMain
             cy = 0
             While cy < CURSOR_H
                 curY = y + cy
-                If curY >= 0 And curY < CType(Int32, backSurf.Height) Then
+                If curY >= 0 And curY < backSurf.Height Then
                     Dim rawRow As Pointer To Byte = CPtr(Pointer To Byte, backSurf.Pixels) + (CType(UInt32, curY) * backSurf.Pitch)
                     cx = 0
                     While cx < CURSOR_W
                         curX = x + cx
-                        If curX >= 0 And curX < CType(Int32, backSurf.Width) Then
+                        If curX >= 0 And curX < backSurf.Width Then
                             Dim col As UInt32 = cursorSavedBg((cy * CURSOR_W) + cx)
                             Dim bOff As UInt32 = CType(UInt32, curX) * 3
                             rawRow(bOff) = CType(Byte, col And &HFF)
@@ -234,12 +234,12 @@ Module CompositorMain
             cy = 0
             While cy < CURSOR_H
                 curY = y + cy
-                If curY >= 0 And curY < CType(Int32, backSurf.Height) Then
+                If curY >= 0 And curY < backSurf.Height Then
                     Dim rowPtr As Pointer To UInt32 = backSurf.Pixels + (CType(UInt32, curY) * pitchPix)
                     cx = 0
                     While cx < CURSOR_W
                         curX = x + cx
-                        If curX >= 0 And curX < CType(Int32, backSurf.Width) Then
+                        If curX >= 0 And curX < backSurf.Width Then
                             rowPtr(curX) = cursorSavedBg((cy * CURSOR_W) + cx)
                         End If
                         cx = cx + 1
@@ -337,7 +337,7 @@ Module CompositorMain
         ' 4. Real-time dynamic FPS counter text measured from system timer (rendered every frame for permanent stability)
         Dim fpsBuf(16) As Byte
         Dim fIdx As UInt32 = 0
-        AppendUInt CType(UInt64, currentFps), @fpsBuf(0), fIdx
+        AppendUInt currentFps, @fpsBuf(0), fIdx
         AppendStr " FPS", @fpsBuf(0), fIdx
         fpsBuf(fIdx) = 0
 
@@ -372,9 +372,9 @@ Module CompositorMain
         Dim coordBuf(32) As Byte
         Dim cIdx As UInt32 = 0
         AppendStr "MOUSE: X=", @coordBuf(0), cIdx
-        AppendUInt CType(UInt64, cursorX), @coordBuf(0), cIdx
+        AppendUInt cursorX, @coordBuf(0), cIdx
         AppendStr " Y=", @coordBuf(0), cIdx
-        AppendUInt CType(UInt64, cursorY), @coordBuf(0), cIdx
+        AppendUInt cursorY, @coordBuf(0), cIdx
         coordBuf(cIdx) = 0
 
         FillRect backSurf, 430, 6, 180, 14, &HFF232731
@@ -454,16 +454,16 @@ Module CompositorMain
 
         DrawText5x7 backSurf, 16, 10, "PROS WORKSTATION  |  APPLICATIONS  NODES  SERVICES", &HFFECEFF4
         RenderMouseCoordinates False
-        DrawText5x7 backSurf, CType(Int32, dispInfo.Width) - 360, 10, "REV: 2026.10.29-r37-re02", &HFF88C0D0
-        DrawText5x7 backSurf, CType(Int32, dispInfo.Width) - 170, 10, "SMP 4 CORES  ONLINE", &HFFA3BE8C
+        DrawText5x7 backSurf, dispInfo.Width - 360, 10, "REV: 2026.10.29-r37-re03", &HFF88C0D0
+        DrawText5x7 backSurf, dispInfo.Width - 170, 10, "SMP 4 CORES  ONLINE", &HFFA3BE8C
 
         ' 3. Render all active desktop windows from shared memory
         RenderDesktopWindows
 
         ' 4. Initialize Telemetry Status Badge Container
         If dispInfo.Width > 220 And dispInfo.Height > 60 Then
-            badgeX = CType(Int32, dispInfo.Width) - 210
-            badgeY = CType(Int32, dispInfo.Height) - 34
+            badgeX = dispInfo.Width - 210
+            badgeY = dispInfo.Height - 34
             FillRect backSurf, badgeX, badgeY, 200, 26, &HFF2E3440
             FillRect backSurf, badgeX, badgeY, 200, 1, &HFF434C5E
             badgeActive = True
@@ -491,15 +491,15 @@ Module CompositorMain
             Dim resBuf(64) As Byte
             Dim rIdx As UInt32 = 0
             AppendStr "[COMPOSITOR] Discovered Display: ", @resBuf(0), rIdx
-            AppendUInt CType(UInt64, dispInfo.Width), @resBuf(0), rIdx
+            AppendUInt dispInfo.Width, @resBuf(0), rIdx
             AppendStr "x", @resBuf(0), rIdx
-            AppendUInt CType(UInt64, dispInfo.Height), @resBuf(0), rIdx
+            AppendUInt dispInfo.Height, @resBuf(0), rIdx
             AppendStr " @ ", @resBuf(0), rIdx
-            AppendUInt CType(UInt64, dispInfo.Bpp), @resBuf(0), rIdx
+            AppendUInt dispInfo.Bpp, @resBuf(0), rIdx
             AppendStr " BPP", @resBuf(0), rIdx
             resBuf(rIdx) = 0
             ConsoleWriteLine @resBuf(0)
-            ConsolePrintWithUInt "[COMPOSITOR] Framebuffer Pitch: ", CType(UInt64, dispInfo.Pitch), " bytes\r\n"
+            ConsolePrintWithUInt "[COMPOSITOR] Framebuffer Pitch: ", dispInfo.Pitch, " bytes\r\n"
         Else
             ConsoleWriteLine "[COMPOSITOR] WARN: Could not query display information"
         End If
@@ -521,7 +521,7 @@ Module CompositorMain
         End If
 
         ' 4b. Allocate Private In-RAM Backbuffer at 0x54000000 (PDPT[1] isolated user space)
-        Dim bufferBytes As UInt64 = CType(UInt64, dispInfo.Height) * CType(UInt64, dispInfo.Pitch)
+        Dim bufferBytes As UInt64 = UInt64(dispInfo.Height) * UInt64(dispInfo.Pitch)
         Dim pagesNeeded As UInt64 = ((bufferBytes + 4095) / 4096) + 1 ' +1 safety guard page
         Dim backPtr As Pointer To UInt32 = AllocatePages(pagesNeeded, &H54000000)
         If backPtr <> 0 Then
@@ -541,8 +541,8 @@ Module CompositorMain
         DrawDesktopScene
 
         ' 6. Initial cursor placement at screen center
-        cursorX = CType(Int32, dispInfo.Width / 2)
-        cursorY = CType(Int32, dispInfo.Height / 2)
+        cursorX = dispInfo.Width / 2
+        cursorY = dispInfo.Height / 2
         oldCursorX = cursorX
         oldCursorY = cursorY
         cursorInitialized = True
@@ -635,9 +635,9 @@ Module CompositorMain
 
                 ' Allow natural desktop overflow: cursor hotspot tip (0,0) reaches every boundary pixel
                 If newMx < 0 Then newMx = 0
-                If newMx >= CType(Int32, dispInfo.Width) Then newMx = CType(Int32, dispInfo.Width) - 1
+                If newMx >= dispInfo.Width Then newMx = dispInfo.Width - 1
                 If newMy < 0 Then newMy = 0
-                If newMy >= CType(Int32, dispInfo.Height) Then newMy = CType(Int32, dispInfo.Height) - 1
+                If newMy >= dispInfo.Height Then newMy = dispInfo.Height - 1
 
                 If newMx <> targetMx Or newMy <> targetMy Or mState.Buttons <> lastButtons Then
                     targetMx = newMx
@@ -657,7 +657,7 @@ Module CompositorMain
                         Dim pBtn As Pointer To Int32 = CPtr(Pointer To Int32, @mEvtPkt.Payload(8))
                         pMx(0) = targetMx
                         pMy(0) = targetMy
-                        pBtn(0) = CType(Int32, mState.Buttons)
+                        pBtn(0) = Int32(mState.Buttons)
                         mEvtPkt.PayloadLength = 12
                         SynapsePush synWm, mEvtPkt
                     End If
@@ -665,7 +665,7 @@ Module CompositorMain
                     ' Instant local hover hit-testing for dynamic cursor variant
                     Dim nextCursor As UInt32 = CURSOR_ARROW
                     If pWindowTable <> 0 And pWindowTable.Count > 0 Then
-                        Dim wi As Int32 = CType(Int32, pWindowTable.Count) - 1
+                        Dim wi As Int32 = pWindowTable.Count - 1
                         While wi >= 0
                             Dim wdesc As Pointer To WindowDescriptor = AddressOf pWindowTable.Windows(wi)
                             If wdesc.State <> WIN_STATE_MINIMIZED Then
@@ -715,8 +715,8 @@ Module CompositorMain
                     RestoreCursorBackground oldCursorX, oldCursorY
 
                     ' 1. Determine Dirty Bounding Box across modified windows and cursor
-                    Dim dirtyX0 As Int32 = CType(Int32, dispInfo.Width)
-                    Dim dirtyY0 As Int32 = CType(Int32, dispInfo.Height)
+                    Dim dirtyX0 As Int32 = dispInfo.Width
+                    Dim dirtyY0 As Int32 = dispInfo.Height
                     Dim dirtyX1 As Int32 = 0
                     Dim dirtyY1 As Int32 = 0
                     Dim anyWindowMoved As Boolean = False
@@ -731,8 +731,8 @@ Module CompositorMain
                                     anyWindowMoved = True
                                     dirtyX0 = 0
                                     dirtyY0 = 0
-                                    dirtyX1 = CType(Int32, dispInfo.Width)
-                                    dirtyY1 = CType(Int32, dispInfo.Height)
+                                    dirtyX1 = dispInfo.Width
+                                    dirtyY1 = dispInfo.Height
                                     winTrackKnown(wId) = True
                                 ElseIf twdesc.X <> winTrackX(wId) Or twdesc.Y <> winTrackY(wId) Or twdesc.Width <> winTrackW(wId) Or twdesc.Height <> winTrackH(wId) Or twdesc.State <> winTrackState(wId) Then
                                     anyWindowMoved = True
@@ -776,8 +776,8 @@ Module CompositorMain
                     If Not anyWindowMoved Then
                         dirtyX0 = 0
                         dirtyY0 = 0
-                        dirtyX1 = CType(Int32, dispInfo.Width)
-                        dirtyY1 = CType(Int32, dispInfo.Height)
+                        dirtyX1 = dispInfo.Width
+                        dirtyY1 = dispInfo.Height
                     Else
                         ' Expand with cursor bounds
                         If oldCursorX < dirtyX0 Then dirtyX0 = oldCursorX
@@ -806,8 +806,8 @@ Module CompositorMain
                     ' 2. Flush ONLY the calculated dirty bounding box to VRAM
                     If dirtyX0 < 0 Then dirtyX0 = 0
                     If dirtyY0 < 0 Then dirtyY0 = 0
-                    If dirtyX1 > CType(Int32, dispInfo.Width) Then dirtyX1 = CType(Int32, dispInfo.Width)
-                    If dirtyY1 > CType(Int32, dispInfo.Height) Then dirtyY1 = CType(Int32, dispInfo.Height)
+                    If dirtyX1 > dispInfo.Width Then dirtyX1 = dispInfo.Width
+                    If dirtyY1 > dispInfo.Height Then dirtyY1 = dispInfo.Height
                     Dim dirtyW As Int32 = dirtyX1 - dirtyX0
                     Dim dirtyH As Int32 = dirtyY1 - dirtyY0
                     If dirtyW > 0 And dirtyH > 0 Then

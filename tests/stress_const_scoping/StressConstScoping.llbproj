@@ -1,0 +1,24 @@
+' Project Name: Low-Level Basic Empirical Constant Scoping Stress Test
+' Filename: tests/stress_const_scoping/StressConstScoping.llbproj
+' Summary: Project manifest for empirical challenger testing module and imported constant scoping across procedure boundaries.
+
+[Project]
+Name    = "StressConstScoping"
+Type    = "Executable"
+Version = "1.0.0"
+
+[Output]
+OutDir  = "build"
+OutFile = "stress_const_scoping"
+
+[Entry]
+EntryPoint = "StressConstScoping.Main"
+
+[Sources]
+Module = "ExportConsts.bas"
+Module = "StressConstScoping.bas"
+
+[CompilerOptions]
+Optimize            = "O0"
+EmitDebugSymbols    = True
+AllowUnsafePointers = True

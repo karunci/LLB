@@ -22,8 +22,13 @@ The reference compiler toolchain (`llbc`) is designed to be **fully self-hosting
 | **[Core System Services Roadmap](CORE_SYSTEM_ROADMAP.md)** | Core Daemons: Synapse IPC, VFS, Device Manager, Service Manager, Display Compositor, Window Manager. |
 | **[System Applications Roadmap](SYSTEM_ROADMAP.md)** | Userland ecosystem: Terminal, System Monitor, Node Topology Viewer, BAX packaging, and user tools. |
 | **[Runtime & Standard Library Roadmap](STDLIB_AND_RUNTIME_ROADMAP.md)** | lib/runtime/brt0.S, complete mem* suite, pure LLB Standard Library (libpros), Type modernization, Dynamic Library Loader (.bdl). |
-| **[Compiler & Language Roadmap](LLBC_ROADMAP.md)** | llbc-stage0 & llbc-stage1, VB6 feature parity, LLVM 21 codegen, embedded LLD linker, language reference. |
 | **[System Architecture Overview](PROS_SYSTEM_ARCHITECTURE.md)** | High-level PROS hybrid architecture, dual-plane neural nodes, and memory maps. |
+| **[Dual-Plane Node Architecture](DUAL_PLANE_NODE_ARCHITECTURE.md)** | Real-Time & Event-Driven Synapse Channel Topology. |
+| **[System API & ABI Specification](SYSTEM_API_AND_ABI.md)** | Syscall Table, Neural Synapse IPC, Shared Memory Protocol. |
+| **[Pure LLB Standard Library](STANDARD_LIBRARY.md)** | API specifications for libpros and libmetal. |
+| **[BAX Binary Specification](BAX_EXECUTABLE_SPECIFICATION.md)** | BAX Executable format, resource tables, and dynamic linking. |
+| **[Directory Layout Specification](DIRECTORY_LAYOUT.md)** | Hybrid Windows + Android filesystem hierarchy. |
+| **[Compiler Roadmap (Branch: main)](https://github.com/karunci/LLB/tree/main/docs/LLBC_ROADMAP.md)** | Stage-0 C++ Frontend & LLVM Codegen Roadmap. |
 
 ---
 

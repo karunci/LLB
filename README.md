@@ -1,277 +1,193 @@
-# Low-Level Basic (LLB)
+# PROS (Personal Research Operating System)
 
 [![License: MPL-2.0](https://img.shields.io/badge/License-MPL_2.0-blue.svg)](LICENSE.md)
-[![Build Status](https://img.shields.io/badge/tests-69%2F69%20passed-brightgreen.svg)](docs/README.md#toolchain--environment-specifications)
-[![LLVM Version](https://img.shields.io/badge/backend-LLVM%2021-red.svg)](docs/README.md#development--methodology)
+[![Language: Low-Level Basic](https://img.shields.io/badge/Language-Low--Level%20Basic%20(LLB)-informational.svg)](https://github.com/karunci/LLB)
+[![Architecture: x86_64](https://img.shields.io/badge/Architecture-x86__64-orange.svg)](docs/KERNEL_ROADMAP.md)
+[![Boot: UEFI + BIOS Hybrid](https://img.shields.io/badge/Boot-UEFI%20%2B%20BIOS%20(GRUB)-brightgreen.svg)](kernel/scripts/build_iso.sh)
 [![AI-Assisted](https://img.shields.io/badge/development-AI--assisted-purple.svg)](AI_DISCLOSURE.md)
 
-> **Low-Level Basic (LLB)** is an Ahead-Of-Time (AOT) compiled systems programming language combining the safety guarantees and bare-metal performance of Rust and C/C++ with the clean, expressive, approachable syntax of Visual Basic 6.
+> **PROS** is a modern, modular 64-bit microkernel and graphical desktop operating system written in **Low-Level Basic (LLB)**, combining bare-metal systems performance with a clean, decoupled service architecture, dual-plane neural messaging, and double-buffered presentation compositing.
 
 ---
 
-## 💡 Why Low-Level Basic?
+## 🌐 Multi-Branch Ecosystem Navigation
+The Low-Level Basic repository is organized across three dedicated parallel branches:
 
-Modern systems programming languages often impose high cognitive burdens, steep learning curves, or complex syntax rules. Meanwhile, classic languages like Visual Basic 6 proved that software can be clear, readable, and rapid to construct — but were held back by runtime interpreters, OLE/COM overhead, and an inability to write bare-metal code.
-
-**Low-Level Basic solves this dilemma:**
-1. **Readable & Approachable:** Clear `Sub`, `Function`, `Module`, `Class`, `Select Case`, `With`, and `Print` statements without bracket clutter.
-2. **True Bare-Metal Control:** Explicit pointer types (`Pointer To T`), MMIO-safe registers (`Volatile Pointer To T`), inline assembly (`Asm`), and byte-accurate struct alignment (`<Packed>`, `<Align(N)>`).
-3. **Rust-Grade Safety Intent:** Bounds-checked arrays and null-pointer safety guards by default; explicit `Unsafe` context blocks required for raw memory addresses and physical pointer manipulation.
-4. **Freestanding & Self-Contained:** Zero mandatory host C library runtime dependencies. Perfect for microkernels, OS kernels, bootloaders, firmware, and high-performance standalone utilities.
-5. **Modern Language Power:** First-class generic templates (`Structure Box(Of T)`, `Function Min(Of T)`), pattern matching (`Match ... Case`), lambda expressions (`=>`), deterministic scoped cleanup (`Using ... End Using`), interfaces & vtables, and algebraic `Result(T, E)` error types.
+| Subsystem | Branch | Architecture & Responsibility | Remote Link |
+| :--- | :--- | :--- | :--- |
+| **Stage-0 Bootstrap Compiler** | `main` | C++ bootstrap compiler emitting LLVM IR for freestanding & hosted targets. | [**View Branch: `main`**](https://github.com/karunci/LLB/tree/main) |
+| **PROS Operating System** | `pros` | Complete 64-bit microkernel, system daemons (`services/`), GUI apps (`apps/gui/`), and SDK (`lib/`). | *Active Branch* |
+| **Stage-1 Self-Hosted Compiler** | `stage1` | Pure Low-Level Basic self-hosting compiler designed to run natively inside PROS. | [**View Branch: `stage1`**](https://github.com/karunci/LLB/tree/stage1) |
 
 ---
 
-## ⚡ Quick Sample Code
+## 🏛️ System Architecture
 
-### 1. Interactive Application (FFI & Console)
-```vb
-Module Main
-    Declare Function printf Lib "c" (ByVal format As Pointer To Byte, ByVal arg As Int32) As Int32
+PROS is engineered with a strict microkernel design: only memory management, hardware interrupt orchestration, preemptive multi-core scheduling, and inter-process communication reside in Ring 0. All device drivers, filesystem handlers, window compositing, and user utilities run as isolated Ring 3 services.
 
-    Public Sub MainEntry()
-        Dim answer As Int32 = 42
-        Dim status As String = "Ready"
-
-        ' First-class VB6-style string concatenation with auto-conversion
-        PrintLine "System status: " & status & ", Code: " & answer
-
-        ' Direct FFI call with C calling convention
-        printf(CPtr(Pointer To Byte, "Formatted output: %d" & Chr(10)), answer)
-    End Sub
-End Module
 ```
-
-### 2. Bare-Metal Kernel Hardware Driver (VGA Buffer)
-```vb
-Class Drivers.Terminal
-    Private Const VGA_ADDRESS As UInt64 = &HB8000
-    Private buffer As Volatile Pointer To UInt16
-
-    Public Unsafe Sub Initialize()
-        ' Explicit cast to MMIO volatile pointer
-        Me.buffer = CPtr(Volatile Pointer To UInt16, VGA_ADDRESS)
-        ' Write colored ASCII character ('A', Green on Black)
-        Me.buffer(0) = &H0A41
-    End Sub
-End Class
-```
-
-### 3. Generic Templates & Pattern Matching
-```vb
-Public Structure Box(Of T)
-    Public Value As T
-End Structure
-
-Public Function CheckResult(ByVal res As Result) As String
-    Match res
-        Case Ok(val)
-            CheckResult = "Success: " & val
-        Case Err(code)
-            CheckResult = "Error code: " & code
-        Case Else
-            CheckResult = "Unknown"
-    End Match
-End Function
-```
-
-### 4. Structured Error Handling & Freestanding Exceptions (`Try ... Catch ... Finally`)
-```vb
-Public Sub ExecuteTask(ByVal taskId As Int32)
-    Try
-        If taskId < 0 Then
-            ' Raise standard VB6-compatible error without CRT dependency
-            Err.Raise 1001, "TaskScheduler", "Invalid negative task ID"
-        End If
-        PrintLine "Executing task #" & taskId
-    Catch
-        ' Freestanding Err object provides rich diagnostic info
-        PrintLine "Error #" & Err.Number & " in " & Err.Source & ": " & Err.Description
-        Err.Clear
-    Finally
-        ' Cleanup logic executes unconditionally
-        PrintLine "Task execution block completed."
-    End Try
-End Sub
-```
-
-### 5. Deterministic Scoped Cleanup (`Using ... End Using`)
-```vb
-Class MutexGuard
-    Public Locked As Boolean
-
-    Public Sub Dispose()
-        If Me.Locked Then
-            PrintLine "Releasing spinlock..."
-            Me.Locked = False
-        End If
-    End Sub
-End Class
-
-Public Sub CriticalSection()
-    Dim guard As MutexGuard
-    guard.Locked = True
-
-    Using guard
-        PrintLine "Inside atomic critical section"
-        ' guard.Dispose() is guaranteed to execute upon leaving block
-    End Using
-End Sub
-```
-
-### 6. Modern First-Class Lambdas (`=>`) & Functional Pointers
-```vb
-Public Sub RunFilter()
-    ' Concisely define inline lambdas lowering to LLVM functions
-    Dim isEven As Pointer
-    isEven = Function(x As Int32) As Boolean => (x Mod 2) = 0
-
-    ' Dynamic array with bounds safety
-    Dim nums(4) As Int32
-    nums(0) = 10 : nums(1) = 15 : nums(2) = 20 : nums(3) = 25 : nums(4) = 30
-
-    Dim i As Int32
-    For i = 0 To UBound(nums)
-        If isEven(nums(i)) Then
-            PrintLine "Even number: " & nums(i)
-        End If
-    Next i
-End Sub
-```
-
-### 7. `Use` Statement — Scoped Binding, Aliasing & Class Instancing
-```vb
-' Import a MultiUse class and create independent, scoped instances
-Module Demo
-    Use ClassHelper In "ClassHelper.cls" As Helper
-
-    Public Sub Run()
-        ' Instantiate two independent value instances within scope
-        Use New Helper As h1
-        Use New Helper As h2
-
-        h1.Initialize 10     ' h1.m_val = 10
-        h2.Initialize 5      ' h2.m_val = 5  (fully independent)
-
-        PrintLine "h1 sum: " & h1.ComputeSum(3)   ' => 13
-        PrintLine "h2 sum: " & h2.ComputeSum(7)   ' => 12
-    End Sub
-End Module
-
-' SingleUse class — compiler enforces exactly one instance per scope
-<Instancing(SingleUse)>
-Class Logger
-    Public Sub Initialize(ByVal level As Int32)
-        ' ...
-    End Sub
-End Class
++-----------------------------------------------------------------------------------+
+|                           Ring 3: Graphical Desktop Apps                          |
+|   +-------------------+  +--------------------+  +----------------------------+   |
+|   | Terminal Emulator |  | System Telemetry   |  | Synapse Node Viewer        |   |
+|   |  (apps/gui/term)  |  | (apps/gui/sys_mon) |  | (apps/gui/node_viewer)     |   |
+|   +-------------------+  +--------------------+  +----------------------------+   |
++-----------------------------------------------------------------------------------+
+|                           Ring 3: Core System Daemons                             |
+|   +-------------------+  +--------------------+  +----------------------------+   |
+|   | Window Manager    |  | Display Compositor |  | Virtual Filesystem (VFS)   |   |
+|   |   (services/wm)   |  |   (compositor)     |  |   (services/vfs_srv)       |   |
+|   +-------------------+  +--------------------+  +----------------------------+   |
+|   +-------------------+  +--------------------+  +----------------------------+   |
+|   | Device Manager    |  | Input Manager      |  | Plexus Message Bus         |   |
+|   | (services/dev_mgr)|  | (services/input_srv|  | (services/plexus_mgr)      |   |
+|   +-------------------+  +--------------------+  +----------------------------+   |
++-----------------------------------------------------------------------------------+
+|                 Inter-Process Communication: Neural Synapse Channels             |
++-----------------------------------------------------------------------------------+
+|                         Ring 0: PROS Supervisor Microkernel                       |
+|   +---------------------------------------------------------------------------+   |
+|   | Architecture HAL: SMP 4 Cores, LAPIC/IO-APIC, IDT Context Switching       |   |
+|   | Memory Managers: PMM Free Stack, Buddy Allocator (64-128MB), VMM Paging   |   |
+|   | Scheduler: Work-Stealing Preemptive Runqueues, Calibrated LAPIC Timers    |   |
+|   | IPC & Dispatch: Synapse Channels, Fast Syscall Handler, Zero-Copy Rings   |   |
+|   +---------------------------------------------------------------------------+   |
++-----------------------------------------------------------------------------------+
 ```
 
 ---
 
+## 🚀 Key Architectural Features
 
+- **Freestanding Safety & Multi-Order Buddy Allocator:**
+  Zero dynamic heap allocations during early supervisor bootstrap. A dedicated 64 MB buddy pool (`&H4000000` to `&H8000000`) and Physical Memory Manager (PMM) operate on strictly disjoint physical address spaces to prevent double allocation.
+- **Symmetric Multiprocessing (SMP):**
+  Boots all Application Processors (APs) via calibrated Local APIC timers and PIT Channel 2 measurement. Provides multi-core preemptive scheduling with SSE register preservation across interrupt contexts.
+- **Neural Synapse Inter-Process Communication:**
+  Lockless, zero-copy ring buffers supporting both high-throughput streaming channels and blocking event queues (`SYS_SYNAPSE_POP`) that allow Ring 3 services to sleep with 0% CPU consumption when idle.
+- **Double-Buffered Display Compositor:**
+  Full 32-bit ARGB rasterization into a private RAM backbuffer (`backSurf`) with minimal union dirty-rectangle tracking and 32-bit DWORD-aligned burst flushes (`fast_blit32`) over PCIe to uncacheable Linear Framebuffer (LFB) MMIO apertures.
+- **Hybrid Desktop Filesystem (`C:\` & `/system`):**
+  Clean hybrid Windows + Android hierarchy providing intuitive paths for system assets, drivers, fonts, configuration, and user documents.
 
-## 🛠️ Toolchain Usage
+---
 
-The compiler driver `llbc-stage0` compiles single files or `.llbproj` project manifests directly into native ELF/PE binaries. All build artifacts are emitted into the `build/` directory.
+## 📂 Source Code Hierarchy
 
-```bash
-# 1. Compile and link a standalone application
-./build/llbc-stage0 app.bas -o build/app
-
-# 2. Build the comprehensive test suite via project manifest
-./build/llbc-stage0 tests/userland/TestSuite.llbproj
-
-# 3. Build a full bare-metal OS kernel via project manifest
-./build/llbc-stage0 tests/kernel/Kernel.llbproj
-
-# 4. Cross-compile for bare-metal x86_64 or AArch64
-./build/llbc-stage0 kernel.bas --target=x86_64-unknown-none-elf --nostdlib -o build/kernel.elf
+```text
+pros/
+├── kernel/                     # Ring 0 Supervisor Microkernel
+│   ├── src/
+│   │   ├── arch/x86_64/        # Boot stubs, IDT/GDT, LAPIC/IO-APIC, SMP, context switch
+│   │   ├── core/               # Microkernel entry point, kernel heap, panic handler
+│   │   ├── mem/                # PMM, VMM 4-level paging, Buddy allocator
+│   │   ├── sync/               # Spinlocks, atomic barriers
+│   │   ├── time/               # PIT calibration, LAPIC timer ticks
+│   │   ├── drivers/            # Early GOP framebuffer, COM1 serial UART, PS/2 8042
+│   │   └── tests/              # In-kernel self-tests (VMM isolation, buddy stress)
+│   ├── Kernel.llbproj          # Microkernel project manifest
+│   └── scripts/
+│       └── build_iso.sh        # Hybrid UEFI/BIOS bootable ISO generation script
+│
+├── services/                   # Headless Core System Daemons (Ring 3)
+│   ├── genesis/                # First userland process (PID 1) initializing services
+│   ├── compositor/             # Double-buffered display server & dirty rect flusher
+│   ├── wm/                     # Desktop window manager, event router, window frames
+│   ├── vfs_srv/                # Virtual filesystem server (USTAR ramdisk & RAM-FS)
+│   ├── dev_mgr/                # Hardware enumeration and device registry
+│   ├── input_srv/              # PS/2 keyboard & mouse event processor
+│   └── plexus_mgr/             # Synapse IPC name directory & routing hub
+│
+├── apps/                       # Native User Applications
+│   ├── gui/                    # Graphical Desktop Applications
+│   │   ├── sys_mon/            # Real-time CPU, memory, and telemetry monitor
+│   │   ├── terminal/           # Graphical terminal emulator with font rasterizer
+│   │   ├── node_viewer/        # Neural Synapse IPC channel visualizer
+│   │   └── user_app/           # Interactive GUI demo application
+│   └── cli/                    # Command-line tools (future)
+│
+├── lib/                        # Runtime Libraries & APIs
+│   ├── pros/                   # Pure LLB Standard Library (System API, Synapse, GUI)
+│   ├── metal/                  # Freestanding support library for kernel & boot code
+│   └── runtime/                # brt0.S process entry stub, assembly memory primitives
+│
+├── include/                    # Shared Global Include Headers
+│   ├── pros.bas                # Main client umbrella header for applications
+│   ├── syscalls.bas            # Architecture syscall numbers & prototypes
+│   └── synapse.bas             # Synapse IPC message structures & channels
+│
+├── tools/                      # Build & Emulation Utilities
+│   ├── pack_initrd.sh          # Packages services & apps into USTAR ramdisk (initrd.tar)
+│   └── run_qemu.ps1            # Windows PowerShell runner for QEMU emulation
+│
+└── docs/                       # Architectural Specifications & Roadmaps
 ```
 
 ---
 
-## 🔧 Building from Source
+## 🛠️ Building & Booting PROS
 
-### Primary Build Environment
+### Prerequisites
+- **Low-Level Basic Compiler:** `llbc-stage0` (built from branch `main`).
+- **Assembler & Linker:** `nasm`, embedded `lld` in `llbc-stage0`.
+- **ISO Tools:** `xorriso`, `grub-mkrescue`, `mtools` (available directly on Termux/Ubuntu).
+- **Virtual Machine:** `qemu-system-x86_64` (with WHPX/KVM acceleration recommended).
 
-This project is primarily developed and compiled on **Termux (Android)** using the following toolchain:
-
-| Component | Version |
-|-----------|---------|
-| Platform  | Termux on Android (AArch64) |
-| Compiler  | Clang / Clang++ |
-| Build system | CMake + Make |
-| Backend  | LLVM 21 + LLD |
-
+### 1. Build the Microkernel & All Services
+From the root of the `pros` workspace:
 ```bash
-# Termux packages
-pkg install clang llvm lld cmake make
+# 1. Compile the supervisor microkernel
+~/projects/LLB/llbc/build/llbc-stage0 kernel/Kernel.llbproj
+
+# 2. Compile system daemons & applications, packaging the USTAR initrd ramdisk
+bash tools/pack_initrd.sh
+
+# 3. Assemble the bootable hybrid UEFI/BIOS ISO image
+bash kernel/scripts/build_iso.sh
 ```
 
-### Building on Other Host Systems
+### 2. Run in QEMU
 
-> [!IMPORTANT]
-> CMake requires **both C and C++** languages to be enabled (for LLVM's internal `FindLibEdit` probe). This is already set correctly in `CMakeLists.txt` — if you hit the `"Unknown extension .c"` error, make sure you are using the latest `CMakeLists.txt` from this repo.
-
-#### Debian / Ubuntu
+#### Headless Verification (Fast Smoke Test):
 ```bash
-sudo apt install build-essential cmake clang llvm-dev liblld-dev libedit-dev
+qemu-system-x86_64 -cdrom kernel/build/kernel.iso -smp 4 -m 1G -display none -serial stdio -no-reboot
 ```
 
-#### Arch Linux
-```bash
-sudo pacman -S base-devel cmake clang llvm lld libedit
+#### Graphical Desktop Boot (Windows):
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\run_qemu.ps1
 ```
 
-#### Fedora / RHEL
-```bash
-sudo dnf install gcc gcc-c++ cmake clang llvm-devel lld libedit-devel
-```
-
-#### macOS (Homebrew)
-```bash
-brew install cmake llvm lld libedit
-# Homebrew LLVM is keg-only; point CMake to it:
-export PATH="$(brew --prefix llvm)/bin:$PATH"
-export LDFLAGS="-L$(brew --prefix llvm)/lib"
-export CPPFLAGS="-I$(brew --prefix llvm)/include"
-```
-
-#### NixOS / nix-shell
-```bash
-nix-shell -p cmake clang llvm lld libedit
-```
-
-### Build Steps (all platforms)
-```bash
-git clone https://github.com/karunci/LLB.git
-cd LLB/llbc
-
-mkdir build && cd build
-cmake ..
-cmake --build . -j$(nproc)   # or: make -j$(nproc)
-
-# The compiler binary will be at:
-./build/llbc-stage0   # (or ./build/llbc symlink)
+Or via native QEMU:
+```powershell
+& "C:\Program Files\qemu\qemu-system-x86_64.exe" -cdrom kernel/build/kernel.iso -smp 4 -m 1G -vga std -serial stdio -no-reboot
 ```
 
 ---
 
-## 📖 Complete Documentation
+## 📸 System Gallery
 
-Comprehensive documentation, full language grammar, type specifications, FFI rules, and bare-metal kernel references are available in the [`docs/`](docs/) directory:
-
-- 📘 **[Full Language & Architecture Documentation](docs/README.md)** — In-depth guide covering all keywords, syntax, generics, memory models, attributes, runtime libraries, and project manifests.
-- 📕 **[Formal Language Reference Manual](docs/LANGUAGE_REFERENCE.md)** — Exhaustive 28-section language specification including grammar, layout intrinsics, interrupt handlers, and static assertions.
-- 📗 **[Standard Library Reference (`LibLLB` & `LibLLB_Metal`)](docs/STANDARD_LIBRARY.md)** — Complete API documentation with declarations, usage examples, and C standard library mappings.
-- 🗺️ **[Feature Parity & Implementation Roadmap](docs/LLB_FEATURES_ROADMAPS.md)** — Complete audit of VB6 compatibility, modern extensions, and current compiler status.
-- 📜 **[Licensing & AI Ingestion Restrictions](LICENSE.md)** — Dual-license terms (MPL-2.0 and AI training prohibitions).
+| Kernel Boot Banner (UEFI GOP & Serial) | Real-Time Telemetry & Desktop Compositor |
+| :---: | :---: |
+| ![PROS Boot Banner](docs/kernel_boot_1.png) | ![PROS Desktop Dashboard](docs/graphics_mode_dashboard.png) |
 
 ---
 
-## ⚖️ License
+## 📖 Complete Documentation & Roadmaps
 
-Low-Level Basic Compiler (`llbc`) is dual-licensed under:
-1. **Mozilla Public License, Version 2.0 (MPL-2.0)** — See [`docs/LICENSE.md`](docs/LICENSE.md).
-2. **Artificial Intelligence (AI) and Machine Learning (ML) Data Mining Restriction** — Explicitly prohibiting unauthorized automated scraping, training, or fine-tuning of machine learning models. See [`LICENSE.md`](LICENSE.md).
+The [`docs/`](docs/) directory contains detailed architectural documents:
+
+- 🗺️ **[Kernel Roadmap](docs/KERNEL_ROADMAP.md)** — Microkernel milestones (VMM, PMM, Buddy, SMP, ACPI, Interrupts).
+- 🗺️ **[Core System Services Roadmap](docs/CORE_SYSTEM_ROADMAP.md)** — Daemons roadmap (Compositor, WM, VFS, DevMgr, Input).
+- 🗺️ **[System Applications Roadmap](docs/SYSTEM_ROADMAP.md)** — GUI desktop applications and CLI tools.
+- 🗺️ **[Runtime & Standard Library Roadmap](docs/STDLIB_AND_RUNTIME_ROADMAP.md)** — Standard library evolution and dynamic loaders.
+- 📜 **[System API & ABI Specification](docs/SYSTEM_API_AND_ABI.md)** — Syscall convention, register dispatch, and Synapse channel protocol.
+- 📚 **[Standard Library API Reference](docs/STANDARD_LIBRARY.md)** — Detailed manual for `lib/pros` APIs.
+- 📦 **[BAX Executable Specification](docs/BAX_EXECUTABLE_SPECIFICATION.md)** — BAX binary format, section layout, and resource dictionaries.
+- 🏛️ **[System Architecture Overview](docs/PROS_SYSTEM_ARCHITECTURE.md)** — Hybrid microkernel design, memory maps, and IPC topology.
+- 🗂️ **[Directory Layout Specification](docs/DIRECTORY_LAYOUT.md)** — Complete file and folder hierarchy.
+
+---
+
+## 📄 License
+This project is licensed under the Mozilla Public License 2.0 (MPL-2.0). See [LICENSE.md](LICENSE.md) for full details.

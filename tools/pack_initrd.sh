@@ -27,3 +27,4 @@ cp "${STAGING_DIR}/Apps/UserApp/user_app.bax" "${STAGING_DIR}/"
 mkdir -p build
 tar -cf build/initrd.tar -C "${STAGING_DIR}" .
 echo "[+] Packed build/initrd.tar successfully."
+

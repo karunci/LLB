@@ -19,7 +19,7 @@ Module PlexusMgrMain
     <Packed>
     Structure ServiceItem
         Public Pid           As UInt64
-        Public Name          As Pointer To Byte
+        Public Name          As String
         Public NodeId        As UInt64
         Public Status        As UInt32
         Public LastHeartbeat As UInt64
@@ -31,7 +31,7 @@ Module PlexusMgrMain
     ''
     ' @brief Register a core system service into the supervisor tracking table.
     ''
-    Private Unsafe Sub AddService(ByVal name As Pointer To Byte, ByVal nodeId As UInt64)
+    Private Unsafe Sub AddService(ByVal name As String, ByVal nodeId As UInt64)
         If serviceCount >= 8 Then Exit Sub
         services(serviceCount).Pid = serviceCount + 1
         services(serviceCount).Name = name
@@ -40,25 +40,6 @@ Module PlexusMgrMain
         services(serviceCount).LastHeartbeat = GetUptime()
         serviceCount = serviceCount + 1
     End Sub
-
-    ''
-    ' @brief String equality helper for service queries.
-    ''
-    Private Unsafe Function StrEquals(ByVal s1 As Pointer To Byte, ByVal s2 As Pointer To Byte) As Boolean
-        If s1 = CPtr(Pointer To Byte, 0) Or s2 = CPtr(Pointer To Byte, 0) Then
-            StrEquals = False
-            Exit Function
-        End If
-        Dim idx As UInt32 = 0
-        While s1(idx) <> 0 And s2(idx) <> 0
-            If s1(idx) <> s2(idx) Then
-                StrEquals = False
-                Exit Function
-            End If
-            idx = idx + 1
-        Wend
-        StrEquals = (s1(idx) = 0 And s2(idx) = 0)
-    End Function
 
     ''
     ' @brief Application entry point for plexus_mgr daemon (Ring 3 CPL=3).
@@ -75,7 +56,7 @@ Module PlexusMgrMain
         ConsolePrintWithUInt "[PLEXUS_MGR] Active Service PID = ", myPid, "\r\n"
 
         ' 2. Register Plexus Manager Node
-        Dim mgrNodeId As UInt64 = NodeRegister(2, CPtr(Pointer To Byte, "srv.plexus_mgr"), 7)
+        Dim mgrNodeId As UInt64 = NodeRegister(2, "srv.plexus_mgr", 7)
         If mgrNodeId <> 0 Then
             ConsolePrintWithUInt "[PLEXUS_MGR] Registered Node 'srv.plexus_mgr' -> Node #", mgrNodeId, "\r\n"
         Else
@@ -85,34 +66,34 @@ Module PlexusMgrMain
         ' 3. Monitor and register core service nodes into supervisor table
         serviceCount = 0
 
-        Dim srvDispId As UInt64 = NodeLookup(CPtr(Pointer To Byte, "srv.display"))
+        Dim srvDispId As UInt64 = NodeLookup("srv.display")
         If srvDispId <> 0 Then
             ConsolePrintWithUInt "[PLEXUS_MGR] Monitoring Service 'srv.display' (Node #", srvDispId, ")\r\n"
-            AddService CPtr(Pointer To Byte, "srv.display"), srvDispId
+            AddService "srv.display", srvDispId
         End If
 
-        Dim srvInputId As UInt64 = NodeLookup(CPtr(Pointer To Byte, "srv.input"))
+        Dim srvInputId As UInt64 = NodeLookup("srv.input")
         If srvInputId <> 0 Then
             ConsolePrintWithUInt "[PLEXUS_MGR] Monitoring Service 'srv.input' (Node #", srvInputId, ")\r\n"
-            AddService CPtr(Pointer To Byte, "srv.input"), srvInputId
+            AddService "srv.input", srvInputId
         End If
 
-        Dim srvCompId As UInt64 = NodeLookup(CPtr(Pointer To Byte, "srv.compositor"))
+        Dim srvCompId As UInt64 = NodeLookup("srv.compositor")
         If srvCompId <> 0 Then
             ConsolePrintWithUInt "[PLEXUS_MGR] Monitoring Service 'srv.compositor' (Node #", srvCompId, ")\r\n"
-            AddService CPtr(Pointer To Byte, "srv.compositor"), srvCompId
+            AddService "srv.compositor", srvCompId
         End If
 
-        Dim srvWmId As UInt64 = NodeLookup(CPtr(Pointer To Byte, "srv.wm"))
+        Dim srvWmId As UInt64 = NodeLookup("srv.wm")
         If srvWmId <> 0 Then
             ConsolePrintWithUInt "[PLEXUS_MGR] Monitoring Service 'srv.wm' (Node #", srvWmId, ")\r\n"
-            AddService CPtr(Pointer To Byte, "srv.wm"), srvWmId
+            AddService "srv.wm", srvWmId
         End If
 
-        Dim srvVfsId As UInt64 = NodeLookup(CPtr(Pointer To Byte, "srv.vfs"))
+        Dim srvVfsId As UInt64 = NodeLookup("srv.vfs")
         If srvVfsId <> 0 Then
             ConsolePrintWithUInt "[PLEXUS_MGR] Monitoring Service 'srv.vfs' (Node #", srvVfsId, ")\r\n"
-            AddService CPtr(Pointer To Byte, "srv.vfs"), srvVfsId
+            AddService "srv.vfs", srvVfsId
         End If
 
         ConsolePrintWithUInt "[PLEXUS_MGR] Service supervisor table populated: ", CType(UInt64, serviceCount), " Supervised Services\r\n"

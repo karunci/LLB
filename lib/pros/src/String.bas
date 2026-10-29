@@ -8,17 +8,17 @@ Namespace Pros.String
 
         ''
         ' @brief Computes length of null-terminated ASCII string excluding null terminator.
-        ' @param strPtr Pointer to null-terminated string.
+        ' @param s String or pointer to null-terminated string.
         ' @return Number of characters before null terminator, or 0 if pointer is null.
         ''
-        Public Unsafe Function StrLen(ByVal strPtr As Pointer To Byte) As UInt64
-            If strPtr = 0 Then
+        Public Unsafe Function StrLen(ByVal s As String) As UInt64
+            If s = 0 Then
                 StrLen = 0
                 Exit Function
             End If
 
             Dim lenVal As UInt64 = 0
-            While strPtr(lenVal) <> 0
+            While s(lenVal) <> 0
                 lenVal = lenVal + 1
             Wend
             StrLen = lenVal
@@ -26,11 +26,11 @@ Namespace Pros.String
 
         ''
         ' @brief Compares two null-terminated ASCII strings for exact byte-for-byte equality.
-        ' @param s1 Pointer to first null-terminated string.
-        ' @param s2 Pointer to second null-terminated string.
+        ' @param s1 First string.
+        ' @param s2 Second string.
         ' @return True if strings are byte-for-byte identical, False otherwise.
         ''
-        Public Unsafe Function StrEquals(ByVal s1 As Pointer To Byte, ByVal s2 As Pointer To Byte) As Boolean
+        Public Unsafe Function StrEquals(ByVal s1 As String, ByVal s2 As String) As Boolean
             If s1 = s2 Then
                 StrEquals = True
                 Exit Function
@@ -60,11 +60,11 @@ Namespace Pros.String
         ''
         ' @brief Appends null-terminated ASCII string into destination buffer at outIdx.
         '        Does not append trailing null terminator; caller controls string completion.
-        ' @param s Pointer to null-terminated source string to append.
+        ' @param s Source string to append.
         ' @param buf Pointer to destination buffer.
         ' @param outIdx Current index in destination buffer; updated to index after last appended byte.
         ''
-        Public Unsafe Sub AppendStr(ByVal s As Pointer To Byte, ByVal buf As Pointer To Byte, ByRef outIdx As UInt32)
+        Public Unsafe Sub AppendStr(ByVal s As String, ByVal buf As Pointer To Byte, ByRef outIdx As UInt32)
             If s = 0 Or buf = 0 Then Exit Sub
 
             Dim i As UInt32 = 0
@@ -147,11 +147,11 @@ Namespace Pros.String
         ''
         ' @brief Strips leading and trailing whitespace characters (ASCII <= 32),
         '        writing result into outBuf with a terminating null byte.
-        ' @param src Pointer to source null-terminated string.
+        ' @param src Source null-terminated string.
         ' @param outBuf Pointer to destination buffer receiving trimmed string.
         ' @return Number of characters in trimmed string (excluding null terminator).
         ''
-        Public Unsafe Function Trim(ByVal src As Pointer To Byte, ByVal outBuf As Pointer To Byte) As UInt64
+        Public Unsafe Function Trim(ByVal src As String, ByVal outBuf As Pointer To Byte) As UInt64
             If outBuf = 0 Then
                 Trim = 0
                 Exit Function

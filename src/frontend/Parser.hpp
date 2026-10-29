@@ -16,19 +16,27 @@
 #include <vector>
 #include <unordered_map>
 #include <unordered_set>
+#include <functional>
 
 namespace llbc {
 
 class Parser {
 public:
+    using ImportHandler = std::function<void(const ImportDirective&, std::unordered_map<std::string, TypeSpec>&)>;
+
     explicit Parser(Lexer lexer, std::unordered_map<std::string, int64_t> defines = {}, std::string sourceFilePath = "");
 
     std::unique_ptr<ModuleNode> parseModule();
+
+    void setImportHandler(ImportHandler handler) { m_importHandler = std::move(handler); }
 
     void reportError(const std::string& message, const Token* tok = nullptr);
 
 private:
     void parseContainerMembers(ModuleNode* container);
+
+    ModuleNode* m_currentModule{nullptr};
+    ImportHandler m_importHandler;
 
     Lexer m_lexer;
     Token m_currentToken;

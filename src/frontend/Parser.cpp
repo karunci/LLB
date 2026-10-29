@@ -396,6 +396,9 @@ void Parser::parseTypeAlias() {
     expect(TokenType::Equal, "Expected '=' in TypeAlias definition");
     TypeSpec targetType = parseTypeSpec();
     m_typeAliases[aliasName] = targetType;
+    if (m_currentModule) {
+        m_currentModule->typeAliases[aliasName] = targetType;
+    }
 }
 
 ImportDirective Parser::parseImportStatement() {
@@ -2807,6 +2810,7 @@ std::unique_ptr<ModuleNode> Parser::parseModule() {
     auto moduleNode = std::make_unique<ModuleNode>();
     moduleNode->line = m_currentToken.line;
     moduleNode->column = m_currentToken.column;
+    m_currentModule = moduleNode.get();
 
     InstancingKind instancing = InstancingKind::Unspecified;
 
@@ -2818,7 +2822,11 @@ std::unique_ptr<ModuleNode> Parser::parseModule() {
         while (match(TokenType::Colon)) {}
         if (m_currentToken.type == TokenType::KwImport || checkKeyword("Import")) {
             consume();
-            leadingImports.push_back(parseImportStatement());
+            auto imp = parseImportStatement();
+            if (m_importHandler) {
+                m_importHandler(imp, m_typeAliases);
+            }
+            leadingImports.push_back(std::move(imp));
         } else if (m_currentToken.type == TokenType::KwUse || checkKeyword("Use")) {
             consume();
             leadingUses.push_back(parseUseStatement());
@@ -2866,7 +2874,11 @@ std::unique_ptr<ModuleNode> Parser::parseModule() {
         while (match(TokenType::Colon)) {}
         if (m_currentToken.type == TokenType::KwImport || checkKeyword("Import")) {
             consume();
-            leadingImports.push_back(parseImportStatement());
+            auto imp = parseImportStatement();
+            if (m_importHandler) {
+                m_importHandler(imp, m_typeAliases);
+            }
+            leadingImports.push_back(std::move(imp));
         } else if (m_currentToken.type == TokenType::KwUse || checkKeyword("Use")) {
             consume();
             leadingUses.push_back(parseUseStatement());
@@ -3008,6 +3020,14 @@ std::unique_ptr<ModuleNode> Parser::parseModule() {
 }
 
 void Parser::parseContainerMembers(ModuleNode* container) {
+    ModuleNode* prevModule = m_currentModule;
+    m_currentModule = container;
+    struct ContainerScopeGuard {
+        ModuleNode** target;
+        ModuleNode* prev;
+        ~ContainerScopeGuard() { *target = prev; }
+    } scopeGuard{&m_currentModule, prevModule};
+
     while (m_currentToken.type != TokenType::Eof) {
         while (match(TokenType::Colon)) {}
 
@@ -3138,7 +3158,11 @@ void Parser::parseContainerMembers(ModuleNode* container) {
         // Module / Class Level Declarations
         if (m_currentToken.type == TokenType::KwImport || checkKeyword("Import")) {
             consume();
-            container->imports.push_back(parseImportStatement());
+            auto imp = parseImportStatement();
+            if (m_importHandler) {
+                m_importHandler(imp, m_typeAliases);
+            }
+            container->imports.push_back(std::move(imp));
             continue;
         }
 
@@ -3255,6 +3279,11 @@ void Parser::parseContainerMembers(ModuleNode* container) {
                 continue;
             }
 
+            if (m_currentToken.type == TokenType::KwTypeAlias || checkKeyword("TypeAlias")) {
+                consume();
+                parseTypeAlias();
+                continue;
+            }
             if (m_currentToken.type == TokenType::KwInterface || checkKeyword("Interface")) {
                 consume();
                 container->members.push_back(parseInterface(isPub));

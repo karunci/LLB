@@ -1,0 +1,30 @@
+' Project Name: Low-Level Basic Node Registration & Lookup Stress Test Suite
+' Filename: tests/node_stress_test/NodeStressTest.llbproj
+' Summary: Manifest for empirical stress testing of node registration and lookup parameters.
+
+[Project]
+Name    = "test_node_stress"
+Type    = "Executable"
+Version = "1.0.0"
+
+[Target]
+Arch = "x86_64-unknown-none-elf"
+
+[Output]
+OutDir  = "build"
+OutFile = "test_node_stress.elf"
+
+[Entry]
+EntryPoint = "_start"
+
+[Linker]
+LinkerScript = "user_linker.ld"
+Libraries    = [
+    "../../lib/pros/build/libpros.a"
+]
+
+[Sources]
+Assembly = "../../lib/runtime/brt0.S"
+Assembly = "../../lib/runtime/mem.S"
+Module   = "src/NodeStressMain.bas"
+

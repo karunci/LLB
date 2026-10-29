@@ -175,9 +175,9 @@ graph TD
 - [ ] **2.6** `Fs.bas`: High-level file and directory access wrappers (Deferred to Phase 3).
 
 ### Phase 3: Comprehensive Kernel & Service Type Modernization
-- [ ] **3.1** Kernel ABI: Semantic types (`ProcessId`, `Handle`, `VirtualAddress`), strongly-typed enums.
-- [ ] **3.2** `include/pros.bas`: Modernize declarations to native `String` and semantic types.
-- [ ] **3.3** Services Refactor: Purge C byte array hacks in favor of pure LLB `String` and structs.
+- [x] **3.1** Kernel ABI: Semantic types (`ProcessId`, `Handle`, `VirtualAddress`), strongly-typed enums.
+- [x] **3.2** `include/pros.bas`: Modernize declarations to native `String` and semantic types.
+- [x] **3.3** Services Refactor: Purge C byte array hacks in favor of pure LLB `String` and structs.
 
 ### Phase 4: Compositor Motion Smoothness
 - [ ] **4.1** Smooth out dirty-rect calculation, mouse event pacing, and window resize/drag corner alignment.

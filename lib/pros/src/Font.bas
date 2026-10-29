@@ -209,15 +209,15 @@ Namespace Pros.Drawing
         ' @param surf Target Surface.
         ' @param x Starting X coordinate.
         ' @param y Starting Y coordinate.
-        ' @param textPtr Pointer to null-terminated ASCII string.
+        ' @param text Null-terminated ASCII text string.
         ' @param color 32-bit ARGB foreground color.
         ''
-        Public Unsafe Sub DrawText5x7(ByRef surf As Surface, ByVal x As Int32, ByVal y As Int32, ByVal textPtr As Pointer To Byte, ByVal color As UInt32)
-            If surf.Pixels = 0 Or textPtr = 0 Then Exit Sub
+        Public Unsafe Sub DrawText5x7(ByRef surf As Surface, ByVal x As Int32, ByVal y As Int32, ByVal text As String, ByVal color As UInt32)
+            If surf.Pixels = 0 Or text = 0 Then Exit Sub
             Dim cx As Int32 = x
             Dim i As UInt32 = 0
-            While textPtr(i) <> 0
-                DrawGlyph5x7 surf, cx, y, textPtr(i), color
+            While text(i) <> 0
+                DrawGlyph5x7 surf, cx, y, text(i), color
                 cx = cx + 6
                 i = i + 1
             Wend
@@ -291,15 +291,15 @@ Namespace Pros.Drawing
         ' @param surf Target Surface.
         ' @param x Starting X coordinate.
         ' @param y Starting Y coordinate.
-        ' @param textPtr Pointer to null-terminated ASCII string.
+        ' @param text Null-terminated ASCII text string.
         ' @param color 32-bit ARGB foreground color.
         ''
-        Public Unsafe Sub DrawText8x16(ByRef surf As Surface, ByVal x As Int32, ByVal y As Int32, ByVal textPtr As Pointer To Byte, ByVal color As UInt32)
-            If surf.Pixels = 0 Or textPtr = 0 Then Exit Sub
+        Public Unsafe Sub DrawText8x16(ByRef surf As Surface, ByVal x As Int32, ByVal y As Int32, ByVal text As String, ByVal color As UInt32)
+            If surf.Pixels = 0 Or text = 0 Then Exit Sub
             Dim cx As Int32 = x
             Dim i As UInt32 = 0
-            While textPtr(i) <> 0
-                DrawGlyph8x16 surf, cx, y, textPtr(i), color
+            While text(i) <> 0
+                DrawGlyph8x16 surf, cx, y, text(i), color
                 cx = cx + 8
                 i = i + 1
             Wend
@@ -327,15 +327,15 @@ Namespace Pros.Drawing
         ' @param surf Target Surface.
         ' @param x Starting X coordinate.
         ' @param y Starting Y coordinate.
-        ' @param textPtr Pointer to null-terminated ASCII string.
+        ' @param text Null-terminated ASCII text string.
         ' @param color 32-bit ARGB foreground color.
         ' @param useLargeFont True for 8x16 console font, False for 5x7 compact font.
         ''
-        Public Unsafe Sub DrawText(ByRef surf As Surface, ByVal x As Int32, ByVal y As Int32, ByVal textPtr As Pointer To Byte, ByVal color As UInt32, ByVal useLargeFont As Boolean = False)
+        Public Unsafe Sub DrawText(ByRef surf As Surface, ByVal x As Int32, ByVal y As Int32, ByVal text As String, ByVal color As UInt32, ByVal useLargeFont As Boolean = False)
             If useLargeFont Then
-                DrawText8x16 surf, x, y, textPtr, color
+                DrawText8x16 surf, x, y, text, color
             Else
-                DrawText5x7 surf, x, y, textPtr, color
+                DrawText5x7 surf, x, y, text, color
             End If
         End Sub
 

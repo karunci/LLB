@@ -74,7 +74,29 @@ void LlvmEmitter::emitDebugLocation(size_t line, size_t col) {
     m_builder->SetCurrentDebugLocation(loc);
 }
 
+void LlvmEmitter::registerTypeAlias(const std::string& name, const TypeSpec& targetType) {
+    m_typeAliases[name] = targetType;
+    m_typeAliases[toLower(name)] = targetType;
+}
+
 llvm::Type* LlvmEmitter::getLlvmType(const TypeSpec& typeSpec) {
+    auto aliasIt = m_typeAliases.find(typeSpec.name);
+    if (aliasIt == m_typeAliases.end()) {
+        aliasIt = m_typeAliases.find(toLower(typeSpec.name));
+    }
+    if (aliasIt != m_typeAliases.end()) {
+        TypeSpec resolved = aliasIt->second;
+        resolved.pointerDepth += typeSpec.pointerDepth;
+        if (typeSpec.isVolatile) resolved.isVolatile = true;
+        if (typeSpec.isArray) {
+            resolved.isArray = true;
+            resolved.arraySize = typeSpec.arraySize;
+            resolved.dimensions = typeSpec.dimensions;
+        }
+        if (resolved.typeArgs.empty()) resolved.typeArgs = typeSpec.typeArgs;
+        return getLlvmType(resolved);
+    }
+
     std::string typeName = toLower(typeSpec.name);
 
     if (typeSpec.isArray && typeSpec.arraySize > 0) {
@@ -208,6 +230,23 @@ llvm::Type* LlvmEmitter::getLlvmType(const TypeSpec& typeSpec) {
 }
 
 llvm::Type* LlvmEmitter::getElementType(const TypeSpec& typeSpec) {
+    auto aliasIt = m_typeAliases.find(typeSpec.name);
+    if (aliasIt == m_typeAliases.end()) {
+        aliasIt = m_typeAliases.find(toLower(typeSpec.name));
+    }
+    if (aliasIt != m_typeAliases.end()) {
+        TypeSpec resolved = aliasIt->second;
+        resolved.pointerDepth += typeSpec.pointerDepth;
+        if (typeSpec.isVolatile) resolved.isVolatile = true;
+        if (typeSpec.isArray) {
+            resolved.isArray = true;
+            resolved.arraySize = typeSpec.arraySize;
+            resolved.dimensions = typeSpec.dimensions;
+        }
+        if (resolved.typeArgs.empty()) resolved.typeArgs = typeSpec.typeArgs;
+        return getElementType(resolved);
+    }
+
     TypeSpec decayed = typeSpec;
     if (decayed.isArray) {
         decayed.isArray = false;
@@ -7911,6 +7950,33 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
 
         // String Equality / Inequality Comparison:
         if ((isStringExpr(bin->lhs.get()) || isStringExpr(bin->rhs.get())) && (op == "=" || op == "<>")) {
+            auto isZeroOrNull = [](ExprASTNode* expr) -> bool {
+                if (!expr) return false;
+                if (auto num = dynamic_cast<NumberExprASTNode*>(expr)) {
+                    return !num->isFloat && num->val == 0;
+                }
+                return false;
+            };
+
+            if (isZeroOrNull(bin->rhs.get())) {
+                llvm::Value* l = emitExpression(bin->lhs.get());
+                if (!l) return nullptr;
+                if (!l->getType()->isPointerTy()) {
+                    l = coerceType(l, llvm::PointerType::get(*m_context, 0));
+                }
+                llvm::Value* isNull = m_builder->CreateIsNull(l, "str_isnull");
+                return (op == "=") ? isNull : m_builder->CreateNot(isNull, "str_notnull");
+            }
+            if (isZeroOrNull(bin->lhs.get())) {
+                llvm::Value* r = emitExpression(bin->rhs.get());
+                if (!r) return nullptr;
+                if (!r->getType()->isPointerTy()) {
+                    r = coerceType(r, llvm::PointerType::get(*m_context, 0));
+                }
+                llvm::Value* isNull = m_builder->CreateIsNull(r, "str_isnull");
+                return (op == "=") ? isNull : m_builder->CreateNot(isNull, "str_notnull");
+            }
+
             llvm::Value* l = emitExpression(bin->lhs.get());
             llvm::Value* r = emitExpression(bin->rhs.get());
             if (!l || !r) return nullptr;

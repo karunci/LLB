@@ -499,7 +499,7 @@ Module WmMain
         ConsolePrintWithUInt "[WM] Active Service PID = ", myPid, "\r\n"
 
         ' 2. Register Window Manager Node
-        Dim wmNodeId As UInt64 = NodeRegister(2, CPtr(Pointer To Byte, "srv.wm"), 7)
+        Dim wmNodeId As UInt64 = NodeRegister(2, "srv.wm", 7)
         If wmNodeId <> 0 Then
             ConsolePrintWithUInt "[WM] Registered Node 'srv.wm' -> Node #", wmNodeId, "\r\n"
         Else
@@ -516,7 +516,7 @@ Module WmMain
         End If
 
         ' 5. Connect to Compositor and Input Services
-        Dim compNodeId As UInt64 = NodeLookup(CPtr(Pointer To Byte, "srv.compositor"))
+        Dim compNodeId As UInt64 = NodeLookup("srv.compositor")
         Dim synComp As UInt64 = 0
         If compNodeId <> 0 Then
             ConsolePrintWithUInt "[WM] Attached to Display Compositor -> Node #", compNodeId, "\r\n"
@@ -536,7 +536,7 @@ Module WmMain
             End If
         End If
 
-        Dim inputNodeId As UInt64 = NodeLookup(CPtr(Pointer To Byte, "srv.input"))
+        Dim inputNodeId As UInt64 = NodeLookup("srv.input")
         Dim synInput As UInt64 = 0
         If inputNodeId <> 0 Then
             ConsolePrintWithUInt "[WM] Attached to Input Subsystem -> Node #", inputNodeId, "\r\n"
@@ -603,7 +603,7 @@ Module WmMain
 
                     ' Notify compositor to refresh desktop scene
                     If synComp = 0 Then
-                        compNodeId = NodeLookup(CPtr(Pointer To Byte, "srv.compositor"))
+                        compNodeId = NodeLookup("srv.compositor")
                         If compNodeId <> 0 Then
                             synComp = SynapseConnect(wmNodeId, compNodeId, 7)
                         End If

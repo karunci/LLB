@@ -5,6 +5,7 @@
 Import Pros.Sys.RawSyscall
 Import Pros.Sys.Process
 Import Pros.Nodes.NodeRegistry
+Import Pros.String.StringUtil
 
 Namespace Pros.Devices
 
@@ -36,7 +37,7 @@ Namespace Pros.Devices
                 Exit Function
             End If
 
-            Dim devMgrId As UInt64 = Pros.Nodes.NodeRegistry.Lookup(CPtr(Pointer To Byte, "srv.dev_mgr"))
+            Dim devMgrId As UInt64 = Pros.Nodes.NodeRegistry.Lookup("srv.dev_mgr")
             If devMgrId = 0 Then
                 QueryDevice = False
                 Exit Function
@@ -44,15 +45,10 @@ Namespace Pros.Devices
 
             Dim myPid As UInt64 = Pros.Sys.Process.GetPid()
             Dim clientName(16) As Byte
-            clientName(0) = 99  ' 'c'
-            clientName(1) = 108 ' 'l'
-            clientName(2) = 105 ' 'i'
-            clientName(3) = 101 ' 'e'
-            clientName(4) = 110 ' 'n'
-            clientName(5) = 116 ' 't'
-            clientName(6) = 46  ' '.'
-            clientName(7) = CType(Byte, 48 + (myPid Mod 10))
-            clientName(8) = 0
+            Dim cIdx As UInt32 = 0
+            AppendStr "client.", @clientName(0), cIdx
+            AppendUInt myPid Mod 10, @clientName(0), cIdx
+            clientName(cIdx) = 0
 
             Dim clientNodeId As UInt64 = Pros.Nodes.NodeRegistry.Lookup(@clientName(0))
             If clientNodeId = 0 Then

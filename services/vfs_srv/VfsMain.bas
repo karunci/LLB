@@ -20,7 +20,7 @@ Module VfsMain
 
     <Packed>
     Structure VfsEntry
-        Public Path     As Pointer To Byte
+        Public Path     As String
         Public SizeBytes As UInt32
         Public Kind     As UInt32
         Public Perms    As UInt32
@@ -29,28 +29,6 @@ Module VfsMain
     ' Maximum mounted system nodes in RAM VFS table
     Private vfsTable(64) As VfsEntry
     Private vfsCount As UInt32
-
-    ''
-    ' @brief String equality comparison helper for ASCII null-terminated paths.
-    ' @param s1 First string pointer.
-    ' @param s2 Second string pointer.
-    ' @return True if strings match character for character.
-    ''
-    Private Unsafe Function StrEquals(ByVal s1 As Pointer To Byte, ByVal s2 As Pointer To Byte) As Boolean
-        If s1 = CPtr(Pointer To Byte, 0) Or s2 = CPtr(Pointer To Byte, 0) Then
-            StrEquals = False
-            Exit Function
-        End If
-        Dim idx As UInt32 = 0
-        While s1(idx) <> 0 And s2(idx) <> 0
-            If s1(idx) <> s2(idx) Then
-                StrEquals = False
-                Exit Function
-            End If
-            idx = idx + 1
-        Wend
-        StrEquals = (s1(idx) = 0 And s2(idx) = 0)
-    End Function
 
     ''
     ' @brief Normalize path string supporting Windows C:\ drive notation and backslashes.
@@ -111,161 +89,161 @@ Module VfsMain
         vfsCount = 0
 
         ' Root directory
-        vfsTable(0).Path = CPtr(Pointer To Byte, "/")
+        vfsTable(0).Path = "/"
         vfsTable(0).SizeBytes = 0
         vfsTable(0).Kind = VFS_KIND_DIR
         vfsTable(0).Perms = &H0755
 
         ' 1. /Apps - User installed apps, their libraries, data, configs
-        vfsTable(1).Path = CPtr(Pointer To Byte, "/Apps")
+        vfsTable(1).Path = "/Apps"
         vfsTable(1).SizeBytes = 0
         vfsTable(1).Kind = VFS_KIND_DIR
         vfsTable(1).Perms = &H0777
 
-        vfsTable(2).Path = CPtr(Pointer To Byte, "/Apps/Terminal")
+        vfsTable(2).Path = "/Apps/Terminal"
         vfsTable(2).SizeBytes = 0
         vfsTable(2).Kind = VFS_KIND_DIR
         vfsTable(2).Perms = &H0777
 
-        vfsTable(3).Path = CPtr(Pointer To Byte, "/Apps/Terminal/terminal.bax")
+        vfsTable(3).Path = "/Apps/Terminal/terminal.bax"
         vfsTable(3).SizeBytes = 16384
         vfsTable(3).Kind = VFS_KIND_FILE
         vfsTable(3).Perms = &H0755
 
-        vfsTable(4).Path = CPtr(Pointer To Byte, "/Apps/Terminal/lib")
+        vfsTable(4).Path = "/Apps/Terminal/lib"
         vfsTable(4).SizeBytes = 0
         vfsTable(4).Kind = VFS_KIND_DIR
         vfsTable(4).Perms = &H0777
 
-        vfsTable(5).Path = CPtr(Pointer To Byte, "/Apps/UserApp")
+        vfsTable(5).Path = "/Apps/UserApp"
         vfsTable(5).SizeBytes = 0
         vfsTable(5).Kind = VFS_KIND_DIR
         vfsTable(5).Perms = &H0777
 
-        vfsTable(6).Path = CPtr(Pointer To Byte, "/Apps/UserApp/user_app.bax")
+        vfsTable(6).Path = "/Apps/UserApp/user_app.bax"
         vfsTable(6).SizeBytes = 12288
         vfsTable(6).Kind = VFS_KIND_FILE
         vfsTable(6).Perms = &H0755
 
         ' 2. /Libraries - System-wide shared libraries
-        vfsTable(7).Path = CPtr(Pointer To Byte, "/Libraries")
+        vfsTable(7).Path = "/Libraries"
         vfsTable(7).SizeBytes = 0
         vfsTable(7).Kind = VFS_KIND_DIR
         vfsTable(7).Perms = &H0755
 
         ' 3. /System - System-related files (configs, system apps, libraries, drivers, servers)
-        vfsTable(8).Path = CPtr(Pointer To Byte, "/System")
+        vfsTable(8).Path = "/System"
         vfsTable(8).SizeBytes = 0
         vfsTable(8).Kind = VFS_KIND_DIR
         vfsTable(8).Perms = &H0755
 
-        vfsTable(9).Path = CPtr(Pointer To Byte, "/System/Apps")
+        vfsTable(9).Path = "/System/Apps"
         vfsTable(9).SizeBytes = 0
         vfsTable(9).Kind = VFS_KIND_DIR
         vfsTable(9).Perms = &H0755
 
-        vfsTable(10).Path = CPtr(Pointer To Byte, "/System/Apps/Shell")
+        vfsTable(10).Path = "/System/Apps/Shell"
         vfsTable(10).SizeBytes = 0
         vfsTable(10).Kind = VFS_KIND_DIR
         vfsTable(10).Perms = &H0755
 
-        vfsTable(11).Path = CPtr(Pointer To Byte, "/System/Apps/Shell/lib")
+        vfsTable(11).Path = "/System/Apps/Shell/lib"
         vfsTable(11).SizeBytes = 0
         vfsTable(11).Kind = VFS_KIND_DIR
         vfsTable(11).Perms = &H0755
 
-        vfsTable(12).Path = CPtr(Pointer To Byte, "/System/Libraries")
+        vfsTable(12).Path = "/System/Libraries"
         vfsTable(12).SizeBytes = 0
         vfsTable(12).Kind = VFS_KIND_DIR
         vfsTable(12).Perms = &H0755
 
-        vfsTable(13).Path = CPtr(Pointer To Byte, "/System/Libraries/libpros.a")
+        vfsTable(13).Path = "/System/Libraries/libpros.a"
         vfsTable(13).SizeBytes = 65536
         vfsTable(13).Kind = VFS_KIND_FILE
         vfsTable(13).Perms = &H0644
 
-        vfsTable(14).Path = CPtr(Pointer To Byte, "/System/Libraries/libllb.a")
+        vfsTable(14).Path = "/System/Libraries/libllb.a"
         vfsTable(14).SizeBytes = 65536
         vfsTable(14).Kind = VFS_KIND_FILE
         vfsTable(14).Perms = &H0644
 
-        vfsTable(15).Path = CPtr(Pointer To Byte, "/System/Configs")
+        vfsTable(15).Path = "/System/Configs"
         vfsTable(15).SizeBytes = 0
         vfsTable(15).Kind = VFS_KIND_DIR
         vfsTable(15).Perms = &H0755
 
-        vfsTable(16).Path = CPtr(Pointer To Byte, "/System/Configs/system.cfg")
+        vfsTable(16).Path = "/System/Configs/system.cfg"
         vfsTable(16).SizeBytes = 1024
         vfsTable(16).Kind = VFS_KIND_FILE
         vfsTable(16).Perms = &H0644
 
-        vfsTable(17).Path = CPtr(Pointer To Byte, "/System/Drivers")
+        vfsTable(17).Path = "/System/Drivers"
         vfsTable(17).SizeBytes = 0
         vfsTable(17).Kind = VFS_KIND_DIR
         vfsTable(17).Perms = &H0755
 
-        vfsTable(18).Path = CPtr(Pointer To Byte, "/System/Servers")
+        vfsTable(18).Path = "/System/Servers"
         vfsTable(18).SizeBytes = 0
         vfsTable(18).Kind = VFS_KIND_DIR
         vfsTable(18).Perms = &H0755
 
-        vfsTable(19).Path = CPtr(Pointer To Byte, "/System/Servers/genesis.bax")
+        vfsTable(19).Path = "/System/Servers/genesis.bax"
         vfsTable(19).SizeBytes = 12288
         vfsTable(19).Kind = VFS_KIND_FILE
         vfsTable(19).Perms = &H0755
 
-        vfsTable(20).Path = CPtr(Pointer To Byte, "/System/Servers/disp_srv.bax")
+        vfsTable(20).Path = "/System/Servers/disp_srv.bax"
         vfsTable(20).SizeBytes = 8192
         vfsTable(20).Kind = VFS_KIND_FILE
         vfsTable(20).Perms = &H0755
 
-        vfsTable(21).Path = CPtr(Pointer To Byte, "/System/Servers/input_srv.bax")
+        vfsTable(21).Path = "/System/Servers/input_srv.bax"
         vfsTable(21).SizeBytes = 8192
         vfsTable(21).Kind = VFS_KIND_FILE
         vfsTable(21).Perms = &H0755
 
-        vfsTable(22).Path = CPtr(Pointer To Byte, "/System/Servers/compositor.bax")
+        vfsTable(22).Path = "/System/Servers/compositor.bax"
         vfsTable(22).SizeBytes = 16384
         vfsTable(22).Kind = VFS_KIND_FILE
         vfsTable(22).Perms = &H0755
 
-        vfsTable(23).Path = CPtr(Pointer To Byte, "/System/Servers/dev_mgr.bax")
+        vfsTable(23).Path = "/System/Servers/dev_mgr.bax"
         vfsTable(23).SizeBytes = 8192
         vfsTable(23).Kind = VFS_KIND_FILE
         vfsTable(23).Perms = &H0755
 
-        vfsTable(24).Path = CPtr(Pointer To Byte, "/System/Servers/plexus_mgr.bax")
+        vfsTable(24).Path = "/System/Servers/plexus_mgr.bax"
         vfsTable(24).SizeBytes = 8192
         vfsTable(24).Kind = VFS_KIND_FILE
         vfsTable(24).Perms = &H0755
 
-        vfsTable(25).Path = CPtr(Pointer To Byte, "/System/Servers/wm.bax")
+        vfsTable(25).Path = "/System/Servers/wm.bax"
         vfsTable(25).SizeBytes = 8192
         vfsTable(25).Kind = VFS_KIND_FILE
         vfsTable(25).Perms = &H0755
 
-        vfsTable(26).Path = CPtr(Pointer To Byte, "/System/Servers/vfs_srv.bax")
+        vfsTable(26).Path = "/System/Servers/vfs_srv.bax"
         vfsTable(26).SizeBytes = 8192
         vfsTable(26).Kind = VFS_KIND_FILE
         vfsTable(26).Perms = &H0755
 
         ' 4. /Users - User accounts directory
-        vfsTable(27).Path = CPtr(Pointer To Byte, "/Users")
+        vfsTable(27).Path = "/Users"
         vfsTable(27).SizeBytes = 0
         vfsTable(27).Kind = VFS_KIND_DIR
         vfsTable(27).Perms = &H0755
 
-        vfsTable(28).Path = CPtr(Pointer To Byte, "/Users/Default")
+        vfsTable(28).Path = "/Users/Default"
         vfsTable(28).SizeBytes = 0
         vfsTable(28).Kind = VFS_KIND_DIR
         vfsTable(28).Perms = &H0777
 
-        vfsTable(29).Path = CPtr(Pointer To Byte, "/Users/Default/Desktop")
+        vfsTable(29).Path = "/Users/Default/Desktop"
         vfsTable(29).SizeBytes = 0
         vfsTable(29).Kind = VFS_KIND_DIR
         vfsTable(29).Perms = &H0777
 
-        vfsTable(30).Path = CPtr(Pointer To Byte, "/Users/Default/Documents")
+        vfsTable(30).Path = "/Users/Default/Documents"
         vfsTable(30).SizeBytes = 0
         vfsTable(30).Kind = VFS_KIND_DIR
         vfsTable(30).Perms = &H0777
@@ -313,7 +291,7 @@ Module VfsMain
         ConsolePrintWithUInt "[VFS] Active Service PID = ", myPid, "\r\n"
 
         ' 2. Register VFS Storage Node in the Neural Node Registry
-        Dim vfsNodeId As UInt64 = NodeRegister(3, CPtr(Pointer To Byte, "srv.vfs"), 7)
+        Dim vfsNodeId As UInt64 = NodeRegister(3, "srv.vfs", 7)
         If vfsNodeId <> 0 Then
             ConsolePrintWithUInt "[VFS] Registered Node 'srv.vfs' -> Node #", vfsNodeId, "\r\n"
         Else
@@ -321,7 +299,7 @@ Module VfsMain
         End If
 
         ' 3. Connect to System Supervisor
-        Dim plexusNodeId As UInt64 = NodeLookup(CPtr(Pointer To Byte, "srv.plexus_mgr"))
+        Dim plexusNodeId As UInt64 = NodeLookup("srv.plexus_mgr")
         Dim synPlexus As UInt64 = 0
         If plexusNodeId <> 0 Then
             synPlexus = SynapseConnect(vfsNodeId, plexusNodeId, 7)

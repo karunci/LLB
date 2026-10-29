@@ -1,0 +1,30 @@
+' Project Name: Low-Level Basic Userland Service Deduplication Stress Test Suite
+' Filename: tests/dedup_stress_test/DedupStressTest.llbproj
+' Summary: Verification test manifest exercising deduplicated userland routines from libpros.
+
+[Project]
+Name    = "test_dedup_stress"
+Type    = "Executable"
+Version = "1.0.0"
+
+[Target]
+Arch = "x86_64-unknown-none-elf"
+
+[Output]
+OutDir  = "build"
+OutFile = "test_dedup_stress.elf"
+
+[Entry]
+EntryPoint = "_start"
+
+[Linker]
+LinkerScript = "user_linker.ld"
+Libraries    = [
+    "../../lib/pros/build/libpros.a"
+]
+
+[Sources]
+Assembly = "../../lib/runtime/brt0.S"
+Assembly = "../../lib/runtime/mem.S"
+Module   = "src/DedupStressMain.bas"
+

@@ -34,17 +34,17 @@ Namespace Pros.Nodes
         ' @param caps Initial capability bitmask.
         ' @return Assigned Node ID, or 0 on failure.
         ''
-        Public Unsafe Function Register(ByVal kind As UInt32, ByVal namePtr As Pointer To Byte, ByVal caps As UInt32) As UInt64
-            Register = Pros.Sys.RawSyscall.Call3(Pros.Sys.SYS_NODE_REGISTER, CType(UInt64, kind), CType(UInt64, namePtr), CType(UInt64, caps))
+        Public Unsafe Function Register(ByVal kind As UInt32, ByVal name As String, ByVal caps As UInt32) As UInt64
+            Register = Pros.Sys.RawSyscall.Call3(Pros.Sys.SYS_NODE_REGISTER, CType(UInt64, kind), CType(UInt64, name), CType(UInt64, caps))
         End Function
 
         ''
         ' @brief Look up an existing Neural Node by name.
-        ' @param namePtr Null-terminated node name string.
+        ' @param name Null-terminated node name string.
         ' @return Node ID if found, or 0.
         ''
-        Public Unsafe Function Lookup(ByVal namePtr As Pointer To Byte) As UInt64
-            Lookup = Pros.Sys.RawSyscall.Call1(Pros.Sys.SYS_NODE_LOOKUP, CType(UInt64, namePtr))
+        Public Unsafe Function Lookup(ByVal name As String) As UInt64
+            Lookup = Pros.Sys.RawSyscall.Call1(Pros.Sys.SYS_NODE_LOOKUP, CType(UInt64, name))
         End Function
 
         ''

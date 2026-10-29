@@ -122,3 +122,38 @@ Offset  Size  Field          Description
 0x30    256   Payload        Data payload buffer
 Total Size: 288 bytes (Cache-line aligned)
 ```
+
+---
+
+## 5. Semantic Type Aliases & Strongly-Typed Enums (`include/pros.bas`)
+
+PROS public ABI uses semantic type aliases and strongly-typed enums to enforce type safety across microkernel syscall boundaries and Ring 3 service messaging.
+
+### Semantic Type Aliases
+| Type Alias | Primitive Type | Semantic Scope |
+|:---|:---|:---|
+| `ProcessId` | `UInt64` | Process identifiers (PID) |
+| `ThreadId` | `UInt64` | Thread identifiers (TID) |
+| `Handle` | `UInt64` | Resource handles (e.g. ShmId) |
+| `NodeId` | `UInt64` | Neural node topology addresses |
+| `SynapseId` | `UInt64` | Inter-node synapse channel IDs |
+| `ShmId` | `UInt64` | Shared memory block identifiers |
+| `VirtualAddress` | `UInt64` | Ring 3 / Ring 0 virtual memory addresses |
+| `PhysicalAddress` | `UInt64` | Physical memory frame addresses |
+
+### Strongly-Typed Enums
+- `NodeKind`: Node hierarchy classification (`Client = 1`, `System = 1`, `Device = 2`, `Storage = 3`, `Router = 4`).
+- `SynapseCapability`: Capability bitmasks (`Read = 1`, `Write = 2`, `Notify = 4`, `All = 7`).
+- `InputEventType`: User input events (`KeyDown = 1`, `KeyUp = 2`, `MouseMove = 3`, `MouseButton = 4`).
+- `WmCommand`: Window manager protocol requests (`SetFocus = 22`, `MoveWindow = 23`, `ResizeWindow = 24`, `MinimizeWindow = 25`, `MaximizeWindow = 26`, `RestoreWindow = 27`, `RegisterTable = 30`, `CreateWindow = 31`, `DestroyWindow = 32`, `MouseEvent = 33`, `SetCursor = 34`, `WindowDirty = 35`).
+- `WmResponse`: Window manager protocol responses (`Ok = 200`, `Error = 201`).
+- `WindowState`: Window visibility status (`Normal = 0`, `Minimized = 1`, `Maximized = 2`).
+- `VfsKind`: Virtual file system node kinds (`File = 1`, `Directory = 2`, `Device = 3`).
+- `VfsCommand`: VFS protocol commands (`Open = 1`, `Read = 2`, `Write = 3`, `Close = 4`, `Stat = 11`, `List = 12`).
+- `VfsResponse`: VFS status codes (`Success = 0`, `Error = 1`, `NotFound = 2`, `PermissionDenied = 3`).
+- `DevCommand`: Device manager protocol commands (`Register = 1`, `Unregister = 2`, `Query = 31`).
+- `DevResponse`: Device manager status codes (`Success = 0`, `Error = 1`, `DeviceNotFound = 2`).
+
+### String Parameter Modernization
+All public library functions accept `ByVal ... As String` directly, supporting both variable strings and literal string constants seamlessly with freestanding null-check safety.
+

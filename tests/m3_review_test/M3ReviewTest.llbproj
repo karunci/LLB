@@ -1,0 +1,29 @@
+' Project Name: Low-Level Basic M3 Review Test Suite
+' Filename: tests/m3_review_test/M3ReviewTest.llbproj
+' Summary: Verification test manifest exercising adversarial stress cases on Milestone 3 C-purged structures and strings.
+
+[Project]
+Name    = "test_m3_review"
+Type    = "Executable"
+Version = "1.0.0"
+
+[Target]
+Arch = "x86_64-unknown-none-elf"
+
+[Output]
+OutDir  = "build"
+OutFile = "test_m3_review.elf"
+
+[Entry]
+EntryPoint = "_start"
+
+[Linker]
+LinkerScript = "user_linker.ld"
+Libraries    = [
+    "../../lib/pros/build/libpros.a"
+]
+
+[Sources]
+Assembly = "../../lib/runtime/brt0.S"
+Assembly = "../../lib/runtime/mem.S"
+Module   = "src/M3ReviewMain.bas"

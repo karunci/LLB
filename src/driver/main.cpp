@@ -191,11 +191,13 @@ static std::string resolveImportPath(const llbc::ImportDirective& imp, const std
 
 // Parses and caches parsed ASTs for modules across the compilation unit
 static std::unordered_map<std::string, std::shared_ptr<llbc::ModuleNode>> g_parsedModules;
+static std::unordered_set<std::string> g_parsingModules;
 static std::unordered_map<std::string, int64_t> g_defines;
 
 static std::shared_ptr<llbc::ModuleNode> getOrParseModule(const std::string& sourcePath) {
     auto it = g_parsedModules.find(sourcePath);
     if (it != g_parsedModules.end()) return it->second;
+    if (g_parsingModules.count(sourcePath)) return nullptr;
 
     std::ifstream file(sourcePath);
     if (!file.is_open()) {
@@ -204,8 +206,25 @@ static std::shared_ptr<llbc::ModuleNode> getOrParseModule(const std::string& sou
     std::stringstream buffer;
     buffer << file.rdbuf();
 
+    g_parsingModules.insert(sourcePath);
+    struct ParseGuard {
+        const std::string& path;
+        ~ParseGuard() { g_parsingModules.erase(path); }
+    } guard{sourcePath};
+
     llbc::Lexer lexer(buffer.str());
     llbc::Parser parser(lexer, g_defines, sourcePath);
+    parser.setImportHandler([sourcePath](const llbc::ImportDirective& imp, std::unordered_map<std::string, llbc::TypeSpec>& outAliases) {
+        std::string resolved = resolveImportPath(imp, sourcePath);
+        if (!resolved.empty()) {
+            auto impMod = getOrParseModule(resolved);
+            if (impMod) {
+                for (const auto& kv : impMod->typeAliases) {
+                    outAliases[kv.first] = kv.second;
+                }
+            }
+        }
+    });
     auto mod = std::shared_ptr<llbc::ModuleNode>(parser.parseModule().release());
     if (mod) {
         mod->sourceFilePath = sourcePath;
@@ -381,6 +400,10 @@ static std::string compileSourceFile(
         preRegisterAll(pair.second);
     }
 
+    for (const auto& ta : moduleAST->typeAliases) {
+        irEmitter.registerTypeAlias(ta.first, ta.second);
+    }
+
     // Inject exported symbols from all imported modules into this emitter
     for (const auto& imp : moduleAST->imports) {
         std::string impPath = resolveImportPath(imp, sourcePath);
@@ -453,6 +476,14 @@ static std::string compileSourceFile(
                 if (!imp.moduleName.empty() && imp.moduleName != curMod->name && imp.moduleName == curMod->name) {
                     classStruct.name = imp.moduleName;
                     irEmitter.emitStructure(classStruct);
+                }
+            }
+
+            // Import TypeAliases
+            for (const auto& ta : curMod->typeAliases) {
+                if (imp.symbolName.empty() || imp.symbolName == ta.first) {
+                    irEmitter.registerTypeAlias(ta.first, ta.second);
+                    moduleAST->typeAliases[ta.first] = ta.second;
                 }
             }
 

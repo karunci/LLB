@@ -14,7 +14,7 @@ Module DevMgrMain
     <Packed>
     Structure DeviceItem
         Public Id        As UInt32
-        Public Name      As Pointer To Byte
+        Public Name      As String
         Public Kind      As UInt32
         Public BaseAddr  As UInt64
         Public Status    As UInt32
@@ -31,53 +31,34 @@ Module DevMgrMain
 
         ' Device 0: SMP Processor Topology
         devices(0).Id = 1
-        devices(0).Name = CPtr(Pointer To Byte, "cpu.smp.quad")
+        devices(0).Name = "cpu.smp.quad"
         devices(0).Kind = 1 ' CPU
         devices(0).BaseAddr = 0
         devices(0).Status = 1 ' Active
 
         ' Device 1: Primary PCI Display Adapter
         devices(1).Id = 2
-        devices(1).Name = CPtr(Pointer To Byte, "pci.disp.lfb")
+        devices(1).Name = "pci.disp.lfb"
         devices(1).Kind = 2 ' Display
         devices(1).BaseAddr = &HFD000000
         devices(1).Status = 1 ' Active
 
         ' Device 2: PS/2 Keyboard and Mouse Controller
         devices(2).Id = 3
-        devices(2).Name = CPtr(Pointer To Byte, "hid.ps2.controller")
+        devices(2).Name = "hid.ps2.controller"
         devices(2).Kind = 3 ' HID
         devices(2).BaseAddr = &H60
         devices(2).Status = 1 ' Active
 
         ' Device 3: Storage Controller & USTAR Ramdisk
         devices(3).Id = 4
-        devices(3).Name = CPtr(Pointer To Byte, "storage.ustar.ramdisk")
+        devices(3).Name = "storage.ustar.ramdisk"
         devices(3).Kind = 4 ' Storage
         devices(3).BaseAddr = &H6000000
         devices(3).Status = 1 ' Mounted
 
         devCount = 4
     End Sub
-
-    ''
-    ' @brief String equality helper for device queries.
-    ''
-    Private Unsafe Function StrEquals(ByVal s1 As Pointer To Byte, ByVal s2 As Pointer To Byte) As Boolean
-        If s1 = CPtr(Pointer To Byte, 0) Or s2 = CPtr(Pointer To Byte, 0) Then
-            StrEquals = False
-            Exit Function
-        End If
-        Dim idx As UInt32 = 0
-        While s1(idx) <> 0 And s2(idx) <> 0
-            If s1(idx) <> s2(idx) Then
-                StrEquals = False
-                Exit Function
-            End If
-            idx = idx + 1
-        Wend
-        StrEquals = (s1(idx) = 0 And s2(idx) = 0)
-    End Function
 
     ''
     ' @brief Application entry point for dev_mgr daemon (Ring 3 CPL=3).
@@ -94,7 +75,7 @@ Module DevMgrMain
         ConsolePrintWithUInt "[DEV_MGR] Active Service PID = ", myPid, "\r\n"
 
         ' 2. Register Device Manager Node in the Neural Node Registry
-        Dim devNodeId As UInt64 = NodeRegister(2, CPtr(Pointer To Byte, "srv.dev_mgr"), 7)
+        Dim devNodeId As UInt64 = NodeRegister(2, "srv.dev_mgr", 7)
         If devNodeId <> 0 Then
             ConsolePrintWithUInt "[DEV_MGR] Registered Node 'srv.dev_mgr' -> Node #", devNodeId, "\r\n"
         Else
@@ -102,22 +83,22 @@ Module DevMgrMain
         End If
 
         ' 3. Discover Core Hardware Driver Nodes
-        Dim dispNodeId As UInt64 = NodeLookup(CPtr(Pointer To Byte, "srv.display"))
+        Dim dispNodeId As UInt64 = NodeLookup("srv.display")
         If dispNodeId <> 0 Then
             ConsolePrintWithUInt "[DEV_MGR] Attached Display Adapter -> Node #", dispNodeId, "\r\n"
         End If
 
-        Dim inputNodeId As UInt64 = NodeLookup(CPtr(Pointer To Byte, "srv.input"))
+        Dim inputNodeId As UInt64 = NodeLookup("srv.input")
         If inputNodeId <> 0 Then
             ConsolePrintWithUInt "[DEV_MGR] Attached Input Controller -> Node #", inputNodeId, "\r\n"
         End If
 
-        Dim rawHwInputId As UInt64 = NodeLookup(CPtr(Pointer To Byte, "hw.input.raw"))
+        Dim rawHwInputId As UInt64 = NodeLookup("hw.input.raw")
         If rawHwInputId <> 0 Then
             ConsolePrintWithUInt "[DEV_MGR] Attached Raw HID Hardware -> Node #", rawHwInputId, "\r\n"
         End If
 
-        Dim vfsNodeId As UInt64 = NodeLookup(CPtr(Pointer To Byte, "srv.vfs"))
+        Dim vfsNodeId As UInt64 = NodeLookup("srv.vfs")
         If vfsNodeId <> 0 Then
             ConsolePrintWithUInt "[DEV_MGR] Attached Storage Controller -> Node #", vfsNodeId, "\r\n"
         End If

@@ -13,6 +13,7 @@
 #include <vector>
 #include <memory>
 #include <cstdint>
+#include <unordered_map>
 
 namespace llbc {
 
@@ -563,6 +564,7 @@ public:
     std::vector<std::string> implementsInterfaces;
     std::vector<ImportDirective> imports;
     std::vector<UseDirective> uses;
+    std::unordered_map<std::string, TypeSpec> typeAliases;
     std::vector<std::unique_ptr<ASTNode>> members;
     std::vector<std::shared_ptr<ModuleNode>> innerModules;
 };

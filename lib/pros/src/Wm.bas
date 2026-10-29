@@ -5,6 +5,7 @@
 Import Pros.Sys.RawSyscall
 Import Pros.Sys.Process
 Import Pros.Nodes.NodeRegistry
+Import Pros.String.StringUtil
 
 Namespace Pros.Gui
 
@@ -26,7 +27,7 @@ Namespace Pros.Gui
             Dim wmNodeId As UInt64 = 0
             Dim lookupTries As UInt32 = 0
             While lookupTries < 50 And wmNodeId = 0
-                wmNodeId = Pros.Nodes.NodeRegistry.Lookup(CPtr(Pointer To Byte, "srv.wm"))
+                wmNodeId = Pros.Nodes.NodeRegistry.Lookup("srv.wm")
                 If wmNodeId = 0 Then
                     Pros.Sys.Process.Sleep 20
                     lookupTries = lookupTries + 1
@@ -39,15 +40,10 @@ Namespace Pros.Gui
 
             Dim myPid As UInt64 = Pros.Sys.Process.GetPid()
             Dim clientName(16) As Byte
-            clientName(0) = 99  ' 'c'
-            clientName(1) = 108 ' 'l'
-            clientName(2) = 105 ' 'i'
-            clientName(3) = 101 ' 'e'
-            clientName(4) = 110 ' 'n'
-            clientName(5) = 116 ' 't'
-            clientName(6) = 46  ' '.'
-            clientName(7) = CType(Byte, 48 + (myPid Mod 10))
-            clientName(8) = 0
+            Dim cIdx As UInt32 = 0
+            AppendStr "client.", @clientName(0), cIdx
+            AppendUInt myPid Mod 10, @clientName(0), cIdx
+            clientName(cIdx) = 0
 
             Dim clientNodeId As UInt64 = Pros.Nodes.NodeRegistry.Lookup(@clientName(0))
             If clientNodeId = 0 Then
@@ -98,11 +94,11 @@ Namespace Pros.Gui
         ' @param titlePtr Pointer to null-terminated title string.
         ' @return Assigned Window ID, or 0 on error.
         ''
-        Public Unsafe Function CreateWindow(ByVal w As Int32, ByVal h As Int32, ByVal shmId As UInt64, ByVal titlePtr As Pointer To Byte) As UInt32
+        Public Unsafe Function CreateWindow(ByVal w As Int32, ByVal h As Int32, ByVal shmId As UInt64, ByVal title As String) As UInt32
             Dim wmNodeId As UInt64 = 0
             Dim lookupTries As UInt32 = 0
             While lookupTries < 50 And wmNodeId = 0
-                wmNodeId = Pros.Nodes.NodeRegistry.Lookup(CPtr(Pointer To Byte, "srv.wm"))
+                wmNodeId = Pros.Nodes.NodeRegistry.Lookup("srv.wm")
                 If wmNodeId = 0 Then
                     Pros.Sys.Process.Sleep 20
                     lookupTries = lookupTries + 1
@@ -115,15 +111,10 @@ Namespace Pros.Gui
 
             Dim myPid As UInt64 = Pros.Sys.Process.GetPid()
             Dim clientName(16) As Byte
-            clientName(0) = 99  ' 'c'
-            clientName(1) = 108 ' 'l'
-            clientName(2) = 105 ' 'i'
-            clientName(3) = 101 ' 'e'
-            clientName(4) = 110 ' 'n'
-            clientName(5) = 116 ' 't'
-            clientName(6) = 46  ' '.'
-            clientName(7) = CType(Byte, 48 + (myPid Mod 10))
-            clientName(8) = 0
+            Dim cIdx As UInt32 = 0
+            AppendStr "client.", @clientName(0), cIdx
+            AppendUInt myPid Mod 10, @clientName(0), cIdx
+            clientName(cIdx) = 0
 
             Dim clientNodeId As UInt64 = Pros.Nodes.NodeRegistry.Lookup(@clientName(0))
             If clientNodeId = 0 Then
@@ -150,8 +141,8 @@ Namespace Pros.Gui
             pShm(0) = shmId
 
             Dim t As UInt32 = 0
-            While t < 31 And titlePtr <> 0 And titlePtr(t) <> 0
-                reqPkt.Payload(16 + t) = titlePtr(t)
+            While t < 31 And title <> 0 And title(t) <> 0
+                reqPkt.Payload(16 + t) = title(t)
                 t = t + 1
             Wend
             reqPkt.Payload(16 + t) = 0
@@ -189,7 +180,7 @@ Namespace Pros.Gui
             Dim wmNodeId As UInt64 = 0
             Dim lookupTries As UInt32 = 0
             While lookupTries < 50 And wmNodeId = 0
-                wmNodeId = Pros.Nodes.NodeRegistry.Lookup(CPtr(Pointer To Byte, "srv.wm"))
+                wmNodeId = Pros.Nodes.NodeRegistry.Lookup("srv.wm")
                 If wmNodeId = 0 Then
                     Pros.Sys.Process.Sleep 20
                     lookupTries = lookupTries + 1
@@ -202,10 +193,10 @@ Namespace Pros.Gui
 
             Dim myPid As UInt64 = Pros.Sys.Process.GetPid()
             Dim clientName(16) As Byte
-            clientName(0) = 99: clientName(1) = 108: clientName(2) = 105: clientName(3) = 101
-            clientName(4) = 110: clientName(5) = 116: clientName(6) = 46
-            clientName(7) = CType(Byte, 48 + (myPid Mod 10))
-            clientName(8) = 0
+            Dim cIdx As UInt32 = 0
+            AppendStr "client.", @clientName(0), cIdx
+            AppendUInt myPid Mod 10, @clientName(0), cIdx
+            clientName(cIdx) = 0
 
             Dim clientNodeId As UInt64 = Pros.Nodes.NodeRegistry.Lookup(@clientName(0))
             If clientNodeId = 0 Then
@@ -250,7 +241,7 @@ Namespace Pros.Gui
         ' @brief Signal dirty client region for compositor blitting.
         ''
         Public Unsafe Function SignalDirty(ByVal winId As UInt32, ByVal rx As Int32, ByVal ry As Int32, ByVal rw As Int32, ByVal rh As Int32) As Boolean
-            Dim compNodeId As UInt64 = Pros.Nodes.NodeRegistry.Lookup(CPtr(Pointer To Byte, "srv.compositor"))
+            Dim compNodeId As UInt64 = Pros.Nodes.NodeRegistry.Lookup("srv.compositor")
             If compNodeId = 0 Then
                 SignalDirty = False
                 Exit Function
@@ -258,10 +249,10 @@ Namespace Pros.Gui
 
             Dim myPid As UInt64 = Pros.Sys.Process.GetPid()
             Dim clientName(16) As Byte
-            clientName(0) = 99: clientName(1) = 108: clientName(2) = 105: clientName(3) = 101
-            clientName(4) = 110: clientName(5) = 116: clientName(6) = 46
-            clientName(7) = CType(Byte, 48 + (myPid Mod 10))
-            clientName(8) = 0
+            Dim cIdx As UInt32 = 0
+            AppendStr "client.", @clientName(0), cIdx
+            AppendUInt myPid Mod 10, @clientName(0), cIdx
+            clientName(cIdx) = 0
 
             Dim clientNodeId As UInt64 = Pros.Nodes.NodeRegistry.Lookup(@clientName(0))
             If clientNodeId = 0 Then

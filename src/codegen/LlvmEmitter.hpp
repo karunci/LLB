@@ -74,6 +74,7 @@ public:
 
     llvm::Module* getModule() const { return m_module.get(); }
     void printIR() const;
+    void registerTypeAlias(const std::string& name, const TypeSpec& targetType);
 
 private:
     llvm::Type* getLlvmType(const TypeSpec& typeSpec);
@@ -142,6 +143,7 @@ private:
     std::unordered_map<std::string, std::unordered_map<std::string, TypeSpec>> m_structFieldTypes;
     std::unordered_map<std::string, std::unordered_map<std::string, BitfieldInfo>> m_structBitfields;
     std::unordered_map<std::string, TypeSpec> m_procReturnTypes;
+    std::unordered_map<std::string, TypeSpec> m_typeAliases;
     std::unordered_map<std::string, int64_t> m_enumConstants;
     std::unordered_map<std::string, std::unordered_map<std::string, int64_t>> m_enums;
     std::unordered_map<std::string, std::string> m_funcAliases;

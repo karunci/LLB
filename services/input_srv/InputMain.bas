@@ -19,36 +19,13 @@ Module InputServiceMain
         ConsolePrintWithUInt "[INPUT_SRV] Active Service PID = ", pid, "\r\n"
 
         ' 2. Register Service Node: 'srv.input' (Kind: Router/Broker = 4, Caps: RWN = 7)
-        Dim srvName(32) As Byte
-        srvName(0) = 115 ' 's'
-        srvName(1) = 114 ' 'r'
-        srvName(2) = 118 ' 'v'
-        srvName(3) = 46  ' '.'
-        srvName(4) = 105 ' 'i'
-        srvName(5) = 110 ' 'n'
-        srvName(6) = 112 ' 'p'
-        srvName(7) = 117 ' 'u'
-        srvName(8) = 116 ' 't'
-        srvName(9) = 0
-        Dim srvNodeId As UInt64 = NodeRegister(NODE_KIND_ROUTER, @srvName(0), 7)
+        Dim srvName As String = "srv.input"
+        Dim srvNodeId As UInt64 = NodeRegister(NODE_KIND_ROUTER, srvName, 7)
         ConsolePrintWithUInt "[INPUT_SRV] Registered Node 'srv.input' -> Node #", srvNodeId, "\r\n"
 
         ' 3. Discover and connect to raw hardware input node: 'hw.input.raw'
-        Dim hwRawName(16) As Byte
-        hwRawName(0) = 104 ' 'h'
-        hwRawName(1) = 119 ' 'w'
-        hwRawName(2) = 46  ' '.'
-        hwRawName(3) = 105 ' 'i'
-        hwRawName(4) = 110 ' 'n'
-        hwRawName(5) = 112 ' 'p'
-        hwRawName(6) = 117 ' 'u'
-        hwRawName(7) = 116 ' 't'
-        hwRawName(8) = 46  ' '.'
-        hwRawName(9) = 114 ' 'r'
-        hwRawName(10) = 97 ' 'a'
-        hwRawName(11) = 119' 'w'
-        hwRawName(12) = 0
-        Dim hwInputNodeId As UInt64 = NodeLookup(@hwRawName(0))
+        Dim hwRawName As String = "hw.input.raw"
+        Dim hwInputNodeId As UInt64 = NodeLookup(hwRawName)
         ConsolePrintWithUInt "[INPUT_SRV] Discovered 'hw.input.raw' -> ID #", hwInputNodeId, "\r\n"
 
         If hwInputNodeId > 0 Then

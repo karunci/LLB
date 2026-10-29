@@ -11,7 +11,6 @@ Import "../wm/WindowTheme.bas"
 
 Module CompositorMain
 
-    Public Declare Function memcpy Lib "libc" (ByVal dest As Pointer To Byte, ByVal src As Pointer To Byte, ByVal count As UInt64) As Pointer To Byte
     Public Declare Sub fast_blit32 Lib "libc" (ByVal dst As Pointer To UInt32, ByVal src As Pointer To UInt32, ByVal count As UInt64)
 
     ' -------------------------------------------------------------------------
@@ -63,177 +62,6 @@ Module CompositorMain
     Private winTrackW(32) As Int32
     Private winTrackH(32) As Int32
     Private winTrackState(32) As Int32
-
-    ''
-    ' @brief Append unsigned 64-bit integer formatted as ASCII into buffer.
-    ''
-    Private Unsafe Sub AppendUInt(ByVal val As UInt64, ByVal buf As Pointer To Byte, ByRef outIdx As UInt32)
-        If val = 0 Then
-            buf(outIdx) = 48 ' '0'
-            outIdx = outIdx + 1
-            Exit Sub
-        End If
-        Dim tmp(23) As Byte
-        Dim tIdx As UInt32 = 0
-        Dim v As UInt64 = val
-        While v > 0
-            tmp(tIdx) = CType(Byte, (v Mod 10) + 48)
-            v = v / 10
-            tIdx = tIdx + 1
-        Wend
-        While tIdx > 0
-            tIdx = tIdx - 1
-            buf(outIdx) = tmp(tIdx)
-            outIdx = outIdx + 1
-        Wend
-    End Sub
-
-    ''
-    ' @brief Append null-terminated ASCII string into buffer.
-    ''
-    Private Unsafe Sub AppendStr(ByVal s As Pointer To Byte, ByVal buf As Pointer To Byte, ByRef outIdx As UInt32)
-        Dim i As UInt32 = 0
-        While s(i) <> 0
-            buf(outIdx) = s(i)
-            outIdx = outIdx + 1
-            i = i + 1
-        Wend
-    End Sub
-
-    ' -------------------------------------------------------------------------
-    ' 5x7 ASCII Bitmap Font Engine (with full Alphabet including Y and Z)
-    ' -------------------------------------------------------------------------
-    Private Unsafe Sub DrawGlyph(ByRef surf As Surface, ByVal gx As Int32, ByVal gy As Int32, ByVal ascii As Byte, ByVal color As UInt32)
-        Dim rows(7) As Byte
-
-        ' Digits 0-9
-        If ascii = 48 Then      ' '0'
-            rows(0) = 14: rows(1) = 17: rows(2) = 19: rows(3) = 21: rows(4) = 25: rows(5) = 17: rows(6) = 14
-        ElseIf ascii = 49 Then  ' '1'
-            rows(0) = 4:  rows(1) = 12: rows(2) = 4:  rows(3) = 4:  rows(4) = 4:  rows(5) = 4:  rows(6) = 14
-        ElseIf ascii = 50 Then  ' '2'
-            rows(0) = 14: rows(1) = 17: rows(2) = 1:  rows(3) = 6:  rows(4) = 8:  rows(5) = 16: rows(6) = 31
-        ElseIf ascii = 51 Then  ' '3'
-            rows(0) = 30: rows(1) = 1:  rows(2) = 1:  rows(3) = 14: rows(4) = 1:  rows(5) = 1:  rows(6) = 30
-        ElseIf ascii = 52 Then  ' '4'
-            rows(0) = 2:  rows(1) = 6:  rows(2) = 10: rows(3) = 18: rows(4) = 31: rows(5) = 2:  rows(6) = 2
-        ElseIf ascii = 53 Then  ' '5'
-            rows(0) = 31: rows(1) = 16: rows(2) = 30: rows(3) = 1:  rows(4) = 1:  rows(5) = 17: rows(6) = 14
-        ElseIf ascii = 54 Then  ' '6'
-            rows(0) = 14: rows(1) = 16: rows(2) = 16: rows(3) = 30: rows(4) = 17: rows(5) = 17: rows(6) = 14
-        ElseIf ascii = 55 Then  ' '7'
-            rows(0) = 31: rows(1) = 1:  rows(2) = 2:  rows(3) = 4:  rows(4) = 8:  rows(5) = 8:  rows(6) = 8
-        ElseIf ascii = 56 Then  ' '8'
-            rows(0) = 14: rows(1) = 17: rows(2) = 17: rows(3) = 14: rows(4) = 17: rows(5) = 17: rows(6) = 14
-        ElseIf ascii = 57 Then  ' '9'
-            rows(0) = 14: rows(1) = 17: rows(2) = 17: rows(3) = 15: rows(4) = 1:  rows(5) = 1:  rows(6) = 14
-        ' Uppercase Alphabet
-        ElseIf ascii = 65 Then  ' 'A'
-            rows(0) = 14: rows(1) = 17: rows(2) = 17: rows(3) = 31: rows(4) = 17: rows(5) = 17: rows(6) = 17
-        ElseIf ascii = 66 Then  ' 'B'
-            rows(0) = 30: rows(1) = 17: rows(2) = 17: rows(3) = 30: rows(4) = 17: rows(5) = 17: rows(6) = 30
-        ElseIf ascii = 67 Then  ' 'C'
-            rows(0) = 14: rows(1) = 17: rows(2) = 16: rows(3) = 16: rows(4) = 16: rows(5) = 17: rows(6) = 14
-        ElseIf ascii = 68 Then  ' 'D'
-            rows(0) = 28: rows(1) = 18: rows(2) = 17: rows(3) = 17: rows(4) = 17: rows(5) = 18: rows(6) = 28
-        ElseIf ascii = 69 Then  ' 'E'
-            rows(0) = 31: rows(1) = 16: rows(2) = 16: rows(3) = 30: rows(4) = 16: rows(5) = 16: rows(6) = 31
-        ElseIf ascii = 70 Then  ' 'F'
-            rows(0) = 31: rows(1) = 16: rows(2) = 16: rows(3) = 30: rows(4) = 16: rows(5) = 16: rows(6) = 16
-        ElseIf ascii = 71 Then  ' 'G'
-            rows(0) = 14: rows(1) = 17: rows(2) = 16: rows(3) = 23: rows(4) = 17: rows(5) = 17: rows(6) = 14
-        ElseIf ascii = 72 Then  ' 'H'
-            rows(0) = 17: rows(1) = 17: rows(2) = 17: rows(3) = 31: rows(4) = 17: rows(5) = 17: rows(6) = 17
-        ElseIf ascii = 73 Then  ' 'I'
-            rows(0) = 14: rows(1) = 4:  rows(2) = 4:  rows(3) = 4:  rows(4) = 4:  rows(5) = 4:  rows(6) = 14
-        ElseIf ascii = 74 Then  ' 'J'
-            rows(0) = 7:  rows(1) = 2:  rows(2) = 2:  rows(3) = 2:  rows(4) = 2:  rows(5) = 18: rows(6) = 12
-        ElseIf ascii = 75 Then  ' 'K'
-            rows(0) = 17: rows(1) = 18: rows(2) = 20: rows(3) = 24: rows(4) = 20: rows(5) = 18: rows(6) = 17
-        ElseIf ascii = 76 Then  ' 'L'
-            rows(0) = 16: rows(1) = 16: rows(2) = 16: rows(3) = 16: rows(4) = 16: rows(5) = 16: rows(6) = 31
-        ElseIf ascii = 77 Then  ' 'M'
-            rows(0) = 17: rows(1) = 27: rows(2) = 21: rows(3) = 21: rows(4) = 17: rows(5) = 17: rows(6) = 17
-        ElseIf ascii = 78 Then  ' 'N'
-            rows(0) = 17: rows(1) = 25: rows(2) = 21: rows(3) = 19: rows(4) = 17: rows(5) = 17: rows(6) = 17
-        ElseIf ascii = 79 Then  ' 'O'
-            rows(0) = 14: rows(1) = 17: rows(2) = 17: rows(3) = 17: rows(4) = 17: rows(5) = 17: rows(6) = 14
-        ElseIf ascii = 80 Then  ' 'P'
-            rows(0) = 30: rows(1) = 17: rows(2) = 17: rows(3) = 30: rows(4) = 16: rows(5) = 16: rows(6) = 16
-        ElseIf ascii = 81 Then  ' 'Q'
-            rows(0) = 14: rows(1) = 17: rows(2) = 17: rows(3) = 17: rows(4) = 21: rows(5) = 18: rows(6) = 13
-        ElseIf ascii = 82 Then  ' 'R'
-            rows(0) = 30: rows(1) = 17: rows(2) = 17: rows(3) = 30: rows(4) = 20: rows(5) = 18: rows(6) = 17
-        ElseIf ascii = 83 Then  ' 'S'
-            rows(0) = 15: rows(1) = 16: rows(2) = 16: rows(3) = 14: rows(4) = 1:  rows(5) = 1:  rows(6) = 30
-        ElseIf ascii = 84 Then  ' 'T'
-            rows(0) = 31: rows(1) = 4:  rows(2) = 4:  rows(3) = 4:  rows(4) = 4:  rows(5) = 4:  rows(6) = 4
-        ElseIf ascii = 85 Then  ' 'U'
-            rows(0) = 17: rows(1) = 17: rows(2) = 17: rows(3) = 17: rows(4) = 17: rows(5) = 17: rows(6) = 14
-        ElseIf ascii = 86 Then  ' 'V'
-            rows(0) = 17: rows(1) = 17: rows(2) = 17: rows(3) = 17: rows(4) = 10: rows(5) = 10: rows(6) = 4
-        ElseIf ascii = 87 Then  ' 'W'
-            rows(0) = 17: rows(1) = 17: rows(2) = 21: rows(3) = 21: rows(4) = 21: rows(5) = 21: rows(6) = 10
-        ElseIf ascii = 88 Then  ' 'X'
-            rows(0) = 17: rows(1) = 10: rows(2) = 4:  rows(3) = 4:  rows(4) = 4:  rows(5) = 10: rows(6) = 17
-        ElseIf ascii = 89 Then  ' 'Y'
-            rows(0) = 17: rows(1) = 17: rows(2) = 17: rows(3) = 10: rows(4) = 4:  rows(5) = 4:  rows(6) = 4
-        ElseIf ascii = 90 Then  ' 'Z'
-            rows(0) = 31: rows(1) = 1:  rows(2) = 2:  rows(3) = 4:  rows(4) = 8:  rows(5) = 16: rows(6) = 31
-        ' Punctuation & Symbols
-        ElseIf ascii = 32 Then  ' ' ' (Space)
-            rows(0) = 0:  rows(1) = 0:  rows(2) = 0:  rows(3) = 0:  rows(4) = 0:  rows(5) = 0:  rows(6) = 0
-        ElseIf ascii = 58 Then  ' ':'
-            rows(0) = 0:  rows(1) = 12: rows(2) = 12: rows(3) = 0:  rows(4) = 12: rows(5) = 12: rows(6) = 0
-        ElseIf ascii = 45 Then  ' '-'
-            rows(0) = 0:  rows(1) = 0:  rows(2) = 0:  rows(3) = 31: rows(4) = 0:  rows(5) = 0:  rows(6) = 0
-        ElseIf ascii = 46 Then  ' '.'
-            rows(0) = 0:  rows(1) = 0:  rows(2) = 0:  rows(3) = 0:  rows(4) = 0:  rows(5) = 12: rows(6) = 12
-        ElseIf ascii = 47 Then  ' '/'
-            rows(0) = 1:  rows(1) = 2:  rows(2) = 4:  rows(3) = 8:  rows(4) = 16: rows(5) = 0:  rows(6) = 0
-        ElseIf ascii = 124 Then ' '|'
-            rows(0) = 4:  rows(1) = 4:  rows(2) = 4:  rows(3) = 4:  rows(4) = 4:  rows(5) = 4:  rows(6) = 4
-        ElseIf ascii = 40 Then  ' '('
-            rows(0) = 2:  rows(1) = 4:  rows(2) = 8:  rows(3) = 8:  rows(4) = 8:  rows(5) = 4:  rows(6) = 2
-        ElseIf ascii = 41 Then  ' ')'
-            rows(0) = 8:  rows(1) = 4:  rows(2) = 2:  rows(3) = 2:  rows(4) = 2:  rows(5) = 4:  rows(6) = 8
-        ElseIf ascii = 91 Then  ' '['
-            rows(0) = 14: rows(1) = 8:  rows(2) = 8:  rows(3) = 8:  rows(4) = 8:  rows(5) = 8:  rows(6) = 14
-        ElseIf ascii = 93 Then  ' ']'
-            rows(0) = 14: rows(1) = 2:  rows(2) = 2:  rows(3) = 2:  rows(4) = 2:  rows(5) = 2:  rows(6) = 14
-        Else
-            rows(0) = 0:  rows(1) = 0:  rows(2) = 0:  rows(3) = 4:  rows(4) = 0:  rows(5) = 0:  rows(6) = 0
-        End If
-
-        Dim r As Int32 = 0
-        While r < 7
-            Dim b As Byte = rows(r)
-            Dim c As Int32 = 0
-            While c < 5
-                Dim bitMask As Byte = CType(Byte, 16 RShift c)
-                If (b And bitMask) <> 0 Then
-                    FillRect surf, gx + c, gy + r, 1, 1, color
-                End If
-                c = c + 1
-            Wend
-            r = r + 1
-        Wend
-    End Sub
-
-    Private Unsafe Sub DrawText5x7(ByRef surf As Surface, ByVal startX As Int32, ByVal startY As Int32, ByVal textPtr As Pointer To Byte, ByVal color As UInt32)
-        If textPtr = 0 Then Exit Sub
-        Dim i As UInt32 = 0
-        Dim curX As Int32 = startX
-        While textPtr(i) <> 0
-            Dim ch As Byte = textPtr(i)
-            If ch >= 97 And ch <= 122 Then
-                ch = ch - 32
-            End If
-            DrawGlyph surf, curX, startY, ch, color
-            curX = curX + 6
-            i = i + 1
-        Wend
-    End Sub
 
     ''
     ' @brief Zero-copy blit of client surface pixels directly into window client area.
@@ -624,10 +452,10 @@ Module CompositorMain
         FillRect backSurf, 0, 25, dispInfo.Width, 1, &HFF4C566A
         FillRect backSurf, 0, 0, 4, 25, &HFF88C0D0
 
-        DrawText5x7 backSurf, 16, 10, CPtr(Pointer To Byte, "PROS WORKSTATION  |  APPLICATIONS  NODES  SERVICES"), &HFFECEFF4
+        DrawText5x7 backSurf, 16, 10, "PROS WORKSTATION  |  APPLICATIONS  NODES  SERVICES", &HFFECEFF4
         RenderMouseCoordinates False
-        DrawText5x7 backSurf, CType(Int32, dispInfo.Width) - 360, 10, CPtr(Pointer To Byte, "REV: 2026.10.29-r37-re01"), &HFF88C0D0
-        DrawText5x7 backSurf, CType(Int32, dispInfo.Width) - 170, 10, CPtr(Pointer To Byte, "SMP 4 CORES  ONLINE"), &HFFA3BE8C
+        DrawText5x7 backSurf, CType(Int32, dispInfo.Width) - 360, 10, "REV: 2026.10.29-r37-re02", &HFF88C0D0
+        DrawText5x7 backSurf, CType(Int32, dispInfo.Width) - 170, 10, "SMP 4 CORES  ONLINE", &HFFA3BE8C
 
         ' 3. Render all active desktop windows from shared memory
         RenderDesktopWindows
@@ -654,23 +482,8 @@ Module CompositorMain
         ConsolePrintWithUInt "[COMPOSITOR] Active Service PID = ", pid, "\r\n"
 
         ' 2. Register Service Node: 'srv.compositor' (Kind: Device/Compositor = 2, Caps: RWN = 7)
-        Dim srvName(32) As Byte
-        srvName(0) = 115 ' 's'
-        srvName(1) = 114 ' 'r'
-        srvName(2) = 118 ' 'v'
-        srvName(3) = 46  ' '.'
-        srvName(4) = 99  ' 'c'
-        srvName(5) = 111 ' 'o'
-        srvName(6) = 109 ' 'm'
-        srvName(7) = 112 ' 'p'
-        srvName(8) = 111 ' 'o'
-        srvName(9) = 115 ' 's'
-        srvName(10) = 105' 'i'
-        srvName(11) = 116' 't'
-        srvName(12) = 111' 'o'
-        srvName(13) = 114' 'r'
-        srvName(14) = 0
-        Dim srvNodeId As UInt64 = NodeRegister(NODE_KIND_DEVICE, @srvName(0), 7)
+        Dim srvName As String = "srv.compositor"
+        Dim srvNodeId As UInt64 = NodeRegister(NODE_KIND_DEVICE, srvName, 7)
         ConsolePrintWithUInt "[COMPOSITOR] Registered Node 'srv.compositor' -> Node #", srvNodeId, "\r\n"
 
         ' 3. Query Hardware Display Geometry
@@ -746,7 +559,7 @@ Module CompositorMain
         ConsoleWriteLine "[COMPOSITOR] Compositor online. Entering presentation loop..."
 
         ' Lookup Window Manager node 'srv.wm'
-        wmNodeId = NodeLookup(CPtr(Pointer To Byte, "srv.wm"))
+        wmNodeId = NodeLookup("srv.wm")
         If wmNodeId <> 0 Then
             synWm = SynapseConnect(srvNodeId, wmNodeId, 7)
             If synWm <> 0 Then
@@ -799,7 +612,7 @@ Module CompositorMain
             ' Retry connecting to srv.wm or requesting table if not attached
             If pWindowTable = 0 Then
                 If synWm = 0 Then
-                    wmNodeId = NodeLookup(CPtr(Pointer To Byte, "srv.wm"))
+                    wmNodeId = NodeLookup("srv.wm")
                     If wmNodeId <> 0 Then
                         synWm = SynapseConnect(srvNodeId, wmNodeId, 7)
                     End If

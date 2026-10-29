@@ -38,10 +38,10 @@ Module SysMonMain
         ' 2. Register managed window with srv.wm
         Dim winId As UInt32 = 0
         Dim regTries As UInt32 = 0
-        While regTries < 25 And winId = 0
+        While regTries < 60 And winId = 0
             winId = WmCreateWindow(480, 280, shmId, "PROS System Monitor")
             If winId = 0 Then
-                ProcessSleep 40
+                ProcessSleep 50
                 regTries = regTries + 1
             End If
         Wend
@@ -61,7 +61,7 @@ Module SysMonMain
         FillRect clientSurf, 10, 10, 4, 65, &HFF88C0D0
         DrawText5x7 clientSurf, 22, 16, "PROS MICROKERNEL TELEMETRY [CPL=3]", &HFFECEFF4
         DrawText5x7 clientSurf, 22, 30, "ARCH: x86_64 SMP (4 Cores Online)", &HFF81A1C1
-        DrawText5x7 clientSurf, 22, 44, "KERNEL REV: 2026.10.29-r37-re04", &HFFEBCB8B
+        DrawText5x7 clientSurf, 22, 44, "KERNEL REV: 2026.10.30-r38-re01", &HFFEBCB8B
         DrawText5x7 clientSurf, 22, 58, "STATUS: SYSTEM HEALTH OPTIMAL", &HFFA3BE8C
 
         ' Card 2: Neural Synapse Plane Card

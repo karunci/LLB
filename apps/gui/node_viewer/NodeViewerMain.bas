@@ -38,10 +38,10 @@ Module NodeViewerMain
         ' 2. Register managed window with srv.wm
         Dim winId As UInt32 = 0
         Dim regTries As UInt32 = 0
-        While regTries < 25 And winId = 0
+        While regTries < 60 And winId = 0
             winId = WmCreateWindow(400, 220, shmId, "PROS Neural Node Viewer")
             If winId = 0 Then
-                ProcessSleep 40
+                ProcessSleep 50
                 regTries = regTries + 1
             End If
         Wend

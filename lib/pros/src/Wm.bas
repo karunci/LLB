@@ -39,10 +39,10 @@ Namespace Pros.Gui
             End If
 
             Dim myPid As UInt64 = Pros.Sys.Process.GetPid()
-            Dim clientName(16) As Byte
+            Dim clientName(32) As Byte
             Dim cIdx As UInt32 = 0
             AppendStr "client.", @clientName(0), cIdx
-            AppendUInt myPid Mod 10, @clientName(0), cIdx
+            AppendUInt myPid, @clientName(0), cIdx
             clientName(cIdx) = 0
 
             Dim clientNodeId As UInt64 = Pros.Nodes.NodeRegistry.Lookup(@clientName(0))
@@ -97,10 +97,10 @@ Namespace Pros.Gui
         Public Unsafe Function CreateWindow(ByVal w As Int32, ByVal h As Int32, ByVal shmId As UInt64, ByVal title As String) As UInt32
             Dim wmNodeId As UInt64 = 0
             Dim lookupTries As UInt32 = 0
-            While lookupTries < 50 And wmNodeId = 0
+            While lookupTries < 100 And wmNodeId = 0
                 wmNodeId = Pros.Nodes.NodeRegistry.Lookup("srv.wm")
                 If wmNodeId = 0 Then
-                    Pros.Sys.Process.Sleep 20
+                    Pros.Sys.Process.Sleep 25
                     lookupTries = lookupTries + 1
                 End If
             Wend
@@ -110,10 +110,10 @@ Namespace Pros.Gui
             End If
 
             Dim myPid As UInt64 = Pros.Sys.Process.GetPid()
-            Dim clientName(16) As Byte
+            Dim clientName(32) As Byte
             Dim cIdx As UInt32 = 0
             AppendStr "client.", @clientName(0), cIdx
-            AppendUInt myPid Mod 10, @clientName(0), cIdx
+            AppendUInt myPid, @clientName(0), cIdx
             clientName(cIdx) = 0
 
             Dim clientNodeId As UInt64 = Pros.Nodes.NodeRegistry.Lookup(@clientName(0))
@@ -155,16 +155,18 @@ Namespace Pros.Gui
 
             Dim respPkt As Pros.Nodes.AxonPacket
             Dim tries As UInt32 = 0
-            While tries < 20
+            While tries < 100
                 If Pros.Nodes.NodeRegistry.Pop(clientNodeId, respPkt) Then
                     If respPkt.PacketType = WM_RESP_OK Then
                         Dim pResId As Pointer To UInt32 = CPtr(Pointer To UInt32, @respPkt.Payload(0))
                         CreateWindow = pResId(0)
                         Exit Function
+                    ElseIf respPkt.PacketType = WM_RESP_ERROR Then
+                        CreateWindow = 0
+                        Exit Function
                     End If
-                    Exit While
                 End If
-                Pros.Sys.Process.Sleep 10
+                Pros.Sys.Process.Sleep 25
                 tries = tries + 1
             Wend
 
@@ -192,10 +194,10 @@ Namespace Pros.Gui
             End If
 
             Dim myPid As UInt64 = Pros.Sys.Process.GetPid()
-            Dim clientName(16) As Byte
+            Dim clientName(32) As Byte
             Dim cIdx As UInt32 = 0
             AppendStr "client.", @clientName(0), cIdx
-            AppendUInt myPid Mod 10, @clientName(0), cIdx
+            AppendUInt myPid, @clientName(0), cIdx
             clientName(cIdx) = 0
 
             Dim clientNodeId As UInt64 = Pros.Nodes.NodeRegistry.Lookup(@clientName(0))
@@ -248,10 +250,10 @@ Namespace Pros.Gui
             End If
 
             Dim myPid As UInt64 = Pros.Sys.Process.GetPid()
-            Dim clientName(16) As Byte
+            Dim clientName(32) As Byte
             Dim cIdx As UInt32 = 0
             AppendStr "client.", @clientName(0), cIdx
-            AppendUInt myPid Mod 10, @clientName(0), cIdx
+            AppendUInt myPid, @clientName(0), cIdx
             clientName(cIdx) = 0
 
             Dim clientNodeId As UInt64 = Pros.Nodes.NodeRegistry.Lookup(@clientName(0))

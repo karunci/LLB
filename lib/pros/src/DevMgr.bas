@@ -44,10 +44,10 @@ Namespace Pros.Devices
             End If
 
             Dim myPid As UInt64 = Pros.Sys.Process.GetPid()
-            Dim clientName(16) As Byte
+            Dim clientName(32) As Byte
             Dim cIdx As UInt32 = 0
             AppendStr "client.", @clientName(0), cIdx
-            AppendUInt myPid Mod 10, @clientName(0), cIdx
+            AppendUInt myPid, @clientName(0), cIdx
             clientName(cIdx) = 0
 
             Dim clientNodeId As UInt64 = Pros.Nodes.NodeRegistry.Lookup(@clientName(0))

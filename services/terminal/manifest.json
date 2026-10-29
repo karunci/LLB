@@ -1,8 +1,0 @@
-{
-  "name": "terminal",
-  "version": "1.0.0",
-  "type": "application",
-  "entry": "terminal.elf",
-  "priority": 2,
-  "description": "PROS Ring 3 Interactive Terminal Shell"
-}

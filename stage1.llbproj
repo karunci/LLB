@@ -1,0 +1,25 @@
+' Project Name: Low-Level Basic Self-Hosted Compiler (llbc-stage1)
+' Filename: stage1.llbproj
+' Summary: Pure LLB self-hosted compiler stage-1 project descriptor.
+
+[Project]
+Name    = "llbc-stage1"
+Type    = "Executable"
+Version = "0.1.0"
+
+[Target]
+Arch = "x86_64-unknown-linux-gnu"
+
+[Output]
+OutDir  = "build"
+OutFile = "llbc-stage1"
+
+[Entry]
+EntryPoint = "Main"
+
+[Sources]
+Module = "src/Ast.bas"
+Module = "src/LlvmC.bas"
+Class  = "src/Lexer.cls"
+Class  = "src/Parser.cls"
+Module = "src/CompilerMain.bas"

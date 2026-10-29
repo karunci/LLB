@@ -1,11 +1,22 @@
 # Low-Level Basic (LLB)
 
 [![License: MPL-2.0](https://img.shields.io/badge/License-MPL_2.0-blue.svg)](LICENSE.md)
-[![Build Status](https://img.shields.io/badge/tests-69%2F69%20passed-brightgreen.svg)](docs/README.md#toolchain--environment-specifications)
-[![LLVM Version](https://img.shields.io/badge/backend-LLVM%2021-red.svg)](docs/README.md#development--methodology)
+[![Build Status](https://img.shields.io/badge/tests-69%2F69%20passed-brightgreen.svg)](tests/userland/TestSuite.bas)
+[![LLVM Version](https://img.shields.io/badge/backend-LLVM%2021-red.svg)](CMakeLists.txt)
 [![AI-Assisted](https://img.shields.io/badge/development-AI--assisted-purple.svg)](AI_DISCLOSURE.md)
 
 > **Low-Level Basic (LLB)** is an Ahead-Of-Time (AOT) compiled systems programming language combining the safety guarantees and bare-metal performance of Rust and C/C++ with the clean, expressive, approachable syntax of Visual Basic 6.
+
+---
+
+## 🌐 Multi-Branch Ecosystem Navigation
+The Low-Level Basic ecosystem is organized across three dedicated parallel branches:
+
+| Subsystem | Branch | Architecture & Responsibility | Remote Link |
+| :--- | :--- | :--- | :--- |
+| **Stage-0 Bootstrap Compiler** | `main` | C++ bootstrap compiler emitting LLVM IR for freestanding & hosted targets. | *Active Branch* |
+| **PROS Operating System** | `pros` | Complete 64-bit microkernel, system daemons (`services/`), GUI apps (`apps/gui/`), and SDK (`lib/`). | [**View Branch: `pros`**](https://github.com/karunci/LLB/tree/pros) |
+| **Stage-1 Self-Hosted Compiler** | `stage1` | Pure Low-Level Basic self-hosting compiler designed to run natively inside PROS. | [**View Branch: `stage1`**](https://github.com/karunci/LLB/tree/stage1) |
 
 ---
 
@@ -37,7 +48,7 @@ Module Main
         PrintLine "System status: " & status & ", Code: " & answer
 
         ' Direct FFI call with C calling convention
-        printf(CPtr(Pointer To Byte, "Formatted output: %d" & Chr(10)), answer)
+        printf("Formatted output: %d" & Chr(10), answer)
     End Sub
 End Module
 ```
@@ -49,8 +60,8 @@ Class Drivers.Terminal
     Private buffer As Volatile Pointer To UInt16
 
     Public Unsafe Sub Initialize()
-        ' Explicit cast to MMIO volatile pointer
-        Me.buffer = CPtr(Volatile Pointer To UInt16, VGA_ADDRESS)
+        ' Explicit cast to MMIO volatile pointer using pure LLB constructor syntax
+        Me.buffer = Pointer To UInt16(VGA_ADDRESS)
         ' Write colored ASCII character ('A', Green on Black)
         Me.buffer(0) = &H0A41
     End Sub
@@ -182,10 +193,10 @@ The compiler driver `llbc-stage0` compiles single files or `.llbproj` project ma
 # 2. Build the comprehensive test suite via project manifest
 ./build/llbc-stage0 tests/userland/TestSuite.llbproj
 
-# 3. Build a full bare-metal OS kernel via project manifest
-./build/llbc-stage0 tests/kernel/Kernel.llbproj
+# 3. For OS microkernel and system daemons, switch to the 'pros' branch:
+# git checkout pros (or cd ../pros in worktree setup)
 
-# 4. Cross-compile for bare-metal x86_64 or AArch64
+# 4. Cross-compile for freestanding x86_64
 ./build/llbc-stage0 kernel.bas --target=x86_64-unknown-none-elf --nostdlib -o build/kernel.elf
 ```
 
@@ -246,26 +257,25 @@ nix-shell -p cmake clang llvm lld libedit
 ### Build Steps (all platforms)
 ```bash
 git clone https://github.com/karunci/LLB.git
-cd LLB/llbc
+cd LLB
 
 mkdir build && cd build
 cmake ..
-cmake --build . -j$(nproc)   # or: make -j$(nproc)
+cmake --build . -j$(nproc)
 
-# The compiler binary will be at:
-./build/llbc-stage0   # (or ./build/llbc symlink)
+# Run the 69-suite test verification:
+ctest --test-dir . --output-on-failure
 ```
 
 ---
 
 ## 📖 Complete Documentation
 
-Comprehensive documentation, full language grammar, type specifications, FFI rules, and bare-metal kernel references are available in the [`docs/`](docs/) directory:
+Comprehensive compiler documentation, full language grammar, type specifications, and compiler roadmap:
 
-- 📘 **[Full Language & Architecture Documentation](docs/README.md)** — In-depth guide covering all keywords, syntax, generics, memory models, attributes, runtime libraries, and project manifests.
 - 📕 **[Formal Language Reference Manual](docs/LANGUAGE_REFERENCE.md)** — Exhaustive 28-section language specification including grammar, layout intrinsics, interrupt handlers, and static assertions.
-- 📗 **[Standard Library Reference (`LibLLB` & `LibLLB_Metal`)](docs/STANDARD_LIBRARY.md)** — Complete API documentation with declarations, usage examples, and C standard library mappings.
-- 🗺️ **[Feature Parity & Implementation Roadmap](docs/LLB_FEATURES_ROADMAPS.md)** — Complete audit of VB6 compatibility, modern extensions, and current compiler status.
+- 🗺️ **[Compiler Feature & Codegen Roadmap](docs/LLBC_ROADMAP.md)** — Stage-0 compiler features, LLVM IR emitter optimizations, and test standards.
+- 🤝 **[Contributing Guidelines](docs/CONTRIBUTING.md)** — Compiler contribution protocols, test suite requirements, and patch author standards.
 - 📜 **[Licensing & AI Ingestion Restrictions](LICENSE.md)** — Dual-license terms (MPL-2.0 and AI training prohibitions).
 
 ---

@@ -43,7 +43,7 @@ Module Std.Memory
         If dest < src Then
             Copy dest, src, count
         Else
-            Dim i As Int64 = CType(Int64, count) - 1
+            Dim i As Int64 = Int64(count) - 1
             Do While i >= 0
                 dest(i) = src(i)
                 i = i - 1
@@ -98,7 +98,7 @@ Module Std.Memory
         Dim i As UInt64 = 0
         Do While i < count
             If ptr(i) = val Then
-                Search = CPtr(Pointer To Byte, CPtr(UInt64, ptr) + i)
+                Search = ptr + i
                 Exit Function
             End If
             i = i + 1
@@ -117,8 +117,8 @@ Module Std.Memory
         Dim words As UInt64 = count / 8
         Dim remainder As UInt64 = count Mod 8
         If words > 0 Then
-            Dim d64 As Pointer To UInt64 = CPtr(Pointer To UInt64, dest)
-            Dim s64 As Pointer To UInt64 = CPtr(Pointer To UInt64, src)
+            Dim d64 As Pointer To UInt64 = *UInt64(dest)
+            Dim s64 As Pointer To UInt64 = *UInt64(src)
             Dim w As UInt64 = 0
             Do While w < words
                 d64(w) = s64(w)

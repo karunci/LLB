@@ -81,7 +81,7 @@ Module UserApplication
         While strPtr(length) <> 0
             length = length + 1
         Wend
-        Syscall2 SYS_CONSOLE_WRITE, CType(UInt64, strPtr), length
+        Syscall2 SYS_CONSOLE_WRITE, UInt64(strPtr), length
     End Sub
 
     ''
@@ -98,7 +98,7 @@ Module UserApplication
         Dim idx As UInt32 = 0
         Dim v As UInt64 = val
         While v > 0
-            tmp(idx) = CType(Byte, (v Mod 10) + 48)
+            tmp(idx) = Byte((v Mod 10) + 48)
             v = v / 10
             idx = idx + 1
         Wend
@@ -148,7 +148,7 @@ Module UserApplication
         End If
 
         lineBuf(outIdx) = 0
-        Syscall2 SYS_CONSOLE_WRITE, CType(UInt64, @lineBuf(0)), outIdx
+        Syscall2 SYS_CONSOLE_WRITE, UInt64(@lineBuf(0)), outIdx
     End Sub
 
     ''
@@ -180,7 +180,7 @@ Module UserApplication
         nodeName(6) = 112 ' 'p'
         nodeName(7) = 112 ' 'p'
         nodeName(8) = 0
-        Dim userNodeId As UInt64 = Syscall3(SYS_NODE_REGISTER, 1, CType(UInt64, @nodeName(0)), 3)
+        Dim userNodeId As UInt64 = Syscall3(SYS_NODE_REGISTER, 1, UInt64(@nodeName(0)), 3)
         PrintMessageWithUInt "[USER-APP] Registered Neural Node via SYS_NODE_REGISTER: Node #", userNodeId, "\r\n"
 
         ' 4. Connect Synapse Channel to Kernel Node #1000
@@ -199,7 +199,7 @@ Module UserApplication
         pkt.Payload(2) = 76 ' 'L'
         pkt.Payload(3) = 76 ' 'L'
         pkt.Payload(4) = 79 ' 'O'
-        Dim pushRes As UInt64 = Syscall2(SYS_SYNAPSE_PUSH, synId, CType(UInt64, @pkt))
+        Dim pushRes As UInt64 = Syscall2(SYS_SYNAPSE_PUSH, synId, UInt64(@pkt))
         If pushRes = 1 Then
             PrintString "[USER-APP] Axonal Data Plane packet transmission verified (Seq: 101)\r\n"
         End If
@@ -210,14 +210,14 @@ Module UserApplication
         PrintString "[USER-APP] Returned from SYS_PROCESS_YIELD! Task execution intact.\r\n"
 
         ' 7. Verify memory-mapped NEO/PE-BAX embedded resource access at 0x50000000
-        Dim resTablePtr As Pointer To UInt32 = CPtr(Pointer To UInt32, &H50000000)
+        Dim resTablePtr As Pointer To UInt32 = *UInt32(&H50000000)
         If resTablePtr(0) = 1 Then ' ASSET_MANIFEST
-            Dim manifestByteLenPtr As Pointer To UInt64 = CPtr(Pointer To UInt64, &H50000020)
+            Dim manifestByteLenPtr As Pointer To UInt64 = *UInt64(&H50000020)
             PrintMessageWithUInt "[USER-APP] Memory-Mapped BAX Manifest verified (Size: ", manifestByteLenPtr(0), " bytes, Mapped: 0x50000000)\r\n"
         End If
 
         ' 8. Verify Peer-to-Peer Node Lookup via SYS_NODE_LOOKUP
-        Dim lookupId As UInt64 = Syscall1(SYS_NODE_LOOKUP, CType(UInt64, @nodeName(0)))
+        Dim lookupId As UInt64 = Syscall1(SYS_NODE_LOOKUP, UInt64(@nodeName(0)))
         PrintMessageWithUInt "[USER-APP] Peer-to-Peer Node Lookup verified: Node 'user.app' -> ID #", lookupId, "\r\n"
 
         ' 8b. Discover Hardware Input Node ('hw.input.raw') and establish Synapse channel
@@ -235,7 +235,7 @@ Module UserApplication
         rawInputName(10) = 97 ' 'a'
         rawInputName(11) = 119' 'w'
         rawInputName(12) = 0
-        Dim rawInputNodeId As UInt64 = Syscall1(SYS_NODE_LOOKUP, CType(UInt64, @rawInputName(0)))
+        Dim rawInputNodeId As UInt64 = Syscall1(SYS_NODE_LOOKUP, UInt64(@rawInputName(0)))
         PrintMessageWithUInt "[USER-APP] Discovered Hardware Input Node: 'hw.input.raw' -> ID #", rawInputNodeId, "\r\n"
         If rawInputNodeId > 0 Then
             Dim inputSynId As UInt64 = Syscall3(SYS_SYNAPSE_CONNECT, userNodeId, rawInputNodeId, 3)
@@ -254,7 +254,7 @@ Module UserApplication
         srvInputName(7) = 117 ' 'u'
         srvInputName(8) = 116 ' 't'
         srvInputName(9) = 0
-        Dim srvInputNodeId As UInt64 = Syscall1(SYS_NODE_LOOKUP, CType(UInt64, @srvInputName(0)))
+        Dim srvInputNodeId As UInt64 = Syscall1(SYS_NODE_LOOKUP, UInt64(@srvInputName(0)))
         PrintMessageWithUInt "[USER-APP] Discovered Unified Input Service Node: 'srv.input' -> ID #", srvInputNodeId, "\r\n"
         If srvInputNodeId > 0 Then
             Dim srvSynId As UInt64 = Syscall3(SYS_SYNAPSE_CONNECT, userNodeId, srvInputNodeId, 3)
@@ -266,7 +266,7 @@ Module UserApplication
         Dim shmid As UInt64 = Syscall2(SYS_SHMEM_CREATE, 8192, shmTargetVaddr)
         If shmid > 0 Then
             PrintMessageWithUInt "[USER-APP] Zero-Copy Shared Memory created (SHMID: ", shmid, ", Mapped @ 0x60000000)\r\n"
-            Dim shmPtr As Volatile Pointer To UInt64 = CPtr(Volatile Pointer To UInt64, shmTargetVaddr)
+            Dim shmPtr As Volatile Pointer To UInt64 = Volatile Pointer To UInt64(shmTargetVaddr)
             shmPtr(0) = &HCAFEBABE12345678
             If shmPtr(0) = &HCAFEBABE12345678 Then
                 PrintString "[USER-APP] Zero-Copy Shared Memory write/read verified (0xCAFEBABE12345678)\r\n"
@@ -292,7 +292,7 @@ Module UserApplication
         Dim vfsTargetId As UInt64 = 0
         Dim vfsRetry As UInt32 = 0
         While vfsTargetId = 0 And vfsRetry < 50
-            vfsTargetId = Syscall1(SYS_NODE_LOOKUP, CType(UInt64, @vfsNodeName(0)))
+            vfsTargetId = Syscall1(SYS_NODE_LOOKUP, UInt64(@vfsNodeName(0)))
             If vfsTargetId = 0 Then
                 Syscall1 SYS_PROCESS_SLEEP, 20
                 vfsRetry = vfsRetry + 1
@@ -307,7 +307,7 @@ Module UserApplication
                 vfsReq.PacketType = 11 ' VFS_CMD_STAT
                 vfsReq.SourceNode = userNodeId
                 vfsReq.TargetNode = vfsTargetId
-                Dim testPath As Pointer To Byte = CPtr(Pointer To Byte, "/System/Servers/genesis.bax")
+                Dim testPath As Pointer To Byte = "/System/Servers/genesis.bax"
                 Dim pi As UInt32 = 0
                 While testPath(pi) <> 0
                     vfsReq.Payload(pi) = testPath(pi)
@@ -315,13 +315,13 @@ Module UserApplication
                 Wend
                 vfsReq.Payload(pi) = 0
                 vfsReq.PayloadLength = pi + 1
-                Syscall2 SYS_SYNAPSE_PUSH, vfsSynId, CType(UInt64, @vfsReq)
+                Syscall2 SYS_SYNAPSE_PUSH, vfsSynId, UInt64(@vfsReq)
 
                 Dim vfsResp As AxonPacket
-                If Syscall3(SYS_SYNAPSE_POP, userNodeId, CType(UInt64, @vfsResp), 1) = 1 Then
+                If Syscall3(SYS_SYNAPSE_POP, userNodeId, UInt64(@vfsResp), 1) = 1 Then
                     If vfsResp.PacketType = 100 Then ' VFS_RESP_OK
-                        Dim pSize As Pointer To UInt32 = CPtr(Pointer To UInt32, @vfsResp.Payload(4))
-                        PrintMessageWithUInt CPtr(Pointer To Byte, "[USER-APP] VFS Metadata verified: '/System/Servers/genesis.bax' (Size: "), CType(UInt64, pSize(0)), CPtr(Pointer To Byte, " bytes)\r\n")
+                        Dim pSize As Pointer To UInt32 = *UInt32(@vfsResp.Payload(4))
+                        PrintMessageWithUInt "[USER-APP] VFS Metadata verified: '/System/Servers/genesis.bax' (Size: ", UInt64(pSize(0)), " bytes)\r\n"
                     End If
                 End If
             End If
@@ -344,7 +344,7 @@ Module UserApplication
         Dim devTargetId As UInt64 = 0
         Dim devRetry As UInt32 = 0
         While devTargetId = 0 And devRetry < 50
-            devTargetId = Syscall1(SYS_NODE_LOOKUP, CType(UInt64, @devNodeName(0)))
+            devTargetId = Syscall1(SYS_NODE_LOOKUP, UInt64(@devNodeName(0)))
             If devTargetId = 0 Then
                 Syscall1 SYS_PROCESS_SLEEP, 20
                 devRetry = devRetry + 1
@@ -359,7 +359,7 @@ Module UserApplication
                 devReq.PacketType = 31 ' DEV_CMD_QUERY
                 devReq.SourceNode = userNodeId
                 devReq.TargetNode = devTargetId
-                Dim devNamePtr As Pointer To Byte = CPtr(Pointer To Byte, "pci.disp.lfb")
+                Dim devNamePtr As Pointer To Byte = "pci.disp.lfb"
                 Dim di As UInt32 = 0
                 While devNamePtr(di) <> 0
                     devReq.Payload(di) = devNamePtr(di)
@@ -367,13 +367,13 @@ Module UserApplication
                 Wend
                 devReq.Payload(di) = 0
                 devReq.PayloadLength = di + 1
-                Syscall2 SYS_SYNAPSE_PUSH, devSynId, CType(UInt64, @devReq)
+                Syscall2 SYS_SYNAPSE_PUSH, devSynId, UInt64(@devReq)
 
                 Dim devResp As AxonPacket
-                If Syscall3(SYS_SYNAPSE_POP, userNodeId, CType(UInt64, @devResp), 1) = 1 Then
+                If Syscall3(SYS_SYNAPSE_POP, userNodeId, UInt64(@devResp), 1) = 1 Then
                     If devResp.PacketType = 300 Then ' DEV_RESP_OK
-                        Dim pBase As Pointer To UInt64 = CPtr(Pointer To UInt64, @devResp.Payload(16))
-                        PrintMessageWithUInt CPtr(Pointer To Byte, "[USER-APP] Device Manager verified: 'pci.disp.lfb' (Aperture: 0x"), pBase(0), CPtr(Pointer To Byte, ")\r\n")
+                        Dim pBase As Pointer To UInt64 = *UInt64(@devResp.Payload(16))
+                        PrintMessageWithUInt "[USER-APP] Device Manager verified: 'pci.disp.lfb' (Aperture: 0x", pBase(0), ")\r\n"
                     End If
                 End If
             End If
@@ -399,7 +399,7 @@ Module UserApplication
         Dim plexTargetId As UInt64 = 0
         Dim plexRetry As UInt32 = 0
         While plexTargetId = 0 And plexRetry < 50
-            plexTargetId = Syscall1(SYS_NODE_LOOKUP, CType(UInt64, @plexNodeName(0)))
+            plexTargetId = Syscall1(SYS_NODE_LOOKUP, UInt64(@plexNodeName(0)))
             If plexTargetId = 0 Then
                 Syscall1 SYS_PROCESS_SLEEP, 20
                 plexRetry = plexRetry + 1
@@ -413,7 +413,7 @@ Module UserApplication
                 plexReq.PacketType = 40 ' PLEXUS_CMD_STATUS
                 plexReq.SourceNode = userNodeId
                 plexReq.TargetNode = plexTargetId
-                Dim srvCompName As Pointer To Byte = CPtr(Pointer To Byte, "srv.compositor")
+                Dim srvCompName As Pointer To Byte = "srv.compositor"
                 Dim cpi As UInt32 = 0
                 While srvCompName(cpi) <> 0
                     plexReq.Payload(cpi) = srvCompName(cpi)
@@ -421,30 +421,30 @@ Module UserApplication
                 Wend
                 plexReq.Payload(cpi) = 0
                 plexReq.PayloadLength = cpi + 1
-                Syscall2 SYS_SYNAPSE_PUSH, plexSynId, CType(UInt64, @plexReq)
+                Syscall2 SYS_SYNAPSE_PUSH, plexSynId, UInt64(@plexReq)
 
                 Dim plexResp As AxonPacket
-                If Syscall3(SYS_SYNAPSE_POP, userNodeId, CType(UInt64, @plexResp), 1) = 1 Then
+                If Syscall3(SYS_SYNAPSE_POP, userNodeId, UInt64(@plexResp), 1) = 1 Then
                     If plexResp.PacketType = 400 Then ' PLEXUS_RESP_OK
-                        PrintString CPtr(Pointer To Byte, "[USER-APP] Plexus Supervisor verified: 'srv.compositor' is supervised & active\r\n")
+                        PrintString "[USER-APP] Plexus Supervisor verified: 'srv.compositor' is supervised & active\r\n"
                     End If
                 End If
             End If
         End If
 
-        PrintString CPtr(Pointer To Byte, "[BRT0] user_main completed successfully. Returning exit code 0.\r\n")
-        PrintString CPtr(Pointer To Byte, "[BRT0] =======================================================\r\n")
+        PrintString "[BRT0] user_main completed successfully. Returning exit code 0.\r\n"
+        PrintString "[BRT0] =======================================================\r\n"
 
         ' 10-Second Continuous Execution Liveness Timer (requested by user to verify real-time stability)
-        PrintString CPtr(Pointer To Byte, "[LIVENESS] Starting 10-second continuous execution verification timer...\r\n")
+        PrintString "[LIVENESS] Starting 10-second continuous execution verification timer...\r\n"
         Dim livenessSec As UInt64 = 1
         While livenessSec <= 10
-            PrintMessageWithUInt CPtr(Pointer To Byte, "[LIVENESS TIMER] Active execution: "), livenessSec, CPtr(Pointer To Byte, "/10 seconds - System healthy\r\n")
+            PrintMessageWithUInt "[LIVENESS TIMER] Active execution: ", livenessSec, "/10 seconds - System healthy\r\n"
             Syscall1 SYS_PROCESS_SLEEP, 1000
             livenessSec = livenessSec + 1
         Wend
-        PrintString CPtr(Pointer To Byte, "[LIVENESS] 10-second liveness verification completed successfully!\r\n")
-        PrintString CPtr(Pointer To Byte, "[LIVENESS] =======================================================\r\n")
+        PrintString "[LIVENESS] 10-second liveness verification completed successfully!\r\n"
+        PrintString "[LIVENESS] =======================================================\r\n"
 
         user_main = 0
     End Function

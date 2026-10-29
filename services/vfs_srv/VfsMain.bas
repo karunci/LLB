@@ -333,10 +333,10 @@ Module VfsMain
                     If nodeIdx >= 0 Then
                         respPkt.PacketType = VFS_RESP_OK
                         respPkt.PayloadLength = 16
-                        Dim pKind As Pointer To UInt32 = CPtr(Pointer To UInt32, @respPkt.Payload(0))
-                        Dim pSize As Pointer To UInt32 = CPtr(Pointer To UInt32, @respPkt.Payload(4))
-                        Dim pPerm As Pointer To UInt32 = CPtr(Pointer To UInt32, @respPkt.Payload(8))
-                        Dim pStat As Pointer To UInt32 = CPtr(Pointer To UInt32, @respPkt.Payload(12))
+                        Dim pKind As Pointer To UInt32 = *UInt32(@respPkt.Payload(0))
+                        Dim pSize As Pointer To UInt32 = *UInt32(@respPkt.Payload(4))
+                        Dim pPerm As Pointer To UInt32 = *UInt32(@respPkt.Payload(8))
+                        Dim pStat As Pointer To UInt32 = *UInt32(@respPkt.Payload(12))
                         pKind(0) = vfsTable(nodeIdx).Kind
                         pSize(0) = vfsTable(nodeIdx).SizeBytes
                         pPerm(0) = vfsTable(nodeIdx).Perms

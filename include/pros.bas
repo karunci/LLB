@@ -373,6 +373,13 @@ Module ProsApi
     Public Declare Function Trim Lib "libpros" Alias "Pros_String_StringUtil_Trim" (ByVal src As String, ByVal outBuf As Pointer To Byte) As UInt64
     Public Declare Function StrTrim Lib "libpros" Alias "Pros_String_StringUtil_Trim" (ByVal src As String, ByVal outBuf As Pointer To Byte) As UInt64
 
+    ' Numeric & String Formatting
+    Public Declare Function SprintF Lib "libpros" Alias "Format_SprintF" (ByVal outBuf As Pointer To Byte, ByVal maxLen As UInt32, ByVal fmt As Pointer To Byte, ParamArray args() As Pointer To Int64) As UInt32
+    Public Declare Function ToHex Lib "libpros" Alias "Format_ToHex" (ByVal value As UInt64, ByVal outBuf As Pointer To Byte, ByVal prefix As Boolean) As UInt32
+    Public Declare Function ToUInt Lib "libpros" Alias "Format_ToUInt" (ByVal value As UInt64, ByVal outBuf As Pointer To Byte) As UInt32
+    Public Declare Function ToInt Lib "libpros" Alias "Format_ToInt" (ByVal value As Int64, ByVal outBuf As Pointer To Byte) As UInt32
+    Public Declare Function ToBinary Lib "libpros" Alias "Format_ToBinary" (ByVal value As UInt64, ByVal outBuf As Pointer To Byte, ByVal prefix As Boolean, ByVal minWidth As UInt32) As UInt32
+
     ' Memory Operations
     Public Declare Sub Copy Lib "libpros" Alias "Pros_Memory_MemUtil_Copy" (ByVal dest As Pointer To Byte, ByVal src As Pointer To Byte, ByVal count As UInt64)
     Public Declare Sub Move Lib "libpros" Alias "Pros_Memory_MemUtil_Move" (ByVal dest As Pointer To Byte, ByVal src As Pointer To Byte, ByVal count As UInt64)

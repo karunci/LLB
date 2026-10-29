@@ -47,7 +47,7 @@ Module Ascii
     ''
     Public Function ToUpper(ByVal c As Byte) As Byte
         If c >= 97 And c <= 122 Then
-            ToUpper = CType(Byte, c - 32)
+            ToUpper = Byte(c - 32)
         Else
             ToUpper = c
         End If
@@ -60,7 +60,7 @@ Module Ascii
     ''
     Public Function ToLower(ByVal c As Byte) As Byte
         If c >= 65 And c <= 90 Then
-            ToLower = CType(Byte, c + 32)
+            ToLower = Byte(c + 32)
         Else
             ToLower = c
         End If

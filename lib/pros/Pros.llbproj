@@ -42,5 +42,6 @@ Files = [
     "src/Vfs.bas",
     "src/Wm.bas",
     "src/DevMgr.bas",
-    "src/Plexus.bas"
+    "src/Plexus.bas",
+    "../metal/src/Format.bas"
 ]

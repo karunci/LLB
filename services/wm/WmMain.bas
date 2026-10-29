@@ -117,7 +117,7 @@ Module WmMain
         Dim i As Int32 = 0
         While i < windowCount
             If windows(i).Id = winId Then
-                FindWindow = CPtr(Pointer To WindowItem, AddressOf windows(i))
+                FindWindow = Pointer To WindowItem(AddressOf windows(i))
                 Exit Function
             End If
             i = i + 1
@@ -176,7 +176,7 @@ Module WmMain
 
         windowCount = windowCount + 1
         SyncWindowTable
-        AddWindow = CPtr(Pointer To WindowItem, AddressOf windows(idx))
+        AddWindow = Pointer To WindowItem(AddressOf windows(idx))
     End Function
 
     ''
@@ -368,7 +368,7 @@ Module WmMain
 
             Dim i As Int32 = windowCount - 1
             While i >= 0
-                Dim pWin As Pointer To WindowItem = CPtr(Pointer To WindowItem, AddressOf windows(i))
+                Dim pWin As Pointer To WindowItem = Pointer To WindowItem(AddressOf windows(i))
                 If pWin.State <> WIN_STATE_MINIMIZED Then
                     Dim code As UInt32 = HitTestWindow(mouseX, mouseY, pWin.X, pWin.Y, pWin.Width, pWin.Height)
                     If code <> HIT_NONE Then
@@ -429,7 +429,7 @@ Module WmMain
         If (buttons And 1) <> 0 Then
             Dim k As UInt32 = 0
             While k < windowCount
-                Dim win As Pointer To WindowItem = CPtr(Pointer To WindowItem, AddressOf windows(k))
+                Dim win As Pointer To WindowItem = Pointer To WindowItem(AddressOf windows(k))
                 If win.Dragging And win.State = WIN_STATE_NORMAL Then
                     Dim newX As Int32 = mouseX - win.DragOffsetX
                     Dim newY As Int32 = mouseY - win.DragOffsetY
@@ -508,7 +508,7 @@ Module WmMain
 
         ' 4. Allocate Shared Memory WindowTable at 0x62000000
         shmTableId = ShmemCreate(SizeOf(WindowTable), &H62000000)
-        pWindowTable = CPtr(Pointer To WindowTable, &H62000000)
+        pWindowTable = Pointer To WindowTable(&H62000000)
         If pWindowTable <> 0 Then
             pWindowTable.Revision = 1
             pWindowTable.Count = 0
@@ -529,7 +529,7 @@ Module WmMain
                 regPkt.PacketType = WM_CMD_REGISTER_TABLE
                 regPkt.SourceNode = wmNodeId
                 regPkt.TargetNode = compNodeId
-                Dim pShmPayload As Pointer To UInt64 = CPtr(Pointer To UInt64, @regPkt.Payload(0))
+                Dim pShmPayload As Pointer To UInt64 = *UInt64(@regPkt.Payload(0))
                 pShmPayload(0) = shmTableId
                 regPkt.PayloadLength = 8
                 SynapsePush synComp, regPkt
@@ -562,9 +562,9 @@ Module WmMain
             ' Service incoming window manager requests from compositor / client applications
             If SynapsePopWait(wmNodeId, reqPkt) Then
                 If reqPkt.PacketType = WM_CMD_CREATE_WINDOW Then
-                    Dim pW As Pointer To Int32 = CPtr(Pointer To Int32, @reqPkt.Payload(0))
-                    Dim pH As Pointer To Int32 = CPtr(Pointer To Int32, @reqPkt.Payload(4))
-                    Dim pShm As Pointer To UInt64 = CPtr(Pointer To UInt64, @reqPkt.Payload(8))
+                    Dim pW As Pointer To Int32 = *Int32(@reqPkt.Payload(0))
+                    Dim pH As Pointer To Int32 = *Int32(@reqPkt.Payload(4))
+                    Dim pShm As Pointer To UInt64 = *UInt64(@reqPkt.Payload(8))
                     Dim w As Int32 = pW(0)
                     Dim h As Int32 = pH(0)
                     Dim shmId As UInt64 = pShm(0)
@@ -591,7 +591,7 @@ Module WmMain
                     respPkt.SourceNode = wmNodeId
                     respPkt.TargetNode = reqPkt.SourceNode
                     respPkt.PacketType = WM_RESP_OK
-                    Dim pResId As Pointer To UInt32 = CPtr(Pointer To UInt32, @respPkt.Payload(0))
+                    Dim pResId As Pointer To UInt32 = *UInt32(@respPkt.Payload(0))
                     pResId(0) = newId
                     respPkt.PayloadLength = 4
 
@@ -626,7 +626,7 @@ Module WmMain
                     respPkt.SourceNode = wmNodeId
                     respPkt.TargetNode = compNodeId
                     respPkt.PacketType = WM_CMD_REGISTER_TABLE
-                    Dim pShmResp As Pointer To UInt64 = CPtr(Pointer To UInt64, @respPkt.Payload(0))
+                    Dim pShmResp As Pointer To UInt64 = *UInt64(@respPkt.Payload(0))
                     pShmResp(0) = shmTableId
                     respPkt.PayloadLength = 8
                     If synComp <> 0 Then
@@ -634,9 +634,9 @@ Module WmMain
                     End If
                     wmReqCount = wmReqCount + 1
                 ElseIf reqPkt.PacketType = WM_CMD_MOUSE_EVENT Then
-                    Dim pMx As Pointer To Int32 = CPtr(Pointer To Int32, @reqPkt.Payload(0))
-                    Dim pMy As Pointer To Int32 = CPtr(Pointer To Int32, @reqPkt.Payload(4))
-                    Dim pBtn As Pointer To Int32 = CPtr(Pointer To Int32, @reqPkt.Payload(8))
+                    Dim pMx As Pointer To Int32 = *Int32(@reqPkt.Payload(0))
+                    Dim pMy As Pointer To Int32 = *Int32(@reqPkt.Payload(4))
+                    Dim pBtn As Pointer To Int32 = *Int32(@reqPkt.Payload(8))
                     Dim changed As Boolean = ProcessMouseInteraction(pMx(0), pMy(0), Byte(pBtn(0)), 1024, 768)
                     If changed Then
                         SyncWindowTable
@@ -651,7 +651,7 @@ Module WmMain
                         End If
                     End If
                 ElseIf reqPkt.PacketType = WM_CMD_SET_FOCUS Then
-                    Dim pWinId As Pointer To UInt32 = CPtr(Pointer To UInt32, @reqPkt.Payload(0))
+                    Dim pWinId As Pointer To UInt32 = *UInt32(@reqPkt.Payload(0))
                     Dim ok As Boolean = SetFocus(pWinId(0))
                     SyncWindowTable
                     respPkt.Sequence = wmReqCount
@@ -670,7 +670,7 @@ Module WmMain
                     End If
                     wmReqCount = wmReqCount + 1
                 ElseIf reqPkt.PacketType = WM_CMD_DESTROY_WINDOW Then
-                    Dim pWinId2 As Pointer To UInt32 = CPtr(Pointer To UInt32, @reqPkt.Payload(0))
+                    Dim pWinId2 As Pointer To UInt32 = *UInt32(@reqPkt.Payload(0))
                     Dim ok2 As Boolean = DestroyWindow(pWinId2(0))
                     SyncWindowTable
                     respPkt.Sequence = wmReqCount

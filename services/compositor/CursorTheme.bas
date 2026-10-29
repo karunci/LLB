@@ -125,19 +125,19 @@ Module CursorTheme
     Public Unsafe Function GetCursorActiveMask(ByVal cursorType As UInt32) As Pointer To UInt16
         Select Case cursorType
             Case CURSOR_ARROW
-                GetCursorActiveMask = CPtr(Pointer To UInt16, AddressOf ArrowActive)
+                GetCursorActiveMask = *UInt16(AddressOf ArrowActive)
             Case CURSOR_IBEAM
-                GetCursorActiveMask = CPtr(Pointer To UInt16, AddressOf IBeamActive)
+                GetCursorActiveMask = *UInt16(AddressOf IBeamActive)
             Case CURSOR_RESIZE_EW
-                GetCursorActiveMask = CPtr(Pointer To UInt16, AddressOf ResizeEWActive)
+                GetCursorActiveMask = *UInt16(AddressOf ResizeEWActive)
             Case CURSOR_RESIZE_NS
-                GetCursorActiveMask = CPtr(Pointer To UInt16, AddressOf ResizeNSActive)
+                GetCursorActiveMask = *UInt16(AddressOf ResizeNSActive)
             Case CURSOR_RESIZE_NWSE
-                GetCursorActiveMask = CPtr(Pointer To UInt16, AddressOf ResizeNWSEActive)
+                GetCursorActiveMask = *UInt16(AddressOf ResizeNWSEActive)
             Case CURSOR_RESIZE_NESW
-                GetCursorActiveMask = CPtr(Pointer To UInt16, AddressOf ResizeNESWActive)
+                GetCursorActiveMask = *UInt16(AddressOf ResizeNESWActive)
             Case Else
-                GetCursorActiveMask = CPtr(Pointer To UInt16, AddressOf ArrowActive)
+                GetCursorActiveMask = *UInt16(AddressOf ArrowActive)
         End Select
     End Function
 
@@ -147,19 +147,19 @@ Module CursorTheme
     Public Unsafe Function GetCursorColorMask(ByVal cursorType As UInt32) As Pointer To UInt16
         Select Case cursorType
             Case CURSOR_ARROW
-                GetCursorColorMask = CPtr(Pointer To UInt16, AddressOf ArrowColor)
+                GetCursorColorMask = *UInt16(AddressOf ArrowColor)
             Case CURSOR_IBEAM
-                GetCursorColorMask = CPtr(Pointer To UInt16, AddressOf IBeamColor)
+                GetCursorColorMask = *UInt16(AddressOf IBeamColor)
             Case CURSOR_RESIZE_EW
-                GetCursorColorMask = CPtr(Pointer To UInt16, AddressOf ResizeEWColor)
+                GetCursorColorMask = *UInt16(AddressOf ResizeEWColor)
             Case CURSOR_RESIZE_NS
-                GetCursorColorMask = CPtr(Pointer To UInt16, AddressOf ResizeNSColor)
+                GetCursorColorMask = *UInt16(AddressOf ResizeNSColor)
             Case CURSOR_RESIZE_NWSE
-                GetCursorColorMask = CPtr(Pointer To UInt16, AddressOf ResizeNWSEColor)
+                GetCursorColorMask = *UInt16(AddressOf ResizeNWSEColor)
             Case CURSOR_RESIZE_NESW
-                GetCursorColorMask = CPtr(Pointer To UInt16, AddressOf ResizeNESWColor)
+                GetCursorColorMask = *UInt16(AddressOf ResizeNESWColor)
             Case Else
-                GetCursorColorMask = CPtr(Pointer To UInt16, AddressOf ArrowColor)
+                GetCursorColorMask = *UInt16(AddressOf ArrowColor)
         End Select
     End Function
 
@@ -223,7 +223,7 @@ Module CursorTheme
             While cy < CURSOR_H
                 curY = y + cy
                 If curY >= 0 And curY < surf.Height Then
-                    Dim rawRow As Pointer To Byte = CPtr(Pointer To Byte, surf.Pixels) + (UInt32(curY) * surf.Pitch)
+                    Dim rawRow As Pointer To Byte = *Byte(surf.Pixels) + (UInt32(curY) * surf.Pitch)
                     actRow = pAct(cy)
                     colRow = pCol(cy)
                     cx = 0

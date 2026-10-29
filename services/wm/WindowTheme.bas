@@ -104,15 +104,15 @@ Module WindowTheme
     ''
     Public Unsafe Function GetGlyphMasks(ByVal glyphType As UInt32) As Pointer To UInt16
         If glyphType = HIT_BTN_CLOSE Then
-            GetGlyphMasks = CPtr(Pointer To UInt16, AddressOf GLYPH_CLOSE)
+            GetGlyphMasks = *UInt16(AddressOf GLYPH_CLOSE)
         ElseIf glyphType = HIT_BTN_MAX Then
-            GetGlyphMasks = CPtr(Pointer To UInt16, AddressOf GLYPH_MAX)
+            GetGlyphMasks = *UInt16(AddressOf GLYPH_MAX)
         ElseIf glyphType = HIT_BTN_MIN Then
-            GetGlyphMasks = CPtr(Pointer To UInt16, AddressOf GLYPH_MIN)
+            GetGlyphMasks = *UInt16(AddressOf GLYPH_MIN)
         ElseIf glyphType = 7 Then ' Restore
-            GetGlyphMasks = CPtr(Pointer To UInt16, AddressOf GLYPH_RESTORE)
+            GetGlyphMasks = *UInt16(AddressOf GLYPH_RESTORE)
         Else
-            GetGlyphMasks = 0
+            GetGlyphMasks = Nothing
         End If
     End Function
 

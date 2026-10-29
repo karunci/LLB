@@ -57,7 +57,7 @@ Namespace Pros.Gui
                 Dim b2 As Byte = Byte((color RShift 16) And &HFF)
                 py = y0
                 While py < y1
-                    Dim rawRow As Pointer To Byte = CPtr(Pointer To Byte, surf.Pixels) + (UInt32(py) * surf.Pitch)
+                    Dim rawRow As Pointer To Byte = *Byte(surf.Pixels) + (UInt32(py) * surf.Pitch)
                     px = x0
                     While px < x1
                         Dim byteOffset As UInt32 = UInt32(px) * 3
@@ -102,8 +102,8 @@ Namespace Pros.Gui
                     curDy = dy + row
                     curSy = sy + row
                     If curDy >= 0 And curDy < dst.Height And curSy >= 0 And curSy < src.Height Then
-                        Dim dstRaw As Pointer To Byte = CPtr(Pointer To Byte, dst.Pixels) + (UInt32(curDy) * dst.Pitch)
-                        Dim srcRaw As Pointer To Byte = CPtr(Pointer To Byte, src.Pixels) + (UInt32(curSy) * src.Pitch)
+                        Dim dstRaw As Pointer To Byte = *Byte(dst.Pixels) + (UInt32(curDy) * dst.Pitch)
+                        Dim srcRaw As Pointer To Byte = *Byte(src.Pixels) + (UInt32(curSy) * src.Pitch)
                         col = 0
                         While col < w
                             curDx = dx + col

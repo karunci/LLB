@@ -164,7 +164,7 @@ Module CompositorMain
             While cy < CURSOR_H
                 curY = y + cy
                 If curY >= 0 And curY < backSurf.Height Then
-                    Dim rawRow As Pointer To Byte = CPtr(Pointer To Byte, backSurf.Pixels) + (UInt32(curY) * backSurf.Pitch)
+                    Dim rawRow As Pointer To Byte = *Byte(backSurf.Pixels) + (UInt32(curY) * backSurf.Pitch)
                     cx = 0
                     While cx < CURSOR_W
                         curX = x + cx
@@ -213,7 +213,7 @@ Module CompositorMain
             While cy < CURSOR_H
                 curY = y + cy
                 If curY >= 0 And curY < backSurf.Height Then
-                    Dim rawRow As Pointer To Byte = CPtr(Pointer To Byte, backSurf.Pixels) + (UInt32(curY) * backSurf.Pitch)
+                    Dim rawRow As Pointer To Byte = *Byte(backSurf.Pixels) + (UInt32(curY) * backSurf.Pitch)
                     cx = 0
                     While cx < CURSOR_W
                         curX = x + cx
@@ -417,7 +417,7 @@ Module CompositorMain
                         If clientSurfaces(wId) = 0 Or clientShmIds(wId) <> win.ShmId Then
                             Dim clientVaddr As UInt64 = &H68000000 + (UInt64(wId) * &H00400000)
                             If ShmemAttach(win.ShmId, clientVaddr) <> 0 Then
-                                clientSurfaces(wId) = CPtr(Pointer To UInt32, clientVaddr)
+                                clientSurfaces(wId) = *UInt32(clientVaddr)
                                 clientShmIds(wId) = win.ShmId
                             End If
                         End If
@@ -454,7 +454,7 @@ Module CompositorMain
 
         DrawText5x7 backSurf, 16, 10, "PROS WORKSTATION  |  APPLICATIONS  NODES  SERVICES", &HFFECEFF4
         RenderMouseCoordinates False
-        DrawText5x7 backSurf, dispInfo.Width - 360, 10, "REV: 2026.10.30-r38-re01", &HFF88C0D0
+        DrawText5x7 backSurf, dispInfo.Width - 360, 10, "REV: 2026.10.30-r38-re02", &HFF88C0D0
         DrawText5x7 backSurf, dispInfo.Width - 170, 10, "SMP 4 CORES  ONLINE", &HFFA3BE8C
 
         ' 3. Render all active desktop windows from shared memory
@@ -589,11 +589,11 @@ Module CompositorMain
             ' 0. Service incoming Synapse control packets on srv.compositor node
             While SynapsePop(srvNodeId, inPkt)
                 If inPkt.PacketType = WM_CMD_REGISTER_TABLE Then
-                    Dim pShmId As Pointer To UInt64 = CPtr(Pointer To UInt64, @inPkt.Payload(0))
+                    Dim pShmId As Pointer To UInt64 = *UInt64(@inPkt.Payload(0))
                     Dim tableVaddr As UInt64 = &H62000000
                     If pWindowTable = 0 Then
                         If ShmemAttach(pShmId(0), tableVaddr) <> 0 Then
-                            pWindowTable = CPtr(Pointer To WindowTable, tableVaddr)
+                            pWindowTable = Pointer To WindowTable(tableVaddr)
                             ConsolePrintWithUInt "[COMPOSITOR] Attached WindowTable (SHMID: ", pShmId(0), ")\r\n"
                         End If
                     End If
@@ -601,7 +601,7 @@ Module CompositorMain
                 ElseIf inPkt.PacketType = WM_CMD_WINDOW_DIRTY Then
                     desktopDirty = True
                 ElseIf inPkt.PacketType = WM_CMD_SET_CURSOR Then
-                    Dim pCurType As Pointer To UInt32 = CPtr(Pointer To UInt32, @inPkt.Payload(0))
+                    Dim pCurType As Pointer To UInt32 = *UInt32(@inPkt.Payload(0))
                     If pCurType(0) <> currentCursor Then
                         currentCursor = pCurType(0)
                         mouseDirty = True
@@ -652,9 +652,9 @@ Module CompositorMain
                         mEvtPkt.PacketType = WM_CMD_MOUSE_EVENT
                         mEvtPkt.SourceNode = srvNodeId
                         mEvtPkt.TargetNode = wmNodeId
-                        Dim pMx As Pointer To Int32 = CPtr(Pointer To Int32, @mEvtPkt.Payload(0))
-                        Dim pMy As Pointer To Int32 = CPtr(Pointer To Int32, @mEvtPkt.Payload(4))
-                        Dim pBtn As Pointer To Int32 = CPtr(Pointer To Int32, @mEvtPkt.Payload(8))
+                        Dim pMx As Pointer To Int32 = *Int32(@mEvtPkt.Payload(0))
+                        Dim pMy As Pointer To Int32 = *Int32(@mEvtPkt.Payload(4))
+                        Dim pBtn As Pointer To Int32 = *Int32(@mEvtPkt.Payload(8))
                         pMx(0) = targetMx
                         pMy(0) = targetMy
                         pBtn(0) = Int32(mState.Buttons)

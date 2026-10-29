@@ -125,9 +125,9 @@ Module PlexusMgrMain
                     If foundIdx >= 0 Then
                         respPkt.PacketType = PLEXUS_RESP_OK
                         respPkt.PayloadLength = 16
-                        Dim pPid As Pointer To UInt64 = CPtr(Pointer To UInt64, @respPkt.Payload(0))
-                        Dim pStatus As Pointer To UInt32 = CPtr(Pointer To UInt32, @respPkt.Payload(8))
-                        Dim pReserved As Pointer To UInt32 = CPtr(Pointer To UInt32, @respPkt.Payload(12))
+                        Dim pPid As Pointer To UInt64 = *UInt64(@respPkt.Payload(0))
+                        Dim pStatus As Pointer To UInt32 = *UInt32(@respPkt.Payload(8))
+                        Dim pReserved As Pointer To UInt32 = *UInt32(@respPkt.Payload(12))
                         pPid(0) = services(foundIdx).Pid
                         pStatus(0) = services(foundIdx).Status
                         pReserved(0) = 0

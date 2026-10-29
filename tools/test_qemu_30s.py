@@ -79,7 +79,7 @@ def main():
         # Flush banner
         s.recv(1024)
         # Send screendump command
-        dump_cmd = "screendump /tmp/desktop.ppm\n"
+        dump_cmd = "screendump desktop.ppm\n"
         s.sendall(dump_cmd.encode('utf-8'))
         time.sleep(2)
         s.close()
@@ -99,10 +99,10 @@ def main():
     log_file.close()
 
     # Convert PPM to BMP if generated
-    if os.path.exists("/tmp/desktop.ppm"):
-        ppm_to_bmp("/tmp/desktop.ppm", "desktop.bmp")
+    if os.path.exists("desktop.ppm"):
+        ppm_to_bmp("desktop.ppm", "desktop.bmp")
     else:
-        print("[-] /tmp/desktop.ppm not found.")
+        print("[-] desktop.ppm not found.")
 
     print("[+] Test run finished.")
 

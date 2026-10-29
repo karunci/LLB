@@ -67,9 +67,9 @@ Namespace Pros.Sys
         Public Unsafe Function AllocatePages(ByVal pageCount As UInt64, ByVal targetVaddr As UInt64) As Pointer To UInt32
             Dim res As UInt64 = Pros.Sys.RawSyscall.Call2(SYS_MEM_ALLOC_PAGES, pageCount, targetVaddr)
             If res <> 0 Then
-                AllocatePages = CPtr(Pointer To UInt32, res)
+                AllocatePages = *UInt32(res)
             Else
-                AllocatePages = CPtr(Pointer To UInt32, 0)
+                AllocatePages = Nothing
             End If
         End Function
 

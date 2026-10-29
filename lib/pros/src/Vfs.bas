@@ -91,10 +91,10 @@ Namespace Pros.Storage
             While tries < 10
                 If Pros.Nodes.NodeRegistry.Pop(clientNodeId, respPkt) Then
                     If respPkt.PacketType = VFS_RESP_OK Then
-                        Dim pKind As Pointer To UInt32 = CPtr(Pointer To UInt32, @respPkt.Payload(0))
-                        Dim pSize As Pointer To UInt32 = CPtr(Pointer To UInt32, @respPkt.Payload(4))
-                        Dim pPerm As Pointer To UInt32 = CPtr(Pointer To UInt32, @respPkt.Payload(8))
-                        Dim pStat As Pointer To UInt32 = CPtr(Pointer To UInt32, @respPkt.Payload(12))
+                        Dim pKind As Pointer To UInt32 = *UInt32(@respPkt.Payload(0))
+                        Dim pSize As Pointer To UInt32 = *UInt32(@respPkt.Payload(4))
+                        Dim pPerm As Pointer To UInt32 = *UInt32(@respPkt.Payload(8))
+                        Dim pStat As Pointer To UInt32 = *UInt32(@respPkt.Payload(12))
                         outStat.Kind = pKind(0)
                         outStat.SizeBytes = pSize(0)
                         outStat.Perms = pPerm(0)

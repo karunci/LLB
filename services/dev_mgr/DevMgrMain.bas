@@ -134,11 +134,11 @@ Module DevMgrMain
                     If foundIdx >= 0 Then
                         respPkt.PacketType = DEV_RESP_OK
                         respPkt.PayloadLength = 24
-                        Dim pId As Pointer To UInt32 = CPtr(Pointer To UInt32, @respPkt.Payload(0))
-                        Dim pKind As Pointer To UInt32 = CPtr(Pointer To UInt32, @respPkt.Payload(4))
-                        Dim pStatus As Pointer To UInt32 = CPtr(Pointer To UInt32, @respPkt.Payload(8))
-                        Dim pReserved As Pointer To UInt32 = CPtr(Pointer To UInt32, @respPkt.Payload(12))
-                        Dim pBase As Pointer To UInt64 = CPtr(Pointer To UInt64, @respPkt.Payload(16))
+                        Dim pId As Pointer To UInt32 = *UInt32(@respPkt.Payload(0))
+                        Dim pKind As Pointer To UInt32 = *UInt32(@respPkt.Payload(4))
+                        Dim pStatus As Pointer To UInt32 = *UInt32(@respPkt.Payload(8))
+                        Dim pReserved As Pointer To UInt32 = *UInt32(@respPkt.Payload(12))
+                        Dim pBase As Pointer To UInt64 = *UInt64(@respPkt.Payload(16))
                         pId(0) = devices(foundIdx).Id
                         pKind(0) = devices(foundIdx).Kind
                         pStatus(0) = devices(foundIdx).Status

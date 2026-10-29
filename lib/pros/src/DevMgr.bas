@@ -87,11 +87,11 @@ Namespace Pros.Devices
             While tries < 10
                 If Pros.Nodes.NodeRegistry.Pop(clientNodeId, respPkt) Then
                     If respPkt.PacketType = DEV_RESP_OK Then
-                        Dim pId As Pointer To UInt32 = CPtr(Pointer To UInt32, @respPkt.Payload(0))
-                        Dim pKind As Pointer To UInt32 = CPtr(Pointer To UInt32, @respPkt.Payload(4))
-                        Dim pStatus As Pointer To UInt32 = CPtr(Pointer To UInt32, @respPkt.Payload(8))
-                        Dim pReserved As Pointer To UInt32 = CPtr(Pointer To UInt32, @respPkt.Payload(12))
-                        Dim pBase As Pointer To UInt64 = CPtr(Pointer To UInt64, @respPkt.Payload(16))
+                        Dim pId As Pointer To UInt32 = *UInt32(@respPkt.Payload(0))
+                        Dim pKind As Pointer To UInt32 = *UInt32(@respPkt.Payload(4))
+                        Dim pStatus As Pointer To UInt32 = *UInt32(@respPkt.Payload(8))
+                        Dim pReserved As Pointer To UInt32 = *UInt32(@respPkt.Payload(12))
+                        Dim pBase As Pointer To UInt64 = *UInt64(@respPkt.Payload(16))
                         outInfo.Id = pId(0)
                         outInfo.Kind = pKind(0)
                         outInfo.Status = pStatus(0)

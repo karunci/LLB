@@ -62,7 +62,7 @@ Namespace Pros.Gui
             reqPkt.PacketType = WM_CMD_SET_FOCUS
             reqPkt.SourceNode = clientNodeId
             reqPkt.TargetNode = wmNodeId
-            Dim pWinId As Pointer To UInt32 = CPtr(Pointer To UInt32, @reqPkt.Payload(0))
+            Dim pWinId As Pointer To UInt32 = *UInt32(@reqPkt.Payload(0))
             pWinId(0) = winId
             reqPkt.PayloadLength = 4
 
@@ -133,9 +133,9 @@ Namespace Pros.Gui
             reqPkt.SourceNode = clientNodeId
             reqPkt.TargetNode = wmNodeId
 
-            Dim pW As Pointer To Int32 = CPtr(Pointer To Int32, @reqPkt.Payload(0))
-            Dim pH As Pointer To Int32 = CPtr(Pointer To Int32, @reqPkt.Payload(4))
-            Dim pShm As Pointer To UInt64 = CPtr(Pointer To UInt64, @reqPkt.Payload(8))
+            Dim pW As Pointer To Int32 = *Int32(@reqPkt.Payload(0))
+            Dim pH As Pointer To Int32 = *Int32(@reqPkt.Payload(4))
+            Dim pShm As Pointer To UInt64 = *UInt64(@reqPkt.Payload(8))
             pW(0) = w
             pH(0) = h
             pShm(0) = shmId
@@ -158,7 +158,7 @@ Namespace Pros.Gui
             While tries < 100
                 If Pros.Nodes.NodeRegistry.Pop(clientNodeId, respPkt) Then
                     If respPkt.PacketType = WM_RESP_OK Then
-                        Dim pResId As Pointer To UInt32 = CPtr(Pointer To UInt32, @respPkt.Payload(0))
+                        Dim pResId As Pointer To UInt32 = *UInt32(@respPkt.Payload(0))
                         CreateWindow = pResId(0)
                         Exit Function
                     ElseIf respPkt.PacketType = WM_RESP_ERROR Then
@@ -216,7 +216,7 @@ Namespace Pros.Gui
             reqPkt.PacketType = WM_CMD_DESTROY_WINDOW
             reqPkt.SourceNode = clientNodeId
             reqPkt.TargetNode = wmNodeId
-            Dim pWinId As Pointer To UInt32 = CPtr(Pointer To UInt32, @reqPkt.Payload(0))
+            Dim pWinId As Pointer To UInt32 = *UInt32(@reqPkt.Payload(0))
             pWinId(0) = winId
             reqPkt.PayloadLength = 4
 
@@ -272,7 +272,7 @@ Namespace Pros.Gui
             reqPkt.PacketType = WM_CMD_WINDOW_DIRTY
             reqPkt.SourceNode = clientNodeId
             reqPkt.TargetNode = compNodeId
-            Dim pPayload As Pointer To Int32 = CPtr(Pointer To Int32, @reqPkt.Payload(0))
+            Dim pPayload As Pointer To Int32 = *Int32(@reqPkt.Payload(0))
             pPayload(0) = Int32(winId)
             pPayload(1) = rx
             pPayload(2) = ry

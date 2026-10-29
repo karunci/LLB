@@ -19,7 +19,7 @@ Module NodeViewerMain
         ' 1. Allocate dedicated client surface via Shared Memory
         Dim surfBytes As UInt64 = UInt64(CANVAS_W) * UInt64(CANVAS_H) * 4
         Dim shmId As UInt64 = ShmemCreate(surfBytes, &H66000000)
-        Dim pPixels As Pointer To UInt32 = CPtr(Pointer To UInt32, &H66000000)
+        Dim pPixels As Pointer To UInt32 = *UInt32(&H66000000)
 
         If shmId = 0 Or pPixels = 0 Then
             ConsoleWriteLine "[NODE_VIEWER] ERR: Failed to create client shared memory buffer!"

@@ -165,13 +165,13 @@ Module Std.Strings
         Dim i As UInt64 = 0
         Do While str(i) <> 0
             If str(i) = c Then
-                Find = CPtr(Pointer To Byte, CPtr(UInt64, str) + i)
+                Find = str + i
                 Exit Function
             End If
             i = i + 1
         Loop
         If c = 0 Then
-            Find = CPtr(Pointer To Byte, CPtr(UInt64, str) + i)
+            Find = str + i
         Else
             Find = 0
         End If

@@ -77,7 +77,7 @@ Namespace Pros.Services
             While tries < 10
                 If Pros.Nodes.NodeRegistry.Pop(clientNodeId, respPkt) Then
                     If respPkt.PacketType = PLEXUS_RESP_OK Then
-                        Dim pStatus As Pointer To UInt32 = CPtr(Pointer To UInt32, @respPkt.Payload(8))
+                        Dim pStatus As Pointer To UInt32 = *UInt32(@respPkt.Payload(8))
                         IsServiceActive = (pStatus(0) = 2) ' PLEXUS_STATUS_RUNNING
                         Exit Function
                     Else

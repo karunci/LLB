@@ -39,7 +39,7 @@ Module InputServiceMain
         If shmid > 0 Then
             ConsolePrintWithUInt "[INPUT_SRV] Zero-Copy Event Buffer allocated (SHMID: ", shmid, ", Mapped @ 0x60000000)\r\n"
             
-            Dim qPtr As Pointer To SharedInputQueue = CPtr(Pointer To SharedInputQueue, shmVaddr)
+            Dim qPtr As Pointer To SharedInputQueue = Pointer To SharedInputQueue(shmVaddr)
             qPtr.Magic = INPUT_QUEUE_MAGIC
             qPtr.Head = 0
             qPtr.Tail = 0

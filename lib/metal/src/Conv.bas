@@ -24,8 +24,8 @@ Module Conv
 
         Dim result As UInt64 = 0
         Do While Ascii.IsDigit(str(i))
-            Dim digitVal As UInt64 = CType(UInt64, str(i) - 48)
-            result = result * CType(UInt64, 10) + digitVal
+            Dim digitVal As UInt64 = UInt64(str(i) - 48)
+            result = (result * 10) + digitVal
             i = i + 1
         Loop
         ParseUInt = result
@@ -57,9 +57,9 @@ Module Conv
 
         Dim ures As UInt64 = ParseUInt(str + i)
         If negative Then
-            ParseInt = 0 - CType(Int64, ures)
+            ParseInt = 0 - Int64(ures)
         Else
-            ParseInt = CType(Int64, ures)
+            ParseInt = Int64(ures)
         End If
     End Function
 
@@ -88,11 +88,11 @@ Module Conv
             Dim b As Byte = str(i)
             Dim digitVal As UInt64 = 0
             If b >= 48 And b <= 57 Then
-                digitVal = CType(UInt64, b - 48)
+                digitVal = UInt64(b - 48)
             ElseIf b >= 65 And b <= 70 Then
-                digitVal = CType(UInt64, b - 55)
+                digitVal = UInt64(b - 55)
             ElseIf b >= 97 And b <= 102 Then
-                digitVal = CType(UInt64, b - 87)
+                digitVal = UInt64(b - 87)
             End If
             result = (result LShift 4) Or digitVal
             i = i + 1

@@ -120,7 +120,7 @@ Namespace Pros.Drawing
         ' @return Pointer to 5x7 font table.
         ''
         Private Unsafe Function GetFont5x7Base() As Pointer To Byte
-            GetFont5x7Base = CPtr(Pointer To Byte, AddressOf FONT_5X7)
+            GetFont5x7Base = *Byte(AddressOf FONT_5X7)
         End Function
 
         ''
@@ -185,7 +185,7 @@ Namespace Pros.Drawing
                                 Dim bitMask As Byte = Byte(16 RShift c)
                                 If (rowVal And bitMask) <> 0 Then
                                     If is24bpp Then
-                                        Dim rawRow As Pointer To Byte = CPtr(Pointer To Byte, surf.Pixels) + (UInt32(py) * surf.Pitch)
+                                        Dim rawRow As Pointer To Byte = *Byte(surf.Pixels) + (UInt32(py) * surf.Pitch)
                                         Dim byteOffset As UInt32 = UInt32(px) * 3
                                         rawRow(byteOffset) = b0
                                         rawRow(byteOffset + 1) = b1
@@ -267,7 +267,7 @@ Namespace Pros.Drawing
                                 Dim bitMask As Byte = Byte(&H80 RShift c)
                                 If (rowVal And bitMask) <> 0 Then
                                     If is24bpp Then
-                                        Dim rawRow As Pointer To Byte = CPtr(Pointer To Byte, surf.Pixels) + (UInt32(py) * surf.Pitch)
+                                        Dim rawRow As Pointer To Byte = *Byte(surf.Pixels) + (UInt32(py) * surf.Pitch)
                                         Dim byteOffset As UInt32 = UInt32(px) * 3
                                         rawRow(byteOffset) = b0
                                         rawRow(byteOffset + 1) = b1

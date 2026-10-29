@@ -380,10 +380,9 @@ TypeSpec Parser::parseTypeSpec() {
         }
 
         // Support generic type arguments: e.g. Box(Of T) or Pair(Of K, V)
-        if (match(TokenType::LParen)) {
-            if (m_currentToken.type == TokenType::KwOf || checkKeyword("Of")) {
-                consume();
-            }
+        if (check(TokenType::LParen) && (m_lexer.peekToken().type == TokenType::KwOf || m_lexer.peekToken().text == "Of")) {
+            consume(); // consume '('
+            consume(); // consume 'Of'
             do {
                 spec.typeArgs.push_back(parseTypeSpec());
             } while (match(TokenType::Comma));

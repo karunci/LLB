@@ -56,3 +56,4 @@ The goal of `stage1` is to provide a completely self-contained, self-hosting Low
   - No legacy `CPtr(...)` usage.
   - Return typed pointers directly from functions (`Function (...) As Pointer To T`).
   - Zero dynamic heap allocation during AST parsing: use pooled ring or bump allocators.
+

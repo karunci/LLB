@@ -153,7 +153,7 @@ Namespace Pros.Drawing
             If gx + 5 <= 0 Or gx >= surf.Width Then Exit Sub
             If gy + 7 <= 0 Or gy >= surf.Height Then Exit Sub
 
-            Dim uAscii As UInt32 = CType(UInt32, ascii)
+            Dim uAscii As UInt32 = ascii
             If uAscii < 32 Or uAscii > 126 Then Exit Sub
 
             Dim font5x7 As Pointer To Byte = GetFont5x7Base()
@@ -167,31 +167,31 @@ Namespace Pros.Drawing
             Dim b1 As Byte = 0
             Dim b2 As Byte = 0
             If is24bpp Then
-                b0 = CType(Byte, color And &HFF)
-                b1 = CType(Byte, (color RShift 8) And &HFF)
-                b2 = CType(Byte, (color RShift 16) And &HFF)
+                b0 = Byte(color And &HFF)
+                b1 = Byte((color RShift 8) And &HFF)
+                b2 = Byte((color RShift 16) And &HFF)
             End If
 
             Dim r As Int32 = 0
             While r < 7
                 Dim py As Int32 = gy + r
                 If py >= 0 And py < surf.Height Then
-                    Dim rowVal As Byte = font5x7(baseOffset + CType(UInt32, r))
+                    Dim rowVal As Byte = font5x7(baseOffset + UInt32(r))
                     If rowVal <> 0 Then
                         Dim c As Int32 = 0
                         While c < 5
                             Dim px As Int32 = gx + c
                             If px >= 0 And px < surf.Width Then
-                                Dim bitMask As Byte = CType(Byte, 16 RShift c)
+                                Dim bitMask As Byte = Byte(16 RShift c)
                                 If (rowVal And bitMask) <> 0 Then
                                     If is24bpp Then
-                                        Dim rawRow As Pointer To Byte = CPtr(Pointer To Byte, surf.Pixels) + (CType(UInt32, py) * surf.Pitch)
-                                        Dim byteOffset As UInt32 = CType(UInt32, px) * 3
+                                        Dim rawRow As Pointer To Byte = CPtr(Pointer To Byte, surf.Pixels) + (UInt32(py) * surf.Pitch)
+                                        Dim byteOffset As UInt32 = UInt32(px) * 3
                                         rawRow(byteOffset) = b0
                                         rawRow(byteOffset + 1) = b1
                                         rawRow(byteOffset + 2) = b2
                                     Else
-                                        Dim rowPtr As Pointer To UInt32 = surf.Pixels + (CType(UInt32, py) * pitchPix)
+                                        Dim rowPtr As Pointer To UInt32 = surf.Pixels + (UInt32(py) * pitchPix)
                                         rowPtr(px) = color
                                     End If
                                 End If
@@ -241,7 +241,7 @@ Namespace Pros.Drawing
             Dim fontBase As Pointer To Byte = GetFont8x16Base()
             If fontBase = 0 Then Exit Sub
 
-            Dim baseOffset As UInt64 = CType(UInt64, ascii) * 16
+            Dim baseOffset As UInt64 = UInt64(ascii) * 16
             Dim is24bpp As Boolean = (surf.Bpp = 24)
             Dim pitchPix As UInt32 = surf.Pitch / 4
 
@@ -249,31 +249,31 @@ Namespace Pros.Drawing
             Dim b1 As Byte = 0
             Dim b2 As Byte = 0
             If is24bpp Then
-                b0 = CType(Byte, color And &HFF)
-                b1 = CType(Byte, (color RShift 8) And &HFF)
-                b2 = CType(Byte, (color RShift 16) And &HFF)
+                b0 = Byte(color And &HFF)
+                b1 = Byte((color RShift 8) And &HFF)
+                b2 = Byte((color RShift 16) And &HFF)
             End If
 
             Dim r As Int32 = 0
             While r < 16
                 Dim py As Int32 = gy + r
                 If py >= 0 And py < surf.Height Then
-                    Dim rowVal As Byte = fontBase(baseOffset + CType(UInt64, r))
+                    Dim rowVal As Byte = fontBase(baseOffset + UInt64(r))
                     If rowVal <> 0 Then
                         Dim c As Int32 = 0
                         While c < 8
                             Dim px As Int32 = gx + c
                             If px >= 0 And px < surf.Width Then
-                                Dim bitMask As Byte = CType(Byte, &H80 RShift c)
+                                Dim bitMask As Byte = Byte(&H80 RShift c)
                                 If (rowVal And bitMask) <> 0 Then
                                     If is24bpp Then
-                                        Dim rawRow As Pointer To Byte = CPtr(Pointer To Byte, surf.Pixels) + (CType(UInt32, py) * surf.Pitch)
-                                        Dim byteOffset As UInt32 = CType(UInt32, px) * 3
+                                        Dim rawRow As Pointer To Byte = CPtr(Pointer To Byte, surf.Pixels) + (UInt32(py) * surf.Pitch)
+                                        Dim byteOffset As UInt32 = UInt32(px) * 3
                                         rawRow(byteOffset) = b0
                                         rawRow(byteOffset + 1) = b1
                                         rawRow(byteOffset + 2) = b2
                                     Else
-                                        Dim rowPtr As Pointer To UInt32 = surf.Pixels + (CType(UInt32, py) * pitchPix)
+                                        Dim rowPtr As Pointer To UInt32 = surf.Pixels + (UInt32(py) * pitchPix)
                                         rowPtr(px) = color
                                     End If
                                 End If

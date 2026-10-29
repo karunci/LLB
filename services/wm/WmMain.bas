@@ -548,7 +548,7 @@ Module WmMain
 
         ' 6. Initialize Desktop Window Tree
         InitWindows
-        ConsolePrintWithUInt "[WM] Initialized Window Tree: ", CType(UInt64, windowCount), " Managed Windows\r\n"
+        ConsolePrintWithUInt "[WM] Initialized Window Tree: ", windowCount, " Managed Windows\r\n"
         ConsoleWriteLine "[WM] Decoupled WindowTheme Engine loaded (Nord Palette & 10x10 Glyphs)"
         ConsoleWriteLine "[WM] Window arbitration active. Entering event loop..."
         ConsoleWriteLine "[WM] ======================================================="

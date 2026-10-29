@@ -206,7 +206,7 @@ Module DedupStressMain
         ' Verify rendering of strings specifically used across the 5 GUI services:
         ClearSurface surf64, 4096
         ' Compositor strings:
-        DrawText5x7 surf64, 0, 0, "REV: 2026.10.29-r37-re03", &HFF88C0D0
+        DrawText5x7 surf64, 0, 0, "REV: 2026.10.29-r37-re04", &HFF88C0D0
         AssertTrue CountColoredPixels(surf64, 0, 0, 64, 7, &HFF88C0D0) > 0, "Compositor REV banner renders successfully"
 
         ClearSurface surf64, 4096
@@ -485,7 +485,7 @@ Module DedupStressMain
         ClearSurface serviceSurf, 480 * 280
         ' Top desktop menu bar
         DrawText5x7 serviceSurf, 16, 10, "PROS WORKSTATION  |  APPLICATIONS  NODES  SERVICES", &HFFECEFF4
-        DrawText5x7 serviceSurf, 120, 10, "REV: 2026.10.29-r37-re03", &HFF88C0D0
+        DrawText5x7 serviceSurf, 120, 10, "REV: 2026.10.29-r37-re04", &HFF88C0D0
         DrawText5x7 serviceSurf, 310, 10, "SMP 4 CORES  ONLINE", &HFFA3BE8C
 
         ' Status badges (FPS, Coordinates)
@@ -532,7 +532,7 @@ Module DedupStressMain
         ' Microkernel Card
         DrawText5x7 serviceSurf, 22, 16, "PROS MICROKERNEL TELEMETRY [CPL=3]", &HFFECEFF4
         DrawText5x7 serviceSurf, 22, 30, "ARCH: x86_64 SMP (4 Cores Online)", &HFF81A1C1
-        DrawText5x7 serviceSurf, 22, 44, "KERNEL REV: 2026.10.29-r37-re03", &HFFEBCB8B
+        DrawText5x7 serviceSurf, 22, 44, "KERNEL REV: 2026.10.29-r37-re04", &HFFEBCB8B
         DrawText5x7 serviceSurf, 22, 58, "STATUS: SYSTEM HEALTH OPTIMAL", &HFFA3BE8C
 
         ' Dynamic Uptime/Ticks Line

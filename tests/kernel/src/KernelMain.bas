@@ -92,7 +92,7 @@ Module KernelMain
         ' Initialize COM1 line control & Serial UART driver with hardware probing
         Serial.Initialize
         If Serial.IsAvailable() Then
-            Serial.PrintF "\r\n[PRK] Booting Low-Level Basic Kernel [REV: 2026.10.29-r37-re03]!\r\n"
+            Serial.PrintF "\r\n[PRK] Booting Low-Level Basic Kernel [REV: 2026.10.29-r37-re04]!\r\n"
             Serial.PrintF "[PRK] Multiboot Verified. Long mode active.\r\n"
             Serial.PrintF "[UART] COM1 16550 UART Online!\r\n"
         End If
@@ -117,14 +117,14 @@ Module KernelMain
         If hasVgaText Then
             Serial.PrintF "[PRK] VGA Text Mode Terminal active (&HB8000).\r\n"
             Term.WriteLine CPtr(Pointer To Byte, "=========================================")
-            Term.WriteLine CPtr(Pointer To Byte, " PRK - LOW-LEVEL BASIC [REV: 2026.10.29-r37-re03] ")
+            Term.WriteLine CPtr(Pointer To Byte, " PRK - LOW-LEVEL BASIC [REV: 2026.10.29-r37-re04] ")
             Term.WriteLine CPtr(Pointer To Byte, "=========================================")
             Term.WriteChar 10
         ElseIf hasGopFb Then
             Serial.PrintF "[PRK] UEFI GOP Linear Framebuffer active (0x%x).\r\n", CType(UInt32, FB.GetFramebufferPhys() And &HFFFFFFFF)
             FB.ClearScreen &H00181824
             FB.DrawString 20, 20, CPtr(Pointer To Byte, "========================================="), &H0088C0D0, 1
-            FB.DrawString 20, 36, CPtr(Pointer To Byte, " PRK - LOW-LEVEL BASIC [REV: 2026.10.29-r37-re03] "), &H008FBCBB, 1
+            FB.DrawString 20, 36, CPtr(Pointer To Byte, " PRK - LOW-LEVEL BASIC [REV: 2026.10.29-r37-re04] "), &H008FBCBB, 1
             FB.DrawString 20, 52, CPtr(Pointer To Byte, "========================================="), &H0088C0D0, 1
         End If
 

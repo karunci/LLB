@@ -89,10 +89,10 @@ Module CompositorMain
         While row < blitH
             Dim curY As Int32 = dstY + row
             If curY >= 0 And curY < backSurf.Height Then
-                Dim baseDstRow As Pointer To UInt32 = backSurf.Pixels + (CType(UInt32, curY) * pitchPix)
-                Dim srcRow As Pointer To UInt32 = pSrcPixels + (CType(UInt32, row) * CType(UInt32, surfW))
+                Dim baseDstRow As Pointer To UInt32 = backSurf.Pixels + (UInt32(curY) * pitchPix)
+                Dim srcRow As Pointer To UInt32 = pSrcPixels + (UInt32(row) * UInt32(surfW))
                 If dstX >= 0 And (dstX + blitW) <= backSurf.Width Then
-                    Dim dstScanPtr As Pointer To UInt32 = baseDstRow + CType(UInt32, dstX)
+                    Dim dstScanPtr As Pointer To UInt32 = baseDstRow + UInt32(dstX)
                     fast_blit32 dstScanPtr, srcRow, blitW
                 Else
                     Dim col As Int32 = 0
@@ -139,7 +139,7 @@ Module CompositorMain
         Dim pitchPixels As UInt32 = dispInfo.Pitch / 4
         Dim py As Int32 = y0
         While py < y1
-            Dim pixOff As UInt64 = (CType(UInt64, py) * CType(UInt64, pitchPixels)) + CType(UInt64, x0)
+            Dim pixOff As UInt64 = (UInt64(py) * UInt64(pitchPixels)) + UInt64(x0)
             Dim dstPtr As Pointer To UInt32 = frontSurf.Pixels + pixOff
             Dim srcPtr As Pointer To UInt32 = backSurf.Pixels + pixOff
             fast_blit32 dstPtr, srcPtr, clipW
@@ -164,15 +164,15 @@ Module CompositorMain
             While cy < CURSOR_H
                 curY = y + cy
                 If curY >= 0 And curY < backSurf.Height Then
-                    Dim rawRow As Pointer To Byte = CPtr(Pointer To Byte, backSurf.Pixels) + (CType(UInt32, curY) * backSurf.Pitch)
+                    Dim rawRow As Pointer To Byte = CPtr(Pointer To Byte, backSurf.Pixels) + (UInt32(curY) * backSurf.Pitch)
                     cx = 0
                     While cx < CURSOR_W
                         curX = x + cx
                         If curX >= 0 And curX < backSurf.Width Then
-                            Dim bOff As UInt32 = CType(UInt32, curX) * 3
-                            Dim b As UInt32 = CType(UInt32, rawRow(bOff))
-                            Dim g As UInt32 = CType(UInt32, rawRow(bOff + 1))
-                            Dim r As UInt32 = CType(UInt32, rawRow(bOff + 2))
+                            Dim bOff As UInt32 = UInt32(curX) * 3
+                            Dim b As UInt32 = rawRow(bOff)
+                            Dim g As UInt32 = rawRow(bOff + 1)
+                            Dim r As UInt32 = rawRow(bOff + 2)
                             cursorSavedBg((cy * CURSOR_W) + cx) = &HFF000000 Or (r LShift 16) Or (g LShift 8) Or b
                         End If
                         cx = cx + 1
@@ -186,7 +186,7 @@ Module CompositorMain
             While cy < CURSOR_H
                 curY = y + cy
                 If curY >= 0 And curY < backSurf.Height Then
-                    Dim rowPtr As Pointer To UInt32 = backSurf.Pixels + (CType(UInt32, curY) * pitchPix)
+                    Dim rowPtr As Pointer To UInt32 = backSurf.Pixels + (UInt32(curY) * pitchPix)
                     cx = 0
                     While cx < CURSOR_W
                         curX = x + cx
@@ -213,16 +213,16 @@ Module CompositorMain
             While cy < CURSOR_H
                 curY = y + cy
                 If curY >= 0 And curY < backSurf.Height Then
-                    Dim rawRow As Pointer To Byte = CPtr(Pointer To Byte, backSurf.Pixels) + (CType(UInt32, curY) * backSurf.Pitch)
+                    Dim rawRow As Pointer To Byte = CPtr(Pointer To Byte, backSurf.Pixels) + (UInt32(curY) * backSurf.Pitch)
                     cx = 0
                     While cx < CURSOR_W
                         curX = x + cx
                         If curX >= 0 And curX < backSurf.Width Then
                             Dim col As UInt32 = cursorSavedBg((cy * CURSOR_W) + cx)
-                            Dim bOff As UInt32 = CType(UInt32, curX) * 3
-                            rawRow(bOff) = CType(Byte, col And &HFF)
-                            rawRow(bOff + 1) = CType(Byte, (col RShift 8) And &HFF)
-                            rawRow(bOff + 2) = CType(Byte, (col RShift 16) And &HFF)
+                            Dim bOff As UInt32 = UInt32(curX) * 3
+                            rawRow(bOff) = Byte(col And &HFF)
+                            rawRow(bOff + 1) = Byte((col RShift 8) And &HFF)
+                            rawRow(bOff + 2) = Byte((col RShift 16) And &HFF)
                         End If
                         cx = cx + 1
                     Wend
@@ -235,7 +235,7 @@ Module CompositorMain
             While cy < CURSOR_H
                 curY = y + cy
                 If curY >= 0 And curY < backSurf.Height Then
-                    Dim rowPtr As Pointer To UInt32 = backSurf.Pixels + (CType(UInt32, curY) * pitchPix)
+                    Dim rowPtr As Pointer To UInt32 = backSurf.Pixels + (UInt32(curY) * pitchPix)
                     cx = 0
                     While cx < CURSOR_W
                         curX = x + cx
@@ -415,7 +415,7 @@ Module CompositorMain
                     Dim wId As UInt32 = win.WinId
                     If wId > 0 And wId <= 16 Then
                         If clientSurfaces(wId) = 0 Or clientShmIds(wId) <> win.ShmId Then
-                            Dim clientVaddr As UInt64 = &H68000000 + (CType(UInt64, wId) * &H00400000)
+                            Dim clientVaddr As UInt64 = &H68000000 + (UInt64(wId) * &H00400000)
                             If ShmemAttach(win.ShmId, clientVaddr) <> 0 Then
                                 clientSurfaces(wId) = CPtr(Pointer To UInt32, clientVaddr)
                                 clientShmIds(wId) = win.ShmId
@@ -454,7 +454,7 @@ Module CompositorMain
 
         DrawText5x7 backSurf, 16, 10, "PROS WORKSTATION  |  APPLICATIONS  NODES  SERVICES", &HFFECEFF4
         RenderMouseCoordinates False
-        DrawText5x7 backSurf, dispInfo.Width - 360, 10, "REV: 2026.10.29-r37-re03", &HFF88C0D0
+        DrawText5x7 backSurf, dispInfo.Width - 360, 10, "REV: 2026.10.29-r37-re04", &HFF88C0D0
         DrawText5x7 backSurf, dispInfo.Width - 170, 10, "SMP 4 CORES  ONLINE", &HFFA3BE8C
 
         ' 3. Render all active desktop windows from shared memory
@@ -850,7 +850,7 @@ Module CompositorMain
             If nowTime >= (lastFpsTime + 1000) Then
                 Dim elapsedSec As UInt64 = nowTime - lastFpsTime
                 If elapsedSec > 0 Then
-                    currentFps = CType(UInt32, ((CType(UInt64, frameCount - lastFpsFrame) * 1000) / elapsedSec))
+                    currentFps = UInt32(((UInt64(frameCount - lastFpsFrame) * 1000) / elapsedSec))
                 End If
                 lastFpsFrame = frameCount
                 lastFpsTime = nowTime

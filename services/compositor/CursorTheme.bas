@@ -223,7 +223,7 @@ Module CursorTheme
             While cy < CURSOR_H
                 curY = y + cy
                 If curY >= 0 And curY < surf.Height Then
-                    Dim rawRow As Pointer To Byte = CPtr(Pointer To Byte, surf.Pixels) + (CType(UInt32, curY) * surf.Pitch)
+                    Dim rawRow As Pointer To Byte = CPtr(Pointer To Byte, surf.Pixels) + (UInt32(curY) * surf.Pitch)
                     actRow = pAct(cy)
                     colRow = pCol(cy)
                     cx = 0
@@ -234,7 +234,7 @@ Module CursorTheme
                             isDrawn = ((actRow RShift shiftVal) And 1) <> 0
                             If isDrawn Then
                                 isWhite = ((colRow RShift shiftVal) And 1) <> 0
-                                Dim bOff As UInt32 = CType(UInt32, curX) * 3
+                                Dim bOff As UInt32 = UInt32(curX) * 3
                                 If isWhite Then
                                     rawRow(bOff) = &HFF
                                     rawRow(bOff + 1) = &HFF
@@ -257,7 +257,7 @@ Module CursorTheme
             While cy < CURSOR_H
                 curY = y + cy
                 If curY >= 0 And curY < surf.Height Then
-                    Dim rowPtr As Pointer To UInt32 = surf.Pixels + (CType(UInt32, curY) * pitchPix)
+                    Dim rowPtr As Pointer To UInt32 = surf.Pixels + (UInt32(curY) * pitchPix)
                     actRow = pAct(cy)
                     colRow = pCol(cy)
                     cx = 0

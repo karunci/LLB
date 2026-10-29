@@ -35,7 +35,7 @@ Namespace Pros.Nodes
         ' @return Assigned Node ID, or 0 on failure.
         ''
         Public Unsafe Function Register(ByVal kind As UInt32, ByVal name As String, ByVal caps As UInt32) As UInt64
-            Register = Pros.Sys.RawSyscall.Call3(Pros.Sys.SYS_NODE_REGISTER, CType(UInt64, kind), CType(UInt64, name), CType(UInt64, caps))
+            Register = Pros.Sys.RawSyscall.Call3(Pros.Sys.SYS_NODE_REGISTER, kind, UInt64(name), caps)
         End Function
 
         ''
@@ -44,7 +44,7 @@ Namespace Pros.Nodes
         ' @return Node ID if found, or 0.
         ''
         Public Unsafe Function Lookup(ByVal name As String) As UInt64
-            Lookup = Pros.Sys.RawSyscall.Call1(Pros.Sys.SYS_NODE_LOOKUP, CType(UInt64, name))
+            Lookup = Pros.Sys.RawSyscall.Call1(Pros.Sys.SYS_NODE_LOOKUP, UInt64(name))
         End Function
 
         ''
@@ -55,7 +55,7 @@ Namespace Pros.Nodes
         ' @return Assigned Synapse Channel ID, or 0 on failure.
         ''
         Public Unsafe Function Connect(ByVal srcNodeId As UInt64, ByVal targetNodeId As UInt64, ByVal caps As UInt32) As UInt64
-            Connect = Pros.Sys.RawSyscall.Call3(Pros.Sys.SYS_SYNAPSE_CONNECT, srcNodeId, targetNodeId, CType(UInt64, caps))
+            Connect = Pros.Sys.RawSyscall.Call3(Pros.Sys.SYS_SYNAPSE_CONNECT, srcNodeId, targetNodeId, caps)
         End Function
 
         ''
@@ -65,7 +65,7 @@ Namespace Pros.Nodes
         ' @return True if transmitted successfully, False if full.
         ''
         Public Unsafe Function Push(ByVal synId As UInt64, ByRef pkt As AxonPacket) As Boolean
-            Dim ret As UInt64 = Pros.Sys.RawSyscall.Call2(Pros.Sys.SYS_SYNAPSE_PUSH, synId, CType(UInt64, AddressOf pkt))
+            Dim ret As UInt64 = Pros.Sys.RawSyscall.Call2(Pros.Sys.SYS_SYNAPSE_PUSH, synId, UInt64(AddressOf pkt))
             Push = (ret = 1)
         End Function
 
@@ -76,7 +76,7 @@ Namespace Pros.Nodes
         ' @return True if packet received, False if empty.
         ''
         Public Unsafe Function Pop(ByVal synId As UInt64, ByRef pkt As AxonPacket) As Boolean
-            Dim ret As UInt64 = Pros.Sys.RawSyscall.Call3(Pros.Sys.SYS_SYNAPSE_POP, synId, CType(UInt64, AddressOf pkt), 0)
+            Dim ret As UInt64 = Pros.Sys.RawSyscall.Call3(Pros.Sys.SYS_SYNAPSE_POP, synId, UInt64(AddressOf pkt), 0)
             Pop = (ret = 1)
         End Function
 
@@ -87,7 +87,7 @@ Namespace Pros.Nodes
         ' @return True if packet received.
         ''
         Public Unsafe Function PopWait(ByVal synId As UInt64, ByRef pkt As AxonPacket) As Boolean
-            Dim ret As UInt64 = Pros.Sys.RawSyscall.Call3(Pros.Sys.SYS_SYNAPSE_POP, synId, CType(UInt64, AddressOf pkt), 1)
+            Dim ret As UInt64 = Pros.Sys.RawSyscall.Call3(Pros.Sys.SYS_SYNAPSE_POP, synId, UInt64(AddressOf pkt), 1)
             PopWait = (ret = 1)
         End Function
 

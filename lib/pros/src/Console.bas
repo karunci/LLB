@@ -18,7 +18,7 @@ Namespace Pros.IO
             While strPtr(length) <> 0
                 length = length + 1
             Wend
-            Pros.Sys.RawSyscall.Call2 Pros.Sys.SYS_CONSOLE_WRITE, CType(UInt64, strPtr), length
+            Pros.Sys.RawSyscall.Call2 Pros.Sys.SYS_CONSOLE_WRITE, UInt64(strPtr), length
         End Sub
 
         ''
@@ -37,7 +37,7 @@ Namespace Pros.IO
             lineBuf(outIdx) = 10 ' \n
             outIdx = outIdx + 1
             lineBuf(outIdx) = 0
-            Pros.Sys.RawSyscall.Call2 Pros.Sys.SYS_CONSOLE_WRITE, CType(UInt64, @lineBuf(0)), outIdx
+            Pros.Sys.RawSyscall.Call2 Pros.Sys.SYS_CONSOLE_WRITE, UInt64(@lineBuf(0)), outIdx
         End Sub
 
         ''
@@ -54,7 +54,7 @@ Namespace Pros.IO
             Dim idx As UInt32 = 0
             Dim v As UInt64 = val
             While v > 0
-                tmp(idx) = CType(Byte, (v Mod 10) + 48)
+                tmp(idx) = Byte((v Mod 10) + 48)
                 v = v / 10
                 idx = idx + 1
             Wend
@@ -101,7 +101,7 @@ Namespace Pros.IO
             End If
 
             lineBuf(outIdx) = 0
-            Pros.Sys.RawSyscall.Call2 Pros.Sys.SYS_CONSOLE_WRITE, CType(UInt64, @lineBuf(0)), outIdx
+            Pros.Sys.RawSyscall.Call2 Pros.Sys.SYS_CONSOLE_WRITE, UInt64(@lineBuf(0)), outIdx
         End Sub
 
     End Module

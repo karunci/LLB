@@ -96,7 +96,7 @@ Module PlexusMgrMain
             AddService "srv.vfs", srvVfsId
         End If
 
-        ConsolePrintWithUInt "[PLEXUS_MGR] Service supervisor table populated: ", CType(UInt64, serviceCount), " Supervised Services\r\n"
+        ConsolePrintWithUInt "[PLEXUS_MGR] Service supervisor table populated: ", serviceCount, " Supervised Services\r\n"
         ConsoleWriteLine "[PLEXUS_MGR] Service supervision online. Entering active heartbeat monitor loop..."
         ConsoleWriteLine "[PLEXUS_MGR] ======================================================="
 
@@ -113,7 +113,7 @@ Module PlexusMgrMain
                     Dim i As UInt32 = 0
                     While i < serviceCount
                         If StrEquals(targetName, services(i).Name) Then
-                            foundIdx = CType(Int32, i)
+                            foundIdx = Int32(i)
                             Exit While
                         End If
                         i = i + 1

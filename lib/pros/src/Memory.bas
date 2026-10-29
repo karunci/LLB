@@ -43,7 +43,7 @@ Namespace Pros.Memory
         ''
         Public Unsafe Sub SetBytes(ByVal dest As Pointer To Byte, ByVal val As Byte, ByVal count As UInt64)
             If dest = 0 Or count = 0 Then Exit Sub
-            memset dest, CType(Int32, val), count
+            memset dest, val, count
         End Sub
 
         ''

@@ -24,7 +24,7 @@ Namespace Pros.Driver
         ' @return True if display information was successfully retrieved.
         ''
         Public Unsafe Function GetInfo(ByRef info As DisplayInfo) As Boolean
-            Dim infoPtr As UInt64 = CType(UInt64, AddressOf info)
+            Dim infoPtr As UInt64 = UInt64(AddressOf info)
             Dim res As UInt64 = Pros.Sys.RawSyscall.Call1(SYS_FB_GET_INFO, infoPtr)
             GetInfo = (res = 1)
         End Function

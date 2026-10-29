@@ -49,7 +49,7 @@ Namespace Pros.Inputs
     Public Module DeviceInput
 
         Public Unsafe Function GetMouseState(ByRef state As MouseState) As Boolean
-            GetMouseState = (Pros.Sys.RawSyscall.Call1(19, CType(UInt64, @state)) = 0)
+            GetMouseState = (Pros.Sys.RawSyscall.Call1(19, UInt64(@state)) = 0)
         End Function
 
     End Module

@@ -17,7 +17,7 @@ Module SysMonMain
         ConsoleWriteLine "[SYS_MON] Starting PROS System Monitor Client (CPL=3)..."
 
         ' 1. Allocate dedicated client surface via Shared Memory
-        Dim surfBytes As UInt64 = CType(UInt64, CANVAS_W) * CType(UInt64, CANVAS_H) * 4
+        Dim surfBytes As UInt64 = UInt64(CANVAS_W) * UInt64(CANVAS_H) * 4
         Dim shmId As UInt64 = ShmemCreate(surfBytes, &H64000000)
         Dim pPixels As Pointer To UInt32 = CPtr(Pointer To UInt32, &H64000000)
 
@@ -61,7 +61,7 @@ Module SysMonMain
         FillRect clientSurf, 10, 10, 4, 65, &HFF88C0D0
         DrawText5x7 clientSurf, 22, 16, "PROS MICROKERNEL TELEMETRY [CPL=3]", &HFFECEFF4
         DrawText5x7 clientSurf, 22, 30, "ARCH: x86_64 SMP (4 Cores Online)", &HFF81A1C1
-        DrawText5x7 clientSurf, 22, 44, "KERNEL REV: 2026.10.29-r37-re03", &HFFEBCB8B
+        DrawText5x7 clientSurf, 22, 44, "KERNEL REV: 2026.10.29-r37-re04", &HFFEBCB8B
         DrawText5x7 clientSurf, 22, 58, "STATUS: SYSTEM HEALTH OPTIMAL", &HFFA3BE8C
 
         ' Card 2: Neural Synapse Plane Card

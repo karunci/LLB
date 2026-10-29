@@ -1,7 +1,7 @@
 # Low-Level Basic (LLB)
 
 [![License: MPL-2.0](https://img.shields.io/badge/License-MPL_2.0-blue.svg)](LICENSE.md)
-[![Build Status](https://img.shields.io/badge/tests-66%2F66%20passed-brightgreen.svg)](docs/README.md#toolchain--environment-specifications)
+[![Build Status](https://img.shields.io/badge/tests-69%2F69%20passed-brightgreen.svg)](docs/README.md#toolchain--environment-specifications)
 [![LLVM Version](https://img.shields.io/badge/backend-LLVM%2021-red.svg)](docs/README.md#development--methodology)
 [![AI-Assisted](https://img.shields.io/badge/development-AI--assisted-purple.svg)](AI_DISCLOSURE.md)
 

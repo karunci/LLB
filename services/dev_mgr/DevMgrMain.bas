@@ -105,7 +105,7 @@ Module DevMgrMain
 
         ' 4. Initialize Hardware Topology
         InitDevices
-        ConsolePrintWithUInt "[DEV_MGR] Hardware topology discovery completed: ", CType(UInt64, devCount), " Devices\r\n"
+        ConsolePrintWithUInt "[DEV_MGR] Hardware topology discovery completed: ", devCount, " Devices\r\n"
         ConsoleWriteLine "[DEV_MGR] Entering active device arbitration loop..."
         ConsoleWriteLine "[DEV_MGR] ======================================================="
 
@@ -122,7 +122,7 @@ Module DevMgrMain
                     Dim i As UInt32 = 0
                     While i < devCount
                         If StrEquals(targetName, devices(i).Name) Then
-                            foundIdx = CType(Int32, i)
+                            foundIdx = Int32(i)
                             Exit While
                         End If
                         i = i + 1

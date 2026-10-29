@@ -52,15 +52,15 @@ Namespace Pros.Gui
             Dim px As Int32
 
             If surf.Bpp = 24 Then
-                Dim b0 As Byte = CType(Byte, color And &HFF)
-                Dim b1 As Byte = CType(Byte, (color RShift 8) And &HFF)
-                Dim b2 As Byte = CType(Byte, (color RShift 16) And &HFF)
+                Dim b0 As Byte = Byte(color And &HFF)
+                Dim b1 As Byte = Byte((color RShift 8) And &HFF)
+                Dim b2 As Byte = Byte((color RShift 16) And &HFF)
                 py = y0
                 While py < y1
-                    Dim rawRow As Pointer To Byte = CPtr(Pointer To Byte, surf.Pixels) + (CType(UInt32, py) * surf.Pitch)
+                    Dim rawRow As Pointer To Byte = CPtr(Pointer To Byte, surf.Pixels) + (UInt32(py) * surf.Pitch)
                     px = x0
                     While px < x1
-                        Dim byteOffset As UInt32 = CType(UInt32, px) * 3
+                        Dim byteOffset As UInt32 = UInt32(px) * 3
                         rawRow(byteOffset) = b0
                         rawRow(byteOffset + 1) = b1
                         rawRow(byteOffset + 2) = b2
@@ -70,10 +70,10 @@ Namespace Pros.Gui
                 Wend
             Else
                 Dim pitchPixels As UInt32 = surf.Pitch / 4
-                Dim lineLen As UInt64 = CType(UInt64, x1 - x0)
+                Dim lineLen As UInt64 = UInt64(x1 - x0)
                 py = y0
                 While py < y1
-                    Dim rowPtr As Pointer To UInt32 = surf.Pixels + (CType(UInt32, py) * pitchPixels) + CType(UInt32, x0)
+                    Dim rowPtr As Pointer To UInt32 = surf.Pixels + (UInt32(py) * pitchPixels) + UInt32(x0)
                     fast_fill32 rowPtr, color, lineLen
                     py = py + 1
                 Wend
@@ -102,15 +102,15 @@ Namespace Pros.Gui
                     curDy = dy + row
                     curSy = sy + row
                     If curDy >= 0 And curDy < dst.Height And curSy >= 0 And curSy < src.Height Then
-                        Dim dstRaw As Pointer To Byte = CPtr(Pointer To Byte, dst.Pixels) + (CType(UInt32, curDy) * dst.Pitch)
-                        Dim srcRaw As Pointer To Byte = CPtr(Pointer To Byte, src.Pixels) + (CType(UInt32, curSy) * src.Pitch)
+                        Dim dstRaw As Pointer To Byte = CPtr(Pointer To Byte, dst.Pixels) + (UInt32(curDy) * dst.Pitch)
+                        Dim srcRaw As Pointer To Byte = CPtr(Pointer To Byte, src.Pixels) + (UInt32(curSy) * src.Pitch)
                         col = 0
                         While col < w
                             curDx = dx + col
                             curSx = sx + col
                             If curDx >= 0 And curDx < dst.Width And curSx >= 0 And curSx < src.Width Then
-                                Dim dOff As UInt32 = CType(UInt32, curDx) * 3
-                                Dim sOff As UInt32 = CType(UInt32, curSx) * 3
+                                Dim dOff As UInt32 = UInt32(curDx) * 3
+                                Dim sOff As UInt32 = UInt32(curSx) * 3
                                 dstRaw(dOff) = srcRaw(sOff)
                                 dstRaw(dOff + 1) = srcRaw(sOff + 1)
                                 dstRaw(dOff + 2) = srcRaw(sOff + 2)
@@ -129,8 +129,8 @@ Namespace Pros.Gui
                     curDy = dy + row
                     curSy = sy + row
                     If curDy >= 0 And curDy < dst.Height And curSy >= 0 And curSy < src.Height Then
-                        Dim dstRow As Pointer To UInt32 = dst.Pixels + (CType(UInt32, curDy) * dstPitchPixels)
-                        Dim srcRow As Pointer To UInt32 = src.Pixels + (CType(UInt32, curSy) * srcPitchPixels)
+                        Dim dstRow As Pointer To UInt32 = dst.Pixels + (UInt32(curDy) * dstPitchPixels)
+                        Dim srcRow As Pointer To UInt32 = src.Pixels + (UInt32(curSy) * srcPitchPixels)
                         col = 0
                         While col < w
                             curDx = dx + col

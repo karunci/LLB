@@ -268,7 +268,7 @@ Module VfsMain
         Dim i As UInt32 = 0
         While i < vfsCount
             If StrEquals(@norm(0), vfsTable(i).Path) Then
-                ResolvePath = CType(Int32, i)
+                ResolvePath = Int32(i)
                 Exit Function
             End If
             i = i + 1
@@ -310,7 +310,7 @@ Module VfsMain
 
         ' 4. Initialize hybrid Android + Windows directory hierarchy
         InitMountTree
-        ConsolePrintWithUInt "[VFS] Mounted root filesystem: '/' (Windows+Android Hierarchy, ", CType(UInt64, vfsCount), " entries)\r\n"
+        ConsolePrintWithUInt "[VFS] Mounted root filesystem: '/' (Windows+Android Hierarchy, ", vfsCount, " entries)\r\n"
         ConsoleWriteLine "[VFS] Paths: /Apps (Applications), /System (Servers, Drivers, Libraries, Configs), /Users (Profiles)"
         ConsoleWriteLine "[VFS] Windows C:\\ path aliases mapped to /"
         ConsoleWriteLine "[VFS] Storage Arbiter online. Entering file request service loop..."
@@ -324,7 +324,7 @@ Module VfsMain
         Do
             ' Block on incoming requests directed to srv.vfs node (Zero idle CPU)
             If SynapsePopWait(vfsNodeId, reqPkt) Then
-                ConsolePrintWithUInt "[VFS] Received request type: ", CType(UInt64, reqPkt.PacketType), "\r\n"
+                ConsolePrintWithUInt "[VFS] Received request type: ", reqPkt.PacketType, "\r\n"
                 If reqPkt.PacketType = VFS_CMD_LOOKUP Or reqPkt.PacketType = VFS_CMD_STAT Then
                     Dim nodeIdx As Int32 = ResolvePath(@reqPkt.Payload(0))
                     respPkt.Sequence = reqCount

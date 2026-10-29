@@ -95,7 +95,7 @@ Namespace Pros.String
             Dim v As UInt64 = val
 
             While v > 0
-                tmp(tIdx) = CType(Byte, (v Mod 10) + 48)
+                tmp(tIdx) = Byte((v Mod 10) + 48)
                 v = v / 10
                 tIdx = tIdx + 1
             Wend
@@ -127,7 +127,7 @@ Namespace Pros.String
             Dim v As UInt64 = val
 
             While v > 0
-                Dim digit As Byte = CType(Byte, v And 15)
+                Dim digit As Byte = Byte(v And 15)
                 If digit < 10 Then
                     tmp(tIdx) = digit + 48 ' '0'..'9'
                 Else

@@ -17,7 +17,7 @@ Module TerminalMain
         ConsoleWriteLine "[TERMINAL] Starting PROS Terminal Console Shell (CPL=3)..."
 
         ' 1. Allocate dedicated client surface via Shared Memory
-        Dim surfBytes As UInt64 = CType(UInt64, CANVAS_W) * CType(UInt64, CANVAS_H) * 4
+        Dim surfBytes As UInt64 = UInt64(CANVAS_W) * UInt64(CANVAS_H) * 4
         Dim shmId As UInt64 = ShmemCreate(surfBytes, &H65000000)
         Dim pPixels As Pointer To UInt32 = CPtr(Pointer To UInt32, &H65000000)
 

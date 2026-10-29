@@ -199,9 +199,9 @@ Module WindowTheme
                 While col < 10
                     Dim px As Int32 = x + col
                     If px >= 0 And px < surf.Width Then
-                        If (mask And (CType(UInt16, 1) LShift col)) <> 0 Then
+                        If (mask And (UInt16(1) LShift col)) <> 0 Then
                             Dim pitchPix As UInt32 = surf.Pitch / 4
-                            Dim rowPtr As Pointer To UInt32 = surf.Pixels + (CType(UInt32, py) * pitchPix)
+                            Dim rowPtr As Pointer To UInt32 = surf.Pixels + (UInt32(py) * pitchPix)
                             rowPtr(px) = color
                         End If
                     End If
@@ -229,7 +229,7 @@ Module WindowTheme
                 Dim px As Int32 = (right - 2) - (d - i)
                 Dim py As Int32 = (bottom - 2) - i
                 If px >= 0 And px < surf.Width And py >= 0 And py < surf.Height Then
-                    Dim rowPtr As Pointer To UInt32 = surf.Pixels + (CType(UInt32, py) * pitchPix)
+                    Dim rowPtr As Pointer To UInt32 = surf.Pixels + (UInt32(py) * pitchPix)
                     rowPtr(px) = color
                 End If
                 i = i + 1

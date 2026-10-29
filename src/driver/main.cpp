@@ -910,6 +910,12 @@ static int buildSingleProject(const std::string& manifestPath, const CliOptions&
         objectFiles.push_back(lib);
     }
 
+    // If -c (compile only) was requested, bypass linking stage
+    if (opts.compileOnly) {
+        std::cout << "[llbc] Compile-only mode (-c): bypassed linking stage for manifest: " << manifestPath << "\n";
+        return 0;
+    }
+
     // Auto-detect static archive from output file extension (.a)
     if (hasExtension(outputFile, ".a")) {
         isStatic = true;

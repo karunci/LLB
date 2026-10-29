@@ -2191,6 +2191,26 @@ std::unique_ptr<ExprASTNode> Parser::parsePrimaryExpr() {
         return std::make_unique<NumberExprASTNode>(static_cast<int64_t>(0), "Nothing");
     }
 
+    // Explicit pointer constructor cast: Pointer To <Type>(expr), Volatile Pointer To <Type>(expr), Pointer(expr)
+    if (m_currentToken.type == TokenType::KwPointer || checkKeyword("Pointer") ||
+        ((m_currentToken.type == TokenType::KwVolatile || checkKeyword("Volatile")) &&
+         (m_lexer.peekToken().type == TokenType::KwPointer || m_lexer.peekToken().text == "Pointer"))) {
+        size_t castLine = m_currentToken.line;
+        size_t castCol = m_currentToken.column;
+        TypeSpec targetType = parseTypeSpec();
+        expect(TokenType::LParen, "Expected '(' after pointer type in cast");
+        auto castExpr = parseExpression();
+        expect(TokenType::RParen, "Expected ')' after pointer cast expression");
+        auto castNode = std::make_unique<CastExprASTNode>(
+            CastExprASTNode::CastKind::CPtr,
+            std::move(targetType),
+            std::move(castExpr)
+        );
+        castNode->line = castLine;
+        castNode->column = castCol;
+        return castNode;
+    }
+
     // Built-in CPtr(Type, Expr)
     if (m_currentToken.type == TokenType::KwCPtr || checkKeyword("CPtr")) {
         consume();

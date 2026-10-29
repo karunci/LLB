@@ -24,6 +24,7 @@ Libraries    = [
 ]
 
 [Sources]
-Assembly = "brt0.S"
+Assembly = "../../lib/runtime/brt0.S"
+Assembly = "../../lib/runtime/mem.S"
 Module   = "WindowTheme.bas"
 Module   = "WmMain.bas"

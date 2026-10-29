@@ -134,6 +134,14 @@ Module ProsApi
     End Structure
 
     <Packed>
+    Public Structure Rect
+        Public X      As Int32
+        Public Y      As Int32
+        Public Width  As Int32
+        Public Height As Int32
+    End Structure
+
+    <Packed>
     Public Structure DisplayInfo
         Public Width    As UInt32
         Public Height   As UInt32
@@ -223,6 +231,42 @@ Module ProsApi
 
     ' Service Supervision APIs
     Public Declare Function PlexusIsServiceActive Lib "libpros" Alias "Pros_Services_ServiceSupervisorClient_IsServiceActive" (ByVal serviceName As Pointer To Byte) As Boolean
+
+    ' =========================================================================
+    ' 4. Low-Level Basic Standard Library APIs (libpros)
+    ' =========================================================================
+
+    ' String Manipulation & Formatting
+    Public Declare Function StrLen Lib "libpros" Alias "Pros_String_StringUtil_StrLen" (ByVal strPtr As Pointer To Byte) As UInt64
+    Public Declare Function StrEquals Lib "libpros" Alias "Pros_String_StringUtil_StrEquals" (ByVal s1 As Pointer To Byte, ByVal s2 As Pointer To Byte) As Boolean
+    Public Declare Sub AppendStr Lib "libpros" Alias "Pros_String_StringUtil_AppendStr" (ByVal s As Pointer To Byte, ByVal buf As Pointer To Byte, ByRef outIdx As UInt32)
+    Public Declare Sub AppendUInt Lib "libpros" Alias "Pros_String_StringUtil_AppendUInt" (ByVal val As UInt64, ByVal buf As Pointer To Byte, ByRef outIdx As UInt32)
+    Public Declare Sub AppendHex Lib "libpros" Alias "Pros_String_StringUtil_AppendHex" (ByVal val As UInt64, ByVal buf As Pointer To Byte, ByRef outIdx As UInt32)
+    Public Declare Function Trim Lib "libpros" Alias "Pros_String_StringUtil_Trim" (ByVal src As Pointer To Byte, ByVal outBuf As Pointer To Byte) As UInt64
+    Public Declare Function StrTrim Lib "libpros" Alias "Pros_String_StringUtil_Trim" (ByVal src As Pointer To Byte, ByVal outBuf As Pointer To Byte) As UInt64
+
+    ' Memory Operations
+    Public Declare Sub Copy Lib "libpros" Alias "Pros_Memory_MemUtil_Copy" (ByVal dest As Pointer To Byte, ByVal src As Pointer To Byte, ByVal count As UInt64)
+    Public Declare Sub Move Lib "libpros" Alias "Pros_Memory_MemUtil_Move" (ByVal dest As Pointer To Byte, ByVal src As Pointer To Byte, ByVal count As UInt64)
+    Public Declare Sub SetBytes Lib "libpros" Alias "Pros_Memory_MemUtil_SetBytes" (ByVal dest As Pointer To Byte, ByVal val As Byte, ByVal count As UInt64)
+    Public Declare Sub MemSet Lib "libpros" Alias "Pros_Memory_MemUtil_SetBytes" (ByVal dest As Pointer To Byte, ByVal val As Byte, ByVal count As UInt64)
+    Public Declare Function Compare Lib "libpros" Alias "Pros_Memory_MemUtil_Compare" (ByVal s1 As Pointer To Byte, ByVal s2 As Pointer To Byte, ByVal count As UInt64) As Int32
+
+    ' Math Utilities & Geometry
+    Public Declare Function Min Lib "libpros" Alias "Pros_Math_MathUtil_Min" (ByVal a As Int64, ByVal b As Int64) As Int64
+    Public Declare Function Max Lib "libpros" Alias "Pros_Math_MathUtil_Max" (ByVal a As Int64, ByVal b As Int64) As Int64
+    Public Declare Function Clamp Lib "libpros" Alias "Pros_Math_MathUtil_Clamp" (ByVal val As Int64, ByVal lowVal As Int64, ByVal highVal As Int64) As Int64
+    Public Declare Function Abs Lib "libpros" Alias "Pros_Math_MathUtil_Abs" (ByVal val As Int64) As Int64
+    Public Declare Function RectContains Lib "libpros" Alias "Pros_Math_MathUtil_RectContains" (ByRef r As Rect, ByVal px As Int32, ByVal py As Int32) As Boolean
+    Public Declare Sub UnionRect Lib "libpros" Alias "Pros_Math_MathUtil_UnionRect" (ByRef outRect As Rect, ByRef r1 As Rect, ByRef r2 As Rect)
+
+    ' Font Rendering & Text Drawing
+    Public Declare Sub DrawGlyph5x7 Lib "libpros" Alias "Pros_Drawing_FontRenderer_DrawGlyph5x7" (ByRef surf As Surface, ByVal gx As Int32, ByVal gy As Int32, ByVal ascii As Byte, ByVal color As UInt32)
+    Public Declare Sub DrawText5x7 Lib "libpros" Alias "Pros_Drawing_FontRenderer_DrawText5x7" (ByRef surf As Surface, ByVal x As Int32, ByVal y As Int32, ByVal textPtr As Pointer To Byte, ByVal color As UInt32)
+    Public Declare Sub DrawGlyph8x16 Lib "libpros" Alias "Pros_Drawing_FontRenderer_DrawGlyph8x16" (ByRef surf As Surface, ByVal gx As Int32, ByVal gy As Int32, ByVal ascii As Byte, ByVal color As UInt32)
+    Public Declare Sub DrawText8x16 Lib "libpros" Alias "Pros_Drawing_FontRenderer_DrawText8x16" (ByRef surf As Surface, ByVal x As Int32, ByVal y As Int32, ByVal textPtr As Pointer To Byte, ByVal color As UInt32)
+    Public Declare Sub DrawGlyph Lib "libpros" Alias "Pros_Drawing_FontRenderer_DrawGlyph" (ByRef surf As Surface, ByVal gx As Int32, ByVal gy As Int32, ByVal ascii As Byte, ByVal color As UInt32, ByVal useLargeFont As Boolean = False)
+    Public Declare Sub DrawText Lib "libpros" Alias "Pros_Drawing_FontRenderer_DrawText" (ByRef surf As Surface, ByVal x As Int32, ByVal y As Int32, ByVal textPtr As Pointer To Byte, ByVal color As UInt32, ByVal useLargeFont As Boolean = False)
 
 End Module
 

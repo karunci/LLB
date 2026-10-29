@@ -21,5 +21,6 @@ EntryPoint = "_start"
 LinkerScript = "user_linker.ld"
 
 [Sources]
-Assembly = "brt0.S"
+Assembly = "../../lib/runtime/brt0.S"
+Assembly = "../../lib/runtime/mem.S"
 Module   = "UserMain.bas"

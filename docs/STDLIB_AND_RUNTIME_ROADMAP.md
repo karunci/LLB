@@ -161,18 +161,18 @@ graph TD
 ```
 
 ### Phase 1: Runtime Unification & Core Primitives
-- [ ] **1.1** Create `lib/runtime/brt0.S` (AMD64 16-byte stack alignment, CRT stack protector stubs, clean exit).
-- [ ] **1.2** Implement complete `mem*` suite in `lib/runtime/mem.S` (`memcpy`, `memset`, `memmove`, `memcmp`, `strlen`).
-- [ ] **1.3** Move non-essential data and blitters to `lib/runtime/` (`font_8x16.S`, `fast_blit32.S`).
-- [ ] **1.4** Update all 12 service and test `.llbproj` project manifests to reference `lib/runtime/brt0.S`.
+- [x] **1.1** Create `lib/runtime/brt0.S` (AMD64 16-byte stack alignment, CRT stack protector stubs, clean exit).
+- [x] **1.2** Implement complete `mem*` suite in `lib/runtime/mem.S` (`memcpy`, `memset`, `memmove`, `memcmp`, `strlen`).
+- [x] **1.3** Move non-essential data and blitters to `lib/runtime/` (`font_8x16.S`, `fast_blit32.S`).
+- [x] **1.4** Update all 12 service and test `.llbproj` project manifests to reference `lib/runtime/brt0.S`.
 
 ### Phase 2: Pure Low-Level Basic Standard Library (`libpros`)
-- [ ] **2.1** `String.bas`: `AppendStr`, `AppendUInt`, `AppendHex`, `StrEquals`, `Trim`, `Split`.
-- [ ] **2.2** `Memory.bas`: Strongly-typed memory wrappers (`Copy`, `Move`, `Set`, `Compare`).
-- [ ] **2.3** `Math.bas`: Min, Max, Clamp, Abs, Fixed-Point, Rect geometry math.
-- [ ] **2.4** `Stdio.bas`: Print, PrintLine, Format, Hex/Dec formatters.
-- [ ] **2.5** `Font.bas` & `Graphics.bas`: Centralized font rendering and surface blitting.
-- [ ] **2.6** `Fs.bas`: High-level file and directory access wrappers.
+- [x] **2.1** `String.bas`: `AppendStr`, `AppendUInt`, `AppendHex`, `StrEquals`, `Trim`.
+- [x] **2.2** `Memory.bas`: Strongly-typed memory wrappers (`Copy`, `Move`, `SetBytes`, `Compare`).
+- [x] **2.3** `Math.bas`: Min, Max, Clamp, Abs, Rect geometry math (`RectContains`, `UnionRect`).
+- [ ] **2.4** `Stdio.bas`: Print, PrintLine, Format, Hex/Dec formatters (Deferred to Phase 3).
+- [x] **2.5** `Font.bas` & `Graphics.bas`: Centralized font rendering (5x7, 8x16 tables, DrawGlyph, DrawText).
+- [ ] **2.6** `Fs.bas`: High-level file and directory access wrappers (Deferred to Phase 3).
 
 ### Phase 3: Comprehensive Kernel & Service Type Modernization
 - [ ] **3.1** Kernel ABI: Semantic types (`ProcessId`, `Handle`, `VirtualAddress`), strongly-typed enums.

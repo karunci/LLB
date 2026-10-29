@@ -25,8 +25,13 @@ DisableStandardLibrary = true
 
 [Sources]
 Files = [
+    "../runtime/font_8x16.S",
     "src/fast_fill32.S",
     "src/Syscall.bas",
+    "src/String.bas",
+    "src/Memory.bas",
+    "src/Math.bas",
+    "src/Font.bas",
     "src/Process.bas",
     "src/Console.bas",
     "src/Node.bas",

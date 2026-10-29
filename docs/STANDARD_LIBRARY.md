@@ -71,9 +71,46 @@ Header export: `DevQueryDevice`.
 ### 2.9 Service Supervisor (`Pros.Services.ServiceSupervisorClient`)
 Header export: `PlexusIsServiceActive`.
 
-- `Function PlexusIsServiceActive(ByVal serviceName As Pointer To Byte) As Boolean`: Queries `srv.plexus_mgr` to determine if a background daemon is healthy and running.
+### 2.10 Pure Low-Level Basic String Utilities (`Pros.String`)
+Header export: `StrLen`, `StrEquals`, `AppendStr`, `AppendUInt`, `AppendHex`, `Trim`, `StrTrim`.
+
+- `Function StrLen(ByVal strPtr As Pointer To Byte) As UInt64`: Calculates the byte length of a null-terminated ASCII string (excluding null terminator). Returns 0 on null pointer.
+- `Function StrEquals(ByVal s1 As Pointer To Byte, ByVal s2 As Pointer To Byte) As Boolean`: Performs exact byte-for-byte ASCII string equality comparison. Returns `True` if both pointers are identical or null.
+- `Sub AppendStr(ByVal s As Pointer To Byte, ByVal buf As Pointer To Byte, ByRef outIdx As UInt32)`: Appends an ASCII string to `buf` starting at `outIdx` and updates `outIdx`. Does not append a terminating null.
+- `Sub AppendUInt(ByVal val As UInt64, ByVal buf As Pointer To Byte, ByRef outIdx As UInt32)`: Converts an unsigned 64-bit integer to base-10 ASCII digits, appends to `buf` at `outIdx`, and updates `outIdx`.
+- `Sub AppendHex(ByVal val As UInt64, ByVal buf As Pointer To Byte, ByRef outIdx As UInt32)`: Converts an unsigned 64-bit integer to uppercase hexadecimal ASCII digits, appends to `buf` at `outIdx`, and updates `outIdx`.
+- `Function Trim(ByVal src As Pointer To Byte, ByVal outBuf As Pointer To Byte) As UInt64`: Strips leading and trailing ASCII whitespace (ASCII <= 32), writes the null-terminated result into `outBuf`, and returns the trimmed byte length. Also accessible via alias `StrTrim`.
+
+### 2.11 Pure Low-Level Basic Memory Operations (`Pros.Memory`)
+Header export: `Copy`, `Move`, `SetBytes`, `MemSet`, `Compare`.
+
+- `Sub Copy(ByVal dest As Pointer To Byte, ByVal src As Pointer To Byte, ByVal count As UInt64)`: Strongly-typed wrapper around `memcpy` with null pointer and zero count guard checks.
+- `Sub Move(ByVal dest As Pointer To Byte, ByVal src As Pointer To Byte, ByVal count As UInt64)`: Strongly-typed wrapper around `memmove` with overlap safety (`dest > src` backward copy).
+- `Sub SetBytes(ByVal dest As Pointer To Byte, ByVal val As Byte, ByVal count As UInt64)`: Strongly-typed wrapper around `memset` to fill a buffer with a single byte value. Also accessible via alias `MemSet`.
+- `Function Compare(ByVal s1 As Pointer To Byte, ByVal s2 As Pointer To Byte, ByVal count As UInt64) As Int32`: Strongly-typed wrapper around `memcmp` returning signed difference (`< 0`, `0`, `> 0`).
+
+### 2.12 Pure Low-Level Basic Math & Geometry (`Pros.Math`)
+Header export: `Min`, `Max`, `Clamp`, `Abs`, `RectContains`, `UnionRect`, `Structure Rect`.
+
+- `Function Min(ByVal a As Int64, ByVal b As Int64) As Int64`: Returns minimum of two signed 64-bit integers.
+- `Function Max(ByVal a As Int64, ByVal b As Int64) As Int64`: Returns maximum of two signed 64-bit integers.
+- `Function Clamp(ByVal val As Int64, ByVal lowVal As Int64, ByVal highVal As Int64) As Int64`: Clamps a signed 64-bit integer within inclusive range `[lowVal, highVal]`.
+- `Function Abs(ByVal val As Int64) As Int64`: Returns absolute value of a signed 64-bit integer.
+- `Function RectContains(ByRef r As Rect, ByVal px As Int32, ByVal py As Int32) As Boolean`: Tests if point `(px, py)` is inside `Rect` (inclusive top-left `[X, Y]`, exclusive bottom-right `[X+W, Y+H)`).
+- `Sub UnionRect(ByRef outRect As Rect, ByRef r1 As Rect, ByRef r2 As Rect)`: Computes minimal union bounding box of two rectangles with in-place aliasing protection.
+
+### 2.13 Centralized Font Rendering & Drawing (`Pros.Drawing` / `Pros.Font`)
+Header export: `DrawGlyph5x7`, `DrawText5x7`, `DrawGlyph8x16`, `DrawText8x16`, `DrawGlyph`, `DrawText`.
+
+- `Sub DrawGlyph5x7(ByRef surf As Surface, ByVal gx As Int32, ByVal gy As Int32, ByVal ascii As Byte, ByVal color As UInt32)`: Renders single 5x7 bitmap glyph with 4-border clipping.
+- `Sub DrawText5x7(ByRef surf As Surface, ByVal x As Int32, ByVal y As Int32, ByVal textPtr As Pointer To Byte, ByVal color As UInt32)`: Renders null-terminated ASCII string using 5x7 font (step = 6 pixels).
+- `Sub DrawGlyph8x16(ByRef surf As Surface, ByVal gx As Int32, ByVal gy As Int32, ByVal ascii As Byte, ByVal color As UInt32)`: Renders single 8x16 console glyph from `font_8x16_data` with clipping.
+- `Sub DrawText8x16(ByRef surf As Surface, ByVal x As Int32, ByVal y As Int32, ByVal textPtr As Pointer To Byte, ByVal color As UInt32)`: Renders null-terminated ASCII string using 8x16 font (step = 8 pixels).
+- `Sub DrawGlyph(ByRef surf As Surface, ByVal gx As Int32, ByVal gy As Int32, ByVal ascii As Byte, ByVal color As UInt32, ByVal useLargeFont As Boolean)`: Universal glyph renderer selecting 5x7 (`False`) or 8x16 (`True`).
+- `Sub DrawText(ByRef surf As Surface, ByVal x As Int32, ByVal y As Int32, ByVal textPtr As Pointer To Byte, ByVal color As UInt32, ByVal useLargeFont As Boolean)`: Universal text renderer selecting 5x7 (`False`) or 8x16 (`True`).
 
 ---
 
 ## 3. C Language Interoperability
 All exported symbols in `libpros.a` provide C-compatible ABI bindings without mangling, allowing C/C++ userland programs to link directly against `libpros.a` using `<pros.h>`.
+

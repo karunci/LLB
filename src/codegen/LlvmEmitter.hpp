@@ -70,7 +70,7 @@ public:
     void emitStaticAssert(const StaticAssertStmtNode& assertNode);
 
     llvm::Value* emitExpression(ExprASTNode* expr);
-    llvm::Value* coerceType(llvm::Value* val, llvm::Type* targetType);
+    llvm::Value* coerceType(llvm::Value* val, llvm::Type* targetType, bool isUnsigned = false);
 
     llvm::Module* getModule() const { return m_module.get(); }
     void printIR() const;
@@ -115,6 +115,7 @@ private:
     llvm::GlobalVariable* getOrCreateErrDescription();
     llvm::Value* convertToString(llvm::Value* val);
     llvm::Value* concatStrings(llvm::Value* s1, llvm::Value* s2);
+    bool isUnsignedType(const std::string& name);
     bool isUnsignedExpr(ExprASTNode* expr);
     TypeSpec deduceExprType(ExprASTNode* expr);
     void emitBoundsCheck(llvm::Value* indexVal, uint64_t bound, const std::string& varName);

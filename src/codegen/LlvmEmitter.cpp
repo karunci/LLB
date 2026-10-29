@@ -225,7 +225,7 @@ llvm::Type* LlvmEmitter::getElementType(const TypeSpec& typeSpec) {
     return llvm::Type::getInt8Ty(*m_context);
 }
 
-llvm::Value* LlvmEmitter::coerceType(llvm::Value* val, llvm::Type* targetType) {
+llvm::Value* LlvmEmitter::coerceType(llvm::Value* val, llvm::Type* targetType, bool isUnsigned) {
     if (!val || val->getType() == targetType) return val;
 
     llvm::Type* srcType = val->getType();
@@ -235,7 +235,7 @@ llvm::Value* LlvmEmitter::coerceType(llvm::Value* val, llvm::Type* targetType) {
         unsigned srcBits = srcType->getIntegerBitWidth();
         unsigned dstBits = targetType->getIntegerBitWidth();
         if (srcBits < dstBits) {
-            return m_builder->CreateZExt(val, targetType, "zext");
+            return isUnsigned ? m_builder->CreateZExt(val, targetType, "zext") : m_builder->CreateSExt(val, targetType, "sext");
         } else if (srcBits > dstBits) {
             return m_builder->CreateTrunc(val, targetType, "trunc");
         }
@@ -652,14 +652,24 @@ bool LlvmEmitter::isStringExpr(ExprASTNode* expr) {
     return false;
 }
 
+bool LlvmEmitter::isUnsignedType(const std::string& name) {
+    std::string t = toLower(name);
+    return (t == "byte" || t == "ubyte" || t == "uint8" || t == "uint16" || 
+            t == "ushort" || t == "uint32" || t == "ulong" || 
+            t == "uinteger" || t == "uint64" || t == "uintptr" ||
+            t == "pointer" || t == "boolean");
+}
+
 bool LlvmEmitter::isUnsignedExpr(ExprASTNode* expr) {
     if (!expr) return false;
-    auto isUnsignedType = [](const std::string& name) {
-        std::string t = toLower(name);
-        return (t == "byte" || t == "ubyte" || t == "uint8" || t == "uint16" || 
-                t == "ushort" || t == "uint32" || t == "ulong" || 
-                t == "uinteger" || t == "uint64" || t == "uintptr");
-    };
+
+    if (auto num = dynamic_cast<NumberExprASTNode*>(expr)) {
+        if (!num->isFloat && (num->val > 2147483647LL || num->typeHint == "uint" || num->typeHint == "ulong")) return true;
+    }
+
+    TypeSpec deduced = deduceExprType(expr);
+    if (deduced.pointerDepth > 0) return true;
+    if (isUnsignedType(deduced.name)) return true;
 
     if (auto var = dynamic_cast<VariableExprASTNode*>(expr)) {
         auto it = m_variableTypes.find(var->name);
@@ -784,6 +794,39 @@ TypeSpec LlvmEmitter::deduceExprType(ExprASTNode* expr) {
         }
     }
     if (auto call = dynamic_cast<CallExprASTNode*>(expr)) {
+        if (call->calleeExpr) {
+            TypeSpec calleeType = deduceExprType(call->calleeExpr.get());
+            if (!call->funcName.empty()) {
+                std::string memberLower = toLower(call->funcName);
+                for (const auto& pair : m_structFieldTypes) {
+                    if (!calleeType.name.empty() && toLower(pair.first) != toLower(calleeType.name)) {
+                        continue;
+                    }
+                    auto fIt = pair.second.find(memberLower);
+                    if (fIt != pair.second.end()) {
+                        TypeSpec elemType = fIt->second;
+                        if (elemType.isArray) {
+                            elemType.isArray = false;
+                            elemType.arraySize = 0;
+                            elemType.dimensions.clear();
+                        } else if (elemType.pointerDepth > 0) {
+                            elemType.pointerDepth--;
+                        }
+                        return elemType;
+                    }
+                }
+            } else {
+                if (calleeType.isArray) {
+                    calleeType.isArray = false;
+                    calleeType.arraySize = 0;
+                    calleeType.dimensions.clear();
+                    return calleeType;
+                } else if (calleeType.pointerDepth > 0) {
+                    calleeType.pointerDepth--;
+                    return calleeType;
+                }
+            }
+        }
         auto it = m_variableTypes.find(call->funcName);
         if (it != m_variableTypes.end()) {
             TypeSpec elemType = it->second;
@@ -3808,14 +3851,16 @@ void LlvmEmitter::emitDimStatement(const DimStmtNode& dimNode) {
             } else {
                 llvm::Value* initVal = emitExpression(dimNode.initValue.get());
                 if (initVal) {
-                    initVal = coerceType(initVal, varType);
+                    bool isUnsigned = isUnsignedExpr(dimNode.initValue.get()) || dimNode.type.pointerDepth > 0 || isUnsignedType(dimNode.type.name);
+                    initVal = coerceType(initVal, varType, isUnsigned);
                     m_builder->CreateStore(initVal, alloca);
                 }
             }
         } else {
             llvm::Value* initVal = emitExpression(dimNode.initValue.get());
             if (initVal) {
-                initVal = coerceType(initVal, varType);
+                bool isUnsigned = isUnsignedExpr(dimNode.initValue.get()) || dimNode.type.pointerDepth > 0 || isUnsignedType(dimNode.type.name);
+                initVal = coerceType(initVal, varType, isUnsigned);
                 m_builder->CreateStore(initVal, alloca);
             }
         }
@@ -3988,12 +4033,21 @@ void LlvmEmitter::emitAssignStatement(const AssignStmtNode& assignNode) {
                     if (tIt != m_variableTypes.end()) {
                         llvm::Value* ptrVal = m_builder->CreateLoad(targetAlloca->getAllocatedType(), targetAlloca, var->name + ".ptr");
                         llvm::Type* valTy = getLlvmType(tIt->second);
-                        val = coerceType(val, valTy);
+                        bool isUnsigned = isUnsignedExpr(assignNode.value.get()) || tIt->second.pointerDepth > 0 || isUnsignedType(tIt->second.name);
+                        val = coerceType(val, valTy, isUnsigned);
                         m_builder->CreateStore(val, ptrVal);
                         return;
                     }
                 }
-                val = coerceType(val, targetAlloca->getAllocatedType());
+                bool isUnsigned = isUnsignedExpr(assignNode.value.get());
+                if (!isUnsigned) {
+                    auto tItVar = m_variableTypes.find(var->name);
+                    if (tItVar == m_variableTypes.end()) tItVar = m_variableTypes.find(toLower(var->name));
+                    if (tItVar != m_variableTypes.end()) {
+                        isUnsigned = tItVar->second.pointerDepth > 0 || isUnsignedType(tItVar->second.name);
+                    }
+                }
+                val = coerceType(val, targetAlloca->getAllocatedType(), isUnsigned);
                 m_builder->CreateStore(val, targetAlloca);
             }
             return;
@@ -4004,7 +4058,15 @@ void LlvmEmitter::emitAssignStatement(const AssignStmtNode& assignNode) {
         if (gVar) {
             llvm::Value* val = emitExpression(assignNode.value.get());
             if (val) {
-                val = coerceType(val, gVar->getValueType());
+                bool isUnsigned = isUnsignedExpr(assignNode.value.get());
+                if (!isUnsigned) {
+                    auto tItVar = m_variableTypes.find(var->name);
+                    if (tItVar == m_variableTypes.end()) tItVar = m_variableTypes.find(toLower(var->name));
+                    if (tItVar != m_variableTypes.end()) {
+                        isUnsigned = tItVar->second.pointerDepth > 0 || isUnsignedType(tItVar->second.name);
+                    }
+                }
+                val = coerceType(val, gVar->getValueType(), isUnsigned);
                 m_builder->CreateStore(val, gVar);
             }
             return;
@@ -5927,7 +5989,10 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
     if (auto cast = dynamic_cast<CastExprASTNode*>(expr)) {
         llvm::Value* innerVal = emitExpression(cast->expr.get());
         llvm::Type* targetTy = getLlvmType(cast->targetType);
-        return coerceType(innerVal, targetTy);
+        bool isUnsigned = isUnsignedExpr(cast->expr.get()) ||
+                          cast->targetType.pointerDepth > 0 ||
+                          isUnsignedType(cast->targetType.name);
+        return coerceType(innerVal, targetTy, isUnsigned);
     }
 
     // AddressOf targetName (Function pointer / procedure address)
@@ -6710,7 +6775,7 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
         if (lowerFn == "trim" || lowerFn == "trim$" ||
             lowerFn == "ltrim" || lowerFn == "ltrim$" ||
             lowerFn == "rtrim" || lowerFn == "rtrim$") {
-            if (!call->args.empty()) {
+            if (call->args.size() == 1 && isStringExpr(call->args[0].get())) {
                 if (!isStringExpr(call->args[0].get())) {
                     Diagnostic::report(m_sourceFilePath, call->line > 0 ? call->line : m_currentLine,
                                        call->column > 0 ? call->column : m_currentCol,
@@ -6731,7 +6796,6 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
                 }
                 return m_builder->CreateCall(trimFn, {sVal}, "trimres");
             }
-            return nullptr;
         }
 
         if (lowerFn == "strcomp") {
@@ -7650,7 +7714,7 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
                         aVal = llvm::ConstantInt::get(pTy, 0);
                     }
                 } else {
-                    aVal = coerceType(aVal, callee->getFunctionType()->getParamType(p));
+                    aVal = coerceType(aVal, callee->getFunctionType()->getParamType(p), exprNode ? isUnsignedExpr(exprNode) : false);
                 }
                 args.push_back(aVal);
             }
@@ -7678,7 +7742,7 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
                 for (size_t i = 0; i < remainingFixedParams && i < call->args.size(); ++i) {
                     llvm::Value* argVal = emitExpression(call->args[i].get());
                     if (args.size() < callee->getFunctionType()->getNumParams()) {
-                        argVal = coerceType(argVal, callee->getFunctionType()->getParamType(args.size()));
+                        argVal = coerceType(argVal, callee->getFunctionType()->getParamType(args.size()), isUnsignedExpr(call->args[i].get()));
                     }
                     args.push_back(argVal);
                 }
@@ -7775,7 +7839,7 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
                         argVal = emitExpression(call->args[i].get());
                     }
                     if (paramIdx < callee->getFunctionType()->getNumParams()) {
-                        argVal = coerceType(argVal, callee->getFunctionType()->getParamType(paramIdx));
+                        argVal = coerceType(argVal, callee->getFunctionType()->getParamType(paramIdx), isUnsignedExpr(call->args[i].get()));
                     }
                     args.push_back(argVal);
                 }

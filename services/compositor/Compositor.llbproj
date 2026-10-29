@@ -24,7 +24,9 @@ Libraries    = [
 ]
 
 [Sources]
-Assembly = "brt0.S"
+Assembly = "../../lib/runtime/brt0.S"
+Assembly = "../../lib/runtime/mem.S"
+Assembly = "../../lib/runtime/fast_blit32.S"
 Module   = "CursorTheme.bas"
 Module   = "../wm/WindowTheme.bas"
 Module   = "CompositorMain.bas"

@@ -1,6 +1,6 @@
 ' Project Name: LibPROS / Low-Level Basic
 ' Filename: lib/pros/Pros.llbproj
-' Summary: PROS Operating System standard runtime library for Ring 3 applications and drivers.
+' Summary: Personal Research Operating System (PRK-OS) standard runtime library for Ring 3 applications and drivers.
 
 [Project]
 Name    = "LibPROS"

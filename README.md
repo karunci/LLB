@@ -15,7 +15,7 @@ The Low-Level Basic ecosystem is organized across three dedicated parallel branc
 | Subsystem | Branch | Architecture & Responsibility | Remote Link |
 | :--- | :--- | :--- | :--- |
 | **Stage-0 Bootstrap Compiler** | `main` | C++ bootstrap compiler emitting LLVM IR for freestanding & hosted targets. | *Active Branch* |
-| **PROS Operating System** | `pros` | Complete 64-bit microkernel, system daemons (`services/`), GUI apps (`apps/gui/`), and SDK (`lib/`). | [**View Branch: `pros`**](https://github.com/karunci/LLB/tree/pros) |
+| **Personal Research Operating System (PRK-OS)** | `pros` | Complete 64-bit microkernel, system daemons (`services/`), GUI apps (`apps/gui/`), and SDK (`lib/`). | [**View Branch: `pros`**](https://github.com/karunci/LLB/tree/pros) |
 | **Stage-1 Self-Hosted Compiler** | `stage1` | Pure Low-Level Basic self-hosting compiler designed to run natively inside PROS. | [**View Branch: `stage1`**](https://github.com/karunci/LLB/tree/stage1) |
 
 ---

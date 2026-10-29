@@ -1,0 +1,26 @@
+' Project Name: Basic Runtime (BRT) Userland Application
+' Filename: apps/gui/user_app/UserApp.llbproj
+' Summary: Standalone Ring 3 application build descriptor.
+
+[Project]
+Name    = "UserApp"
+Type    = "Executable"
+Version = "0.1.0"
+
+[Target]
+Arch = "x86_64-unknown-none-elf"
+
+[Output]
+OutDir  = "build"
+OutFile = "user_app.elf"
+
+[Entry]
+EntryPoint = "_start"
+
+[Linker]
+LinkerScript = "user_linker.ld"
+
+[Sources]
+Assembly = "../../../lib/runtime/brt0.S"
+Assembly = "../../../lib/runtime/mem.S"
+Module   = "UserMain.bas"

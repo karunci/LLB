@@ -1,0 +1,29 @@
+' Project Name: PROS System Monitor
+' Filename: apps/gui/sys_mon/SysMon.llbproj
+' Summary: Standalone Ring 3 system monitor and telemetry GUI application.
+
+[Project]
+Name    = "SysMon"
+Type    = "Executable"
+Version = "1.0.0"
+
+[Target]
+Arch = "x86_64-unknown-none-elf"
+
+[Output]
+OutDir  = "build"
+OutFile = "sys_mon.elf"
+
+[Entry]
+EntryPoint = "_start"
+
+[Linker]
+LinkerScript = "user_linker.ld"
+Libraries    = [
+    "../../../lib/pros/build/libpros.a"
+]
+
+[Sources]
+Assembly = "../../../lib/runtime/brt0.S"
+Assembly = "../../../lib/runtime/mem.S"
+Module   = "SysMonMain.bas"

@@ -3,8 +3,8 @@
 # Description: Deterministic QEMU runner script with hard timeout and early exit detection.
 
 param(
-    [string]$Kernel = "T:\projects\LLB\llbc\tests\kernel\build\kernel.elf",
-    [string]$Initrd = "T:\projects\LLB\llbc\tests\user_app\build\initrd.tar",
+    [string]$Kernel = "T:\projects\LLB\pros\kernel\build\kernel.elf",
+    [string]$Initrd = "T:\projects\LLB\pros\build\initrd.tar",
     [int]$Smp = 2,
     [string]$Accel = "whpx",
     [int]$TimeoutSec = 30

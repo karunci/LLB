@@ -4,22 +4,16 @@
 ' Dual-licensed under Mozilla Public License 2.0 (MPL-2.0) and AI Ingestion Restriction.
 ' See LICENSE.md for full terms and artificial intelligence training prohibitions.
 
+<Instancing(MultiUse)>
 Class Compiler.Lexer
+
+    Import Compiler.Ast
 
     Private sourceBuffer As Pointer To Byte
     Private bufferLength As UInt64
     Private cursorPosition As UInt64
     Private currentLine As UInt64
     Private currentColumn As UInt64
-
-    ' Token metadata representation
-    Public Structure Token
-        Public Kind As UInt32
-        Public Offset As UInt64
-        Public Length As UInt64
-        Public Line As UInt64
-        Public Column As UInt64
-    End Structure
 
     ' Initialize scanner context over freestanding memory buffer
     Public Sub Initialize(ByVal buffer As Pointer To Byte, ByVal length As UInt64)
@@ -85,8 +79,8 @@ Class Compiler.Lexer
 
         Dim tok As Token
         tok.Offset = Me.cursorPosition
-        tok.Line = Me.currentLine
-        tok.Column = Me.currentColumn
+        tok.LineNumber = Me.currentLine
+        tok.ColumnNumber = Me.currentColumn
 
         If Me.cursorPosition >= Me.bufferLength Then
             tok.Kind = 0 ' EOF
@@ -136,7 +130,7 @@ Class Compiler.Lexer
         End If
 
         ' Operators & Single Character Symbols
-        tok.Kind = CType(UInt32, charByte)
+        tok.Kind = UInt32(charByte)
         tok.Length = 1
         ScanNext = tok
     End Function

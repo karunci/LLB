@@ -13,12 +13,12 @@ Module CompilerMain
     ' The Main function mapped to C's main() by our linker
     Public Unsafe Function Main(ByVal argc As Int32, ByVal argv As Pointer To Pointer To Byte) As Int32
         ' Print banner
-        puts CPtr(Pointer To Byte, "[llbc-stage1] Low-Level Basic Self-Hosted Compiler Started!")
+        puts "[llbc-stage1] Low-Level Basic Self-Hosted Compiler Started!"
 
         ' Check CLI arguments
         If argc < 2 Then
-            puts CPtr(Pointer To Byte, "Usage:")
-            puts CPtr(Pointer To Byte, "  llbc-stage1 <source.bas> [-o output.elf]")
+            puts "Usage:"
+            puts "  llbc-stage1 <source.bas> [-o output.elf]"
             Main = 1
             Exit Function
         End If
@@ -27,8 +27,8 @@ Module CompilerMain
         Dim inputPath As Pointer To Byte
         inputPath = argv(1)
 
-        printf(CPtr(Pointer To Byte, "[llbc-stage1] Target source file: %s\n"), inputPath)
-        puts CPtr(Pointer To Byte, "[llbc-stage1] LLVM-C API bindings not yet implemented. Exiting.")
+        printf("[llbc-stage1] Target source file: %s\n", inputPath)
+        puts "[llbc-stage1] LLVM-C API bindings not yet implemented. Exiting."
 
         ' Return success
         Main = 0

@@ -4,9 +4,10 @@
 ' Dual-licensed under Mozilla Public License 2.0 (MPL-2.0) and AI Ingestion Restriction.
 ' See LICENSE.md for full terms and artificial intelligence training prohibitions.
 
+<Instancing(MultiUse)>
 Class Compiler.Parser
 
-    Import Compiler.Lexer
+    Use Compiler.Lexer
     Import Compiler.Ast
 
     Private lexerInstance As Pointer To Lexer
@@ -24,12 +25,12 @@ Class Compiler.Parser
     Public Unsafe Function ParseModule() As Pointer To AstNode
         ' Expect 'Module' or 'Class' keyword token
         If Me.currentToken.Kind <> 1 Then
-            ParseModule = CPtr(Pointer To AstNode, 0)
+            ParseModule = Nothing
             Exit Function
         End If
 
         Dim moduleNode As Pointer To AstNode
-        moduleNode = CreateNode(AST_MODULE, CPtr(Pointer To Byte, Me.currentToken.Offset))
+        moduleNode = CreateNode(AST_MODULE, *Byte(Me.currentToken.Offset))
         
         Me.Advance
 
@@ -40,7 +41,7 @@ Class Compiler.Parser
                 ' Processing top-level functions and subroutines
                 Dim procNode As Pointer To AstNode
                 procNode = Me.ParseProcedure()
-                If CPtr(UInt64, procNode) <> 0 Then
+                If UInt64(procNode) <> 0 Then
                     ' Attach child procedure to module AST node
                     moduleNode.MemberCount = moduleNode.MemberCount + 1
                 End If
@@ -54,7 +55,7 @@ Class Compiler.Parser
 
     Private Unsafe Function ParseProcedure() As Pointer To AstNode
         Dim procNode As Pointer To AstNode
-        procNode = CreateNode(AST_PROCEDURE, CPtr(Pointer To Byte, Me.currentToken.Offset))
+        procNode = CreateNode(AST_PROCEDURE, *Byte(Me.currentToken.Offset))
 
         ' Consume Procedure Signature and Body
         Do While Me.currentToken.Kind <> 0

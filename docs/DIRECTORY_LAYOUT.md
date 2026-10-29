@@ -1,4 +1,4 @@
-# PROS Operating System: Windows + Android Hybrid Directory Hierarchy
+# Personal Research Operating System (PRK-OS): Windows + Android Hybrid Directory Hierarchy
 
 ## 1. Architectural Philosophy
 PROS implements a modern hybrid filesystem layout combining the clean application sandboxing and modular separation of **Android** with the familiar drive-mapping and profile structures of **Windows**:

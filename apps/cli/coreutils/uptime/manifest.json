@@ -1,0 +1,9 @@
+{
+  "name": "uptime",
+  "version": "1.0.0",
+  "type": "utility",
+  "entry": "uptime.elf",
+  "priority": 3,
+  "description": "PROS System Uptime Diagnostic Utility"
+}
+

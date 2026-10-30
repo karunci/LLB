@@ -454,7 +454,7 @@ Module CompositorMain
 
         DrawText5x7 backSurf, 16, 10, "PROS WORKSTATION  |  APPLICATIONS  NODES  SERVICES", &HFFECEFF4
         RenderMouseCoordinates False
-        DrawText5x7 backSurf, dispInfo.Width - 360, 10, "REV: 2026.10.30-r38-re02", &HFF88C0D0
+        DrawText5x7 backSurf, dispInfo.Width - 360, 10, SYSTEM_VERSION_TAG, &HFF88C0D0
         DrawText5x7 backSurf, dispInfo.Width - 170, 10, "SMP 4 CORES  ONLINE", &HFFA3BE8C
 
         ' 3. Render all active desktop windows from shared memory

@@ -32,10 +32,11 @@ Applications in PROS are native Low-Level Basic executables built as freestandin
 - **Location:** `services/terminal/`
 - **Features:** Interactive text console with ANSI-compatible display, scrollback history, and keyboard command parsing.
 - **Client Canvas:** Direct client surface rendering into shared memory window backbuffers.
-- **Status:** Operational.
+- **Status:** Operational with Dual-Plane VFS integration, dynamic prompt (`pros::<dir>\>`), and canonical path resolution.
 - **Next Steps:**
   - Modernize from duplicate font blitters to `Pros.Font.DrawText`.
-  - Add interactive shell commands (`ls`, `cat`, `ps`, `kill`, `uptime`, `echo`).
+  - [x] Standard CoreUtils built-in and standalone utilities (`ls`, `cat`, `echo`, `uptime`, `ver`).
+  - [ ] Dynamic binary execution from `PATH` using microkernel `Process.Spawn` (`SYS_PROCESS_SPAWN`).
 
 ### 2.2 System Monitor (`/Apps/SysMon`)
 - **Location:** `services/sys_mon/`

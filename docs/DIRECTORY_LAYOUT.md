@@ -18,25 +18,33 @@ sysroot (/)
 │   ├── Terminal/
 │   │   ├── terminal.bax       (Terminal Emulator application)
 │   │   └── lib/               (App-specific dynamic libraries)
+│   ├── SysMon/
+│   │   └── sys_mon.bax        (System Resource Monitor GUI application)
+│   ├── NodeViewer/
+│   │   └── node_viewer.bax    (Synapse & Node Graph Viewer application)
 │   └── UserApp/
 │       └── user_app.bax       (User test application)
 │
 ├── Libraries/                 (System-wide shared libraries)
 │
-├── System/                    (System-related files: configs, apps, libraries, drivers, servers)
+├── System/                    (System-related files: configs, apps, libraries, drivers, services)
 │   ├── Apps/                  (Built-in system applications)
-│   │   └── Shell/
-│   │       ├── shell.bax      (System Shell application)
-│   │       └── lib/           (Shell dependencies)
+│   │   └── CoreUtils/         (Standard userland CLI utilities)
+│   │       ├── ls.bax         (Directory listing utility)
+│   │       ├── cat.bax        (File display utility)
+│   │       ├── echo.bax       (Standard text printing utility)
+│   │       ├── uptime.bax     (System uptime utility)
+│   │       └── ver.bax        (System version utility)
 │   ├── Libraries/             (System libraries)
-│   │   ├── libpros.a          (PROS System Library & ABI Stubs)
-│   │   └── libllb.a           (Low-Level Basic Freestanding Runtime)
-│   ├── Configs/               (Operating system configurations)
-│   │   └── system.cfg         (Boot and service manager configuration)
+│   │   ├── libpros.a          (Personal Research Operating System API & ABI Stubs)
+│   │   └── libllb_metal.a     (Low-Level Basic Freestanding Runtime)
+│   ├── Configurations/        (Operating system and environment configurations)
+│   │   ├── environment.cfg    (OS identity, revision, and kernel environment)
+│   │   └── ramdisk0.cfg       (RAM disk partition configuration)
 │   ├── Drivers/               (Device drivers & hardware abstraction nodes)
 │   │   ├── pci.disp.lfb       (Linear Framebuffer Driver node)
 │   │   └── ps2.input          (PS/2 Keyboard & Mouse Driver node)
-│   └── Servers/               (System daemons / microkernel servers)
+│   └── Services/              (System daemons / microkernel servers)
 │       ├── genesis.bax        (Root Orchestrator - PID 1)
 │       ├── disp_srv.bax       (Display Driver Service)
 │       ├── input_srv.bax      (Unified Input Driver Service)
@@ -44,10 +52,11 @@ sysroot (/)
 │       ├── dev_mgr.bax        (Hardware Device Discovery & Arbiter)
 │       ├── plexus_mgr.bax     (Service Lifecycle Supervisor)
 │       ├── wm.bax             (Desktop Window Manager)
+│       ├── ramfs_srv.bax      (Dynamic RAM Disk Filesystem Service)
 │       └── vfs_srv.bax        (Virtual File System Arbiter)
 │
 └── Users/                     (User accounts directory)
-    └── Default/               (Default Administrator / User Profile)
+    └── Default/               (Default User Profile)
         ├── Desktop/           (Desktop Workspace Shortcut Store)
         └── Documents/         (User Documents)
 ```
@@ -71,3 +80,18 @@ The VFS Service (`srv.vfs`) implements an automatic normalization algorithm in `
 | `\System\Servers\compositor.bax` | `/System/Servers/compositor.bax` | Resolved (`VFS_KIND_FILE`) |
 | `/System/Libraries/libpros.a` | `/System/Libraries/libpros.a` | Resolved (`VFS_KIND_FILE`) |
 | `C:\Apps\Terminal\terminal.bax` | `/Apps/Terminal/terminal.bax` | Resolved (`VFS_KIND_FILE`) |
+
+---
+
+## 4. Mount Tree Hierarchy & Shell Default Working Directory
+
+1. **Root Ownership by TarFS:**
+   - The boot ramdisk (`initrd.tar`) is mounted by `srv.vfs` at the root mount point (`/` / `X:\`).
+   - `TarFS` owns root and all default subtrees (`/System`, `/Apps`, `/Libraries`) with zero-copy read performance.
+2. **Subtree Claiming via Mount Points:**
+   - External filesystem Plexus services (such as `fs.ramfs` for dynamic in-memory writable user files) register specific mount points (e.g. `/Users`), thereby claiming that entire subtree.
+   - Longest-prefix matching ensures requests to `/Users/...` route across Synapse IPC to `fs.ramfs`, while all other paths resolve to `TarFS`.
+3. **Shell Default Working Directory:**
+   - Prior to multi-user account subsystems, the default shell working directory is root (`X:\`), with prompt `pros::\> `.
+   - Navigating into subdirectories displays the leaf folder name (e.g. `cd Apps\Terminal` -> `pros::Terminal\> `).
+

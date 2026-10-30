@@ -1,0 +1,9 @@
+{
+  "name": "ls",
+  "version": "1.0.0",
+  "type": "utility",
+  "entry": "ls.elf",
+  "priority": 3,
+  "description": "PROS Directory Listing Utility"
+}
+

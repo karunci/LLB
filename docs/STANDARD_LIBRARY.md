@@ -53,10 +53,18 @@ Header export: `FillRect`, `Blit`.
 - `Sub FillRect(ByRef surf As Surface, ByVal rx As Int32, ByVal ry As Int32, ByVal rw As Int32, ByVal rh As Int32, ByVal color As UInt32)`: Fills clipped rectangle in ARGB8888 color.
 - `Sub Blit(ByRef dst As Surface, ByVal dx As Int32, ByVal dy As Int32, ByRef src As Surface, ByVal sx As Int32, ByVal sy As Int32, ByVal w As Int32, ByVal h As Int32)`: Fast zero-copy pixel block transfer.
 
-### 2.6 Virtual File System (`Pros.Storage.VfsClient`)
-Header export: `VfsStat`.
+### 2.6 Standard FileSystem Library (`Pros.IO.FileSystem`)
+Header export: `FileExists`, `DirectoryExists`, `ReadAllText`, `DirectoryList`, `FileOpen`, `FileRead`, `FileWrite`, `FileClose`.
 
-- `Function VfsStat(ByVal pathPtr As Pointer To Byte, ByRef outStat As FileStat) As Boolean`: Queries file size, node type, and permissions from `srv.vfs` using Synaptic IPC. Supports both Windows-style paths (`C:\System\Bin\genesis.bax`) and Android/Unix paths (`/system/bin/genesis.bax`).
+Client applications, utilities, and shells interact exclusively with this standard class:
+- `Function FileExists(ByVal path As String) As Boolean`: Checks if a file exists.
+- `Function DirectoryExists(ByVal path As String) As Boolean`: Checks if a directory exists.
+- `Function ReadAllText(ByVal path As String, ByVal outBuf As Pointer To Byte, ByVal maxLen As UInt32) As UInt32`: Reads entire file contents into memory.
+- `Function DirectoryList(ByVal dirPath As String, ByVal outBuf As Pointer To Byte, ByVal maxLen As UInt32) As UInt32`: Retrieves null-separated list of child entry names.
+- `Function FileOpen(ByVal path As String, ByVal mode As UInt32) As Int32`: Opens or creates a file handle.
+- `Function FileRead(ByVal handle As Int32, ByVal buf As Pointer To Byte, ByVal count As UInt32) As UInt32`: Reads bytes from active file handle.
+- `Function FileWrite(ByVal handle As Int32, ByVal buf As Pointer To Byte, ByVal count As UInt32) As UInt32`: Writes bytes to active file handle.
+- `Sub FileClose(ByVal handle As Int32)`: Closes active file handle.
 
 ### 2.7 Window Manager (`Pros.Gui.WindowManagerClient`)
 Header export: `WmRequestFocus`.

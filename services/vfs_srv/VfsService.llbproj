@@ -26,4 +26,5 @@ Libraries    = [
 [Sources]
 Assembly = "../../lib/runtime/brt0.S"
 Assembly = "../../lib/runtime/mem.S"
+Class    = "TarFsDriver.cls"
 Module   = "VfsMain.bas"

@@ -17,20 +17,27 @@ echo "=== 2. Building Services ==="
 (cd services/plexus_mgr && "${LLBC}" PlexusMgr.llbproj)
 (cd services/wm && "${LLBC}" WmService.llbproj)
 (cd services/vfs_srv && "${LLBC}" VfsService.llbproj)
+(cd services/ramfs_srv && "${LLBC}" Ramfs.llbproj)
 
-echo "=== 3. Building GUI Apps ==="
+echo "=== 3. Building CoreUtils & GUI Apps ==="
+(cd apps/cli/coreutils/ls && "${LLBC}" Ls.llbproj)
+(cd apps/cli/coreutils/cat && "${LLBC}" Cat.llbproj)
+(cd apps/cli/coreutils/uptime && "${LLBC}" Uptime.llbproj)
+(cd apps/cli/coreutils/ver && "${LLBC}" Ver.llbproj)
+(cd apps/cli/coreutils/echo && "${LLBC}" Echo.llbproj)
 (cd apps/gui/sys_mon && "${LLBC}" SysMon.llbproj)
 (cd apps/gui/terminal && "${LLBC}" Terminal.llbproj)
 (cd apps/gui/node_viewer && "${LLBC}" NodeViewer.llbproj)
 (cd apps/gui/user_app && "${LLBC}" UserApp.llbproj)
 
 echo "=== 4. Packing initrd.tar ==="
-./tools/pack_initrd.sh
+bash ./tools/pack_initrd.sh
 
 echo "=== 5. Building Kernel ==="
 (cd kernel && "${LLBC}" Kernel_MB2.llbproj)
 
 echo "=== 6. Building Bootable ISO ==="
-./kernel/scripts/build_iso.sh
+bash ./kernel/scripts/build_iso.sh
 
 echo "=== BUILD COMPLETE ==="
+

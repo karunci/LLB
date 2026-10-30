@@ -187,3 +187,51 @@ graph TD
 - [ ] **5.2** Build `libpros` as `libpros.bdl`.
 - [ ] **5.3** Convert user applications to dynamically link `libpros.bdl`.
 
+---
+
+## 7. Large File Streaming Architecture & Memory Bounds (`cat`, `ls`, VFS)
+
+To process files larger than 64 KB (such as 64 MB video/audio or 1 GB disk images) without exhausting userspace RAM:
+
+### 7.1 $O(1)$ Memory Chunk Streaming Protocol
+Monolithic in-memory loads (`ReadAllText`) must never be used for arbitrary file display:
+1. **Chunked Consumer Loop:** Utilities like `cat` stream file content in fixed 64 KB chunks through the zero-copy Shared Memory window (`0x66000000`).
+2. **Streaming Loop Mechanics:**
+   ```vb
+   Dim chunkBuf(65536) As Byte
+   Dim offset As UInt32 = 0
+   Dim isEof As Boolean = False
+   Do
+       Dim bytesRead As UInt32 = FileSystem.ReadChunk(targetPath, offset, @chunkBuf(0), 65535, isEof)
+       If bytesRead = 0 Then Exit Do
+       chunkBuf(bytesRead) = 0
+       ConsoleWrite @chunkBuf(0)
+       offset = offset + bytesRead
+   Loop While Not isEof
+   ```
+   This guarantees that memory consumption remains strictly constant ($O(1)$ at 64 KB RAM) regardless of file size.
+
+### 7.2 Safety Guardrails on Monolithic APIs
+- Impose an explicit size ceiling on `ReadAllText` (e.g. 1 MB). Files exceeding this limit return `ERR_FILE_TOO_LARGE`, prompting clients to use streaming handles.
+- Introduce `Pros.IO.FileStream` with `Open`, `Read`, `Write`, `Seek`, and `Close` primitives.
+
+---
+
+## 8. Standard Library Gap Analysis vs. Production OS (Windows NT / Win32)
+
+To attain parity with mature production operating systems like Windows NT, the following subsystems define the future evolution of `libpros`:
+
+| Subsystem Domain | Windows NT / Win32 Reference | Target `libpros` Architecture | Milestone Phase |
+| :--- | :--- | :--- | :--- |
+| **Process & Threading** | `CreateProcess`, `CreateThread`, `WaitForSingleObject`, TLS (`TlsAlloc`) | `Process.Spawn`, `Process.WaitForExit`, userland thread creation, Thread-Local Storage | Phase 6 |
+| **Stream-Based File I/O** | `CreateFile`, `ReadFile`, `WriteFile`, `SetFilePointerEx`, `FlushFileBuffers` | Handle-based `FileStream` (`Open`, `Read`, `Write`, `Seek`, `Close`, directory iterators) | Phase 7 |
+| **Userspace Heap Allocator** | `HeapAlloc` / `HeapFree`, CRT `malloc` / `free` / `realloc` | Ring 3 Free-List / Slab Allocator for dynamic objects, variable strings, and collections | Phase 8 |
+| **Synchronization Primitives**| `CreateMutex`, `CreateSemaphore`, `CreateEvent`, Critical Sections | Userspace `Mutex`, `Semaphore`, and `Event` classes backed by microkernel futex-like waits | Phase 9 |
+| **Standard Streams & Piping** | `GetStdHandle` (`STDIN`, `STDOUT`), Anonymous Pipes (`CreatePipe`), `>` and `\|` | Standard descriptors (0, 1, 2), Pipe IPC, shell input/output redirection | Phase 10 |
+| **Real-Time Clock & Calendar**| `GetSystemTime`, `GetLocalTime`, High-Resolution `QueryPerformanceCounter` | CMOS / RTC calendar driver (`DateTime`: Year, Month, Day, Hour, Min, Sec) | Phase 11 |
+| **Dynamic Shared Libraries** | `LoadLibrary`, `GetProcAddress`, Import Address Table (IAT) | `.bdl` runtime loader (`ld.bax`) and zero-copy shared text pages | Phase 5 |
+| **Environment Variables** | `GetEnvironmentVariable`, `SetEnvironmentVariable`, environment blocks | `Environment.GetVar`, `Environment.SetVar` synchronized with `/System/Configurations/` | Phase 12 |
+| **Network Sockets** | Winsock2 (`socket`, `bind`, `connect`, `send`, `recv`) | Berkeley-style socket API backed by independent Network Plexus service (`net.bax`) | Phase 13 |
+| **Security & Access Control** | Security Identifiers (SIDs), Access Tokens, DACLs/SACLs | Capability tokens, user credentials, filesystem permission bits (`Perms` validation) | Phase 14 |
+
+

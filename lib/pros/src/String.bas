@@ -200,6 +200,109 @@ Namespace Pros.String
             Trim = count
         End Function
 
+        ''
+        ' @brief Checks if a string starts with a specified prefix string.
+        ' @param str Target string to test.
+        ' @param prefix Prefix string.
+        ' @return True if str starts with prefix, False otherwise.
+        ''
+        Public Unsafe Function StrStartsWith(ByVal str As String, ByVal prefix As String) As Boolean
+            If str = 0 Or prefix = 0 Then
+                StrStartsWith = False
+                Exit Function
+            End If
+
+            Dim i As UInt32 = 0
+            While prefix(i) <> 0
+                If str(i) = 0 Or str(i) <> prefix(i) Then
+                    StrStartsWith = False
+                    Exit Function
+                End If
+                i = i + 1
+            Wend
+            StrStartsWith = True
+        End Function
+
+        ''
+        ' @brief Copies a string to destination buffer with maximum capacity boundary check.
+        ' @param dest Pointer to destination memory buffer.
+        ' @param maxLen Maximum byte size of buffer.
+        ' @param src Source string to copy.
+        ' @return Number of bytes copied excluding null terminator.
+        ''
+        Public Unsafe Function StrCopy(ByVal dest As Pointer To Byte, ByVal maxLen As UInt32, ByVal src As String) As UInt32
+            If dest = 0 Or maxLen = 0 Then
+                StrCopy = 0
+                Exit Function
+            End If
+            If src = 0 Then
+                dest(0) = 0
+                StrCopy = 0
+                Exit Function
+            End If
+
+            Dim i As UInt32 = 0
+            While src(i) <> 0 And i + 1 < maxLen
+                dest(i) = src(i)
+                i = i + 1
+            Wend
+            dest(i) = 0
+            StrCopy = i
+        End Function
+
+        ''
+        ' @brief Extracts the leaf folder or file name from a path.
+        '        e.g. "X:\Apps\Terminal\" -> "Terminal", "X:\Users\Default" -> "Default", "X:\" -> ""
+        ' @param path Full path string.
+        ' @param outBuf Destination buffer.
+        ' @param maxLen Maximum byte size of destination buffer.
+        ' @return Length of leaf string.
+        ''
+        Public Unsafe Function PathGetLeaf(ByVal path As String, ByVal outBuf As Pointer To Byte, ByVal maxLen As UInt32) As UInt32
+            If outBuf = 0 Or maxLen = 0 Then
+                PathGetLeaf = 0
+                Exit Function
+            End If
+            outBuf(0) = 0
+            If path = 0 Then
+                PathGetLeaf = 0
+                Exit Function
+            End If
+
+            Dim pLen As UInt32 = UInt32(StrLen(path))
+            If pLen = 0 Then
+                PathGetLeaf = 0
+                Exit Function
+            End If
+
+            ' Skip trailing slash if present
+            Dim endIdx As Int32 = Int32(pLen) - 1
+            If endIdx >= 0 And (path(endIdx) = 92 Or path(endIdx) = 47) Then ' '\' or '/'
+                endIdx = endIdx - 1
+            End If
+
+            If endIdx < 0 Then
+                PathGetLeaf = 0
+                Exit Function
+            End If
+
+            ' Find last separator before endIdx
+            Dim startIdx As Int32 = endIdx
+            While startIdx >= 0 And path(startIdx) <> 92 And path(startIdx) <> 47 And path(startIdx) <> 58 ' '\', '/', ':'
+                startIdx = startIdx - 1
+            Wend
+            startIdx = startIdx + 1
+
+            Dim leafLen As UInt32 = UInt32(endIdx - startIdx + 1)
+            Dim i As UInt32 = 0
+            While i < leafLen And i + 1 < maxLen
+                outBuf(i) = path(startIdx + i)
+                i = i + 1
+            Wend
+            outBuf(i) = 0
+            PathGetLeaf = i
+        End Function
+
     End Module
 
 End Namespace

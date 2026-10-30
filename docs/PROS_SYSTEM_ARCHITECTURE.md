@@ -5,8 +5,8 @@
  ┌────────────────────────────────────────────────────────────────────────────────────────┐
  │                              PROS SYSTEM OVERVIEW                                      │
  │                                                                                        │
- │   Kernel Identity : PRK-LLB (Personal Research Kernel in Low-Level BASIC)               │
- │   System Identity : PROS (Personal Research Operating System)                         │
+ │   Kernel Identity : PRK-LLB (Personal Research Kernel in Low-Level BASIC)              │
+ │   System Identity : PROS (Personal Research Operating System)                          │
  │   Executable Type : .bax (Basic Application eXecutable) / NEO/PE-BAX                   │
  │   IPC Primitives  : Dual-Plane Neural Synapse Channels & Shared Memory Gradients       │
  │   Design Paradigm : Pure Microkernel with Userspace Device Drivers & Compositor        │
@@ -41,7 +41,8 @@ In alignment with the **Dual-Plane Neural Node Architecture** (*"Everything is a
  │                                                                                        │
  │  ┌──────────────────────────────────────────────────────────────────────────────────┐  │
  │  │                         GENESIS ORCHESTRATOR (PID 1)                             │  │
- │  │      - Inspects /system/manifest.json via Memory-Mapped Resource at 0x50000000    │  │
+ │  │      - Inspects /System/Configurations/services.cfg                              │  │
+ │  │        via Memory-Mapped Resource at 0x50000000                                  │  │
  │  │      - Spawns Core Service Managers & Establishes Initial Control Plane          │  │
  │  └───────────────┬──────────────────────────────────────────────────┬───────────────┘  │
  │                  │                                                  │                  │
@@ -57,9 +58,9 @@ In alignment with the **Dual-Plane Neural Node Architecture** (*"Everything is a
  │                  ▼                                                  ▼                  │
  │  ┌───────────────────────────────┐                  ┌───────────────────────────────┐  │
  │  │        input_srv.bax          │                  │         vfs_srv.bax           │  │
- │  │    (Unified Input Driver)     │                  │     (Storage & VFS Node)      │  │
- │  │ - Reads raw scancodes & mouse │                  │ - File systems & disk drivers │  │
- │  │ - Emits high-level InputEvents│                  │ - Mount points & permissions  │  │
+ │  │    (Unified Input Driver)     │                  │  (VFS Arbiter & TarFS Host)   │  │
+ │  │ - Reads raw scancodes & mouse │                  │ - Dynamic Mount Table (/)     │  │
+ │  │ - Emits high-level InputEvents│                  │ - Routes to fs.ramfs Plexus   │  │
  │  └───────────────┬───────────────┘                  └───────────────┬───────────────┘  │
  │                  │                                                  │                  │
  │                  │ Axon Input Events (Key/Mouse)                    │ File I/O Synapse │
@@ -125,7 +126,7 @@ In alignment with the **Dual-Plane Neural Node Architecture** (*"Everything is a
  │   - Loads boot ramdisk (initrd.tar) as Multiboot module.                               │
  │                                                                                        │
  │   Stage 2: Microkernel Initialization (PRK-LLB)                                        │
- │   - Enters Long Mode (64-bit), sets up GDT, TSS, IDT, and LAPIC/IO-APIC.              │
+ │   - Enters Long Mode (64-bit), sets up GDT, TSS, IDT, and LAPIC/IO-APIC.               │
  │   - Initializes PMM, Buddy Allocator, VMM, and Kernel Heap (8MB).                      │
  │   - Relocates initrd.tar to safe physical memory (0x6000000 / 96MB).                   │
  │   - Boots all AP cores sequentially with synchronized logging.                         │
@@ -249,7 +250,7 @@ The microkernel core provides the essential hardware abstractions and IPC primit
  │  - Mode setting (resolutions, refresh rates, BPP)                      │
  │  - Scanout buffer allocation & Page-Flip synchronization (VSYNC)       │
  │  - Driver multiplexer / plugin manager:                                │
- │      ├─ Generic Linear Framebuffer (VGA/BGA/UEFI GOP) [Current]       │
+ │      ├─ Generic Linear Framebuffer (VGA/BGA/UEFI GOP) [Current]        │
  │      ├─ VirtIO-GPU / Bochs VBE                                         │
  │      └─ Intel HD/UHD, AMD Radeon, NVIDIA Nouveau (Future)              │
  └────────────────────────────────────┬───────────────────────────────────┘
@@ -339,14 +340,14 @@ To eliminate this overhead, PROS introduces native dynamic linking via **Basic D
 │                          Process Address Space (User PML4)                      │
 │                                                                                 │
 │   0x40000000: [ Application Binary (.bax) ]                                     │
-│               - Contains Import Directory Table (List of needed libraries)     │
+│               - Contains Import Directory Table (List of needed libraries)      │
 │               - Jump stubs point to Import Address Table (IAT)                  │
 │                                                                                 │
-│   0x70000000: [ Shared System Library: libpros.bdl ]                           │
+│   0x70000000: [ Shared System Library: libpros.bdl ]                            │
 │               - Text/code pages are mapped READ-ONLY from shared physical PMM   │
 │               - 100 processes running libpros consume ZERO duplicate RAM!       │
 │                                                                                 │
-│   0x7F000000: [ Dynamic Linker Runtime: ld.bax ]                               │
+│   0x7F000000: [ Dynamic Linker Runtime: ld.bax ]                                │
 │               - Resolves symbol addresses into application's IAT                │
 │               - Jumps to application's actual user_main()                       │
 └─────────────────────────────────────────────────────────────────────────────────┘
@@ -363,8 +364,78 @@ To eliminate this overhead, PROS introduces native dynamic linking via **Basic D
 - **Impact:** Individual `.bax` binary sizes shrink from ~8–12 KB to ~500 bytes – 1 KB, and system-wide RAM consumption for standard libraries is reduced to a single shared physical instance.
 
 ### D. Implementation Timeline
-- **Phase 14 (Current):** Modular static `lib/pros` library establishing clean namespace APIs (`Pros.Sys`, `Pros.IO`, `Pros.Nodes`, `Pros.Memory`, `Pros.Gui`).
-- **Phase 15:** Virtual File System (VFS) and storage subsystem.
+- **Phase 14:** Modular static `lib/pros` library establishing clean namespace APIs (`Pros.Sys`, `Pros.IO`, `Pros.Nodes`, `Pros.Memory`, `Pros.Gui`).
+- **Phase 15 (Current - REV: 2026.10.30-r38-re10):** Dual-Plane Virtual File System (VFS), Zero-Copy Shared Memory Data Plane streaming (`0x66000000`), TarFS & RamFS hybrid mounting, CoreUtils (`cat`, `ls`), and SMP-reliable shell directory navigation.
 - **Phase 16:** Implementation of `ld.bax` dynamic loader runtime and compilation of `libpros.bdl`. All userland applications transition from static linking to dynamic linking without changing any API calls.
+
+---
+
+## 11. Dual-Plane Storage Subsystem & Zero-Copy Shared Memory Streaming
+
+### 11.1 Architectural Model & Topology
+The Personal Research Operating System (PRK-OS / PROS) implements a strict **Dual-Plane Architecture** for all file storage, directory resolution, and data transfer:
+- **Control Plane (Synapse IPC):** Lightweight, fixed 256-byte `AxonPacket` messages used solely for command signaling, metadata negotiation (`STAT`), capability verification, and session control (`VFS_CMD_READ`, `VFS_CMD_LIST`).
+- **Data Plane (Zero-Copy Shared Memory):** Bulk file content and complete directory listings stream across 64 KB shared physical frame windows mapped at virtual address `0x66000000` via microkernel `SharedMemoryManager` (`SYS_SHMEM_CREATE` and `SYS_SHMEM_ATTACH`), achieving memory-bandwidth transfer speeds (>10 GB/s) with zero syscall overhead per byte.
+
+```mermaid
+flowchart TD
+    subgraph Layer4_Apps ["Layer 4: User Applications & CoreUtils (Ring 3)"]
+        TERM["Terminal Shell (terminal.bax) - Prompt: pros::>"]
+        LS["ls.bax - Directory Listing"]
+        CAT["cat.bax - Stream File Content"]
+        UPTIME["uptime.bax - Elapsed Ticks & Pacing"]
+        VER["ver.bax - System Version & Cores"]
+    end
+
+    subgraph Layer3_StdLib ["Layer 3: Standard Client Library (libpros.a)"]
+        FS_LIB["Standard FileSystem Library (Pros.IO.FileSystem)"]
+        SHM_CLIENT["Client Data Plane Window - Mapped at 0x66000000 (64 KB SHM)"]
+    end
+
+    subgraph Layer2_VFS ["Layer 2: VFS Service (srv.vfs / vfs_srv.bax)"]
+        VFS_ROUTER["VFS Mount Arbiter - Longest-Prefix Mount Resolution"]
+        MOUNT_TBL["Dynamic Mount Table: Root '/' (TarFS), '/Users' (fs.ramfs)"]
+        SHM_SRV["VFS Data Plane Attach Arena - 0x66000000 + slot * 1MB"]
+        
+        subgraph Internal_Drivers ["Internal Zero-Copy Drivers"]
+            TARFS["TarFsDriver.cls - Read-Only Initrd Provider at 0x58000000"]
+        end
+    end
+
+    subgraph Layer1_Plexuses ["Layer 1: External Filesystem Plexuses"]
+        RAMFS_PLEXUS["RamFS Plexus (ramfs.bax / fs.ramfs) - Dynamic Inode Pool at 0x5A000000"]
+    end
+
+    subgraph Layer0_Kernel ["Layer 0: PRK Microkernel (Ring 0)"]
+        SHM_MGR["SharedMemoryManager.cls (SYS_SHMEM_CREATE, ATTACH, DETACH)"]
+        NODE_REG["NodeRegistry & SynapseChannel - Control Plane Fast-Path Messaging"]
+        PMM["Physical Memory Manager (PMM) - Holds Initrd & SHM Physical Frames"]
+    end
+
+    %% Control Plane Connections
+    TERM -.->|"Control Plane IPC"| FS_LIB
+    LS -.->|"Control Plane IPC"| FS_LIB
+    CAT -.->|"Control Plane IPC"| FS_LIB
+    FS_LIB ==>|"Synapse Control: VFS_CMD_READ / VFS_CMD_LIST / STAT"| VFS_ROUTER
+    VFS_ROUTER --- MOUNT_TBL
+    VFS_ROUTER ==>|"Synapse Control: Forward /Users"| RAMFS_PLEXUS
+    VFS_ROUTER -->|"Internal Driver Dispatch"| TARFS
+
+    %% Data Plane Connections (Shared Memory)
+    SHM_CLIENT <=====>|"Zero-Copy Physical Page Mapping (SHMID)"| SHM_MGR
+    SHM_SRV <=====>|"Zero-Copy Physical Page Mapping (SHMID)"| SHM_MGR
+    TARFS ===>|"Direct Memory Copy (0x58000000 to 0x66000000)"| SHM_SRV
+    RAMFS_PLEXUS ===>|"Direct Memory Copy (0x5A000000 to SHM)"| SHM_SRV
+    SHM_CLIENT --->|"Direct Memory Read (No Syscall)"| CAT
+    SHM_CLIENT --->|"Direct Memory Read (No Syscall)"| TERM
+    SHM_CLIENT --->|"Direct Memory Read (No Syscall)"| LS
+```
+
+### 11.2 Directory Navigation & IPC Reliability
+To ensure deterministic directory traversal (`cd`, `ls`) across SMP multicore configurations:
+1. **Bounded Synchronous Waiting (`SynapsePopResponse`):** Client IPC exchanges utilize a bounded polling loop with `Process.Sleep 5` up to 500ms, replacing the fragile 10-yield loop and guaranteeing response arrival even under heavy SMP scheduling contention.
+2. **Monotonic Sequence Matching:** Client requests embed an advancing transaction sequence number (`g_clientSeq`). Late or stale packets from aborted transactions are discarded immediately, preventing mailbox poisoning and cascading deserialization failures.
+3. **Plexus Forwarding Channel Isolation:** VFS requests forwarded to external storage plexuses (e.g. `fs.ramfs` for `/Users`) block specifically on the forward synapse channel (`fwdChan >= 5000`) rather than multiplexing on the root `srv.vfs` node listener, eliminating packet interception between concurrent client tasks.
+
 
 

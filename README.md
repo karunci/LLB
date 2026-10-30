@@ -113,6 +113,7 @@ pros/
 │
 ├── include/                    # Shared Global Include Headers
 │   ├── pros.bas                # Main client umbrella header for applications
+│   ├── Version.bas             # Centralized system-wide build revision, release tags, and identifiers
 │   ├── syscalls.bas            # Architecture syscall numbers & prototypes
 │   └── synapse.bas             # Synapse IPC message structures & channels
 │

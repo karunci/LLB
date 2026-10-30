@@ -98,4 +98,9 @@ graph TD
 - [ ] **K.1:** Complete Kernel ABI type modernization (adopt `ProcessId`, `Handle`, `VirtualAddress`, and typed enums).
 - [ ] **K.2:** Inter-Core IPI (Inter-Processor Interrupt) cross-core task migration and TLB shootdown.
 - [ ] **K.3:** Dynamic ELF / BAX kernel module loader for loadable device drivers.
+- [ ] **K.4:** Dynamic Process Creation Subsystem (`SYS_PROCESS_SPAWN (10)`):
+  - Implement native microkernel syscall 10 (`SYS_PROCESS_SPAWN`) to allocate a dedicated user PML4 address space, map `.bax` segments at `0x40000000`, set up user stack at `0x78000000`, and enqueue a new Task Control Block (TCB) into `Scheduler`.
+  - Implement `Pros.Sys.Process.Spawn(path As String, args As String) As UInt64` and `WaitForExit(pid As UInt64, ByRef outExitCode As UInt32) As Boolean` in `libpros.a`.
+  - Enable the Terminal Shell (`terminal.bax`) to summon and execute userland executables from the configured `PATH` (`X:\System\Apps\CoreUtils\*.bax`) dynamically on demand.
+
 

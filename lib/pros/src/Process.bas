@@ -32,6 +32,14 @@ Namespace Pros.Sys
         End Function
 
         ''
+        ' @brief Read decoded ASCII key from keyboard ring buffer.
+        ' @return Decoded ASCII character byte, or 0 if no key is pending.
+        ''
+        Public Unsafe Function GetKey() As Byte
+            GetKey = Byte(Pros.Sys.RawSyscall.Call0(SYS_GET_KEY))
+        End Function
+
+        ''
         ' @brief Terminate calling process and return exit code to microkernel.
         ' @param exitCode Integer status code.
         ''
@@ -71,6 +79,24 @@ Namespace Pros.Sys
             Else
                 AllocatePages = Nothing
             End If
+        End Function
+
+        ''
+        ' @brief Query the physical address and byte size of the boot initrd ramdisk.
+        ' @param outInfo Pointer to InitrdInfo receiving physical base address and size.
+        ' @return True on success, False on error.
+        ''
+        Public Unsafe Function InitrdGetInfo(ByVal outInfo As Pointer To InitrdInfo) As Boolean
+            InitrdGetInfo = (Pros.Sys.RawSyscall.Call1(SYS_INITRD_GET_INFO, UInt64(outInfo)) <> 0)
+        End Function
+
+        ''
+        ' @brief Map boot initrd ramdisk frames read-only into caller's address space.
+        ' @param targetVaddr Base virtual address to map to.
+        ' @return True on success, False on error.
+        ''
+        Public Unsafe Function InitrdMap(ByVal targetVaddr As UInt64) As Boolean
+            InitrdMap = (Pros.Sys.RawSyscall.Call1(SYS_INITRD_MAP, targetVaddr) <> 0)
         End Function
 
     End Module

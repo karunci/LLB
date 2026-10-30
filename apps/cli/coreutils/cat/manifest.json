@@ -1,0 +1,9 @@
+{
+  "name": "cat",
+  "version": "1.0.0",
+  "type": "utility",
+  "entry": "cat.elf",
+  "priority": 3,
+  "description": "PROS Concatenate & Print File Utility"
+}
+

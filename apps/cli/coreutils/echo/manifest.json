@@ -1,0 +1,9 @@
+{
+  "name": "echo",
+  "version": "1.0.0",
+  "type": "utility",
+  "entry": "echo.elf",
+  "priority": 3,
+  "description": "PROS Echo Arguments Utility"
+}
+

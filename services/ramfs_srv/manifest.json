@@ -1,0 +1,9 @@
+{
+  "name": "ramfs_srv",
+  "version": "1.0.0",
+  "type": "service",
+  "entry": "ramfs_srv.elf",
+  "priority": 1,
+  "description": "PROS Ramdisk Filesystem Plexus Service"
+}
+

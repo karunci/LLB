@@ -16,6 +16,7 @@ Module KernelMain
     Import Core.Nodes
     Import Core.Nodes.SynapseCaps
     Import Sys.Syscall
+    Import Sys.Version
 
     ' --- Instantiable Classes ---
     Use Drivers.Terminal As Term
@@ -92,20 +93,20 @@ Module KernelMain
         ' Initialize COM1 line control & Serial UART driver with hardware probing
         Serial.Initialize
         If Serial.IsAvailable() Then
-            Serial.PrintF "\r\n[PRK] Booting Low-Level Basic Kernel [REV: 2026.10.30-r38-re02]!\r\n"
+            Serial.PrintF "\r\n[PRK] Booting Low-Level Basic Kernel [%s]!\r\n", Sys.Version.SYSTEM_VERSION_TAG
             Serial.PrintF "[PRK] Multiboot Verified. Long mode active.\r\n"
             Serial.PrintF "[UART] COM1 16550 UART Online!\r\n"
         End If
 
         ' Early Display & Framebuffer Discovery
-        FB.Initialize magic, CType(UInt64, mbAddress)
+        FB.Initialize magic, UInt64(mbAddress)
         Dim hasGopFb As Boolean = (FB.GetFramebufferPhys() <> 0 And FB.GetFramebufferPhys() <> &HB8000)
         Dim hasVgaText As Boolean = (Not hasGopFb) And (magic = &H2BADB002)
 
         ' Initialize Physical Memory Manager (PMM) and relocate initrd module immediately
         Serial.PrintF "[PRK] Initializing Physical Memory Manager (PMM)...\r\n"
         PMM.Initialize
-        PMM.ParseMemoryMap magic, CType(UInt64, mbAddress)
+        PMM.ParseMemoryMap magic, UInt64(mbAddress)
 
         ' Initialize GDT & TSS segment descriptors
         Serial.PrintF "[PRK] Initializing 64-bit GDT & TSS...\r\n"
@@ -116,16 +117,16 @@ Module KernelMain
         Term.Initialize hasVgaText, Term.COLOR_LIGHT_GREEN, Term.COLOR_BLACK
         If hasVgaText Then
             Serial.PrintF "[PRK] VGA Text Mode Terminal active (&HB8000).\r\n"
-            Term.WriteLine CPtr(Pointer To Byte, "=========================================")
-            Term.WriteLine CPtr(Pointer To Byte, " PRK - LOW-LEVEL BASIC [REV: 2026.10.30-r38-re02] ")
-            Term.WriteLine CPtr(Pointer To Byte, "=========================================")
+            Term.WriteLine "========================================="
+            Term.WriteLine Sys.Version.SYSTEM_VERSION_TAG
+            Term.WriteLine "========================================="
             Term.WriteChar 10
         ElseIf hasGopFb Then
-            Serial.PrintF "[PRK] UEFI GOP Linear Framebuffer active (0x%x).\r\n", CType(UInt32, FB.GetFramebufferPhys() And &HFFFFFFFF)
+            Serial.PrintF "[PRK] UEFI GOP Linear Framebuffer active (0x%x).\r\n", UInt32(FB.GetFramebufferPhys() And &HFFFFFFFF)
             FB.ClearScreen &H00181824
-            FB.DrawString 20, 20, CPtr(Pointer To Byte, "========================================="), &H0088C0D0, 1
-            FB.DrawString 20, 36, CPtr(Pointer To Byte, " PRK - LOW-LEVEL BASIC [REV: 2026.10.30-r38-re02] "), &H008FBCBB, 1
-            FB.DrawString 20, 52, CPtr(Pointer To Byte, "========================================="), &H0088C0D0, 1
+            FB.DrawString 20, 20, "=========================================", &H0088C0D0, 1
+            FB.DrawString 20, 36, Sys.Version.SYSTEM_VERSION_TAG, &H008FBCBB, 1
+            FB.DrawString 20, 52, "=========================================", &H0088C0D0, 1
         End If
 
         ' Initialize multiple MultiUse CpuContext instances on the kernel stack
@@ -315,14 +316,20 @@ Module KernelMain
         Dim halfCardW As UInt32 = (fullCardW - colGap) / 2
         Dim rightColX As UInt32 = 20 + halfCardW + colGap
 
-        ' Top Header Banner with Nord Accent Stripe (x: 20, w: fullCardW, h: 38)
-        FB.FillRect 20, 20, fullCardW, 38, &H002E3440
-        FB.FillRect 20, 20, 6, 38, &H0088C0D0
+        ' Top Header Banner with Nord Accent Stripe (x: 20, y: 16, w: fullCardW, h: 44)
+        FB.FillRect 20, 16, fullCardW, 44, &H002E3440
+        FB.FillRect 20, 16, 6, 44, &H0088C0D0
+
+        ' Prominent Title Banner on the left: "Personal Research Kernel" (Scale 2, Bold)
+        FB.DrawString 36, 22, Sys.Version.KERNEL_NAME, &H00ECEFF4, 2
+        FB.DrawString 37, 22, Sys.Version.KERNEL_NAME, &H00ECEFF4, 2
+
+        ' Subtitle / Architecture info on the right: "x86_64 Long Mode | SMP %u Cores"
         Dim topBannerBuf(64) As Byte
-        SprintF CPtr(Pointer To Byte, topBannerBuf), 64, "x86_64 Long Mode | SMP %u Cores", Arch.Acpi.GetCpuCount()
-        Dim bannerTextX As UInt32 = 20 + fullCardW - (CType(UInt32, 31) * 8) - 20
-        If bannerTextX < 36 Then bannerTextX = 36
-        FB.DrawString bannerTextX, 31, CPtr(Pointer To Byte, topBannerBuf), &H0088C0D0, 1
+        SprintF Pointer To Byte(topBannerBuf), 64, "x86_64 Long Mode | SMP %u Cores", Arch.Acpi.GetCpuCount()
+        Dim bannerTextX As UInt32 = 20 + fullCardW - (UInt32(31) * 8) - 20
+        If bannerTextX < 440 Then bannerTextX = 440
+        FB.DrawString bannerTextX, 30, Pointer To Byte(topBannerBuf), &H0088C0D0, 1
 
         ' --- LEFT COLUMN: SYSTEM TOPOLOGY & DUAL-PLANE NODES (w: halfCardW) ---
 
@@ -332,16 +339,16 @@ Module KernelMain
         FB.DrawString 36, 80, "[ SYSTEM STATUS & ARCHITECTURE ]", &H0081A1C1, 1
 
         Dim dispInfoBuf(64) As Byte
-        SprintF CPtr(Pointer To Byte, dispInfoBuf), 64, "Display  : %ux%ux%u BPP (Double Buffered RAM)", scrW, scrH, scrBpp
-        FB.DrawString 36, 100, CPtr(Pointer To Byte, dispInfoBuf), &H0088C0D0, 1
+        SprintF Pointer To Byte(dispInfoBuf), 64, "Display  : %ux%ux%u BPP (Double Buffered RAM)", scrW, scrH, scrBpp
+        FB.DrawString 36, 100, Pointer To Byte(dispInfoBuf), &H0088C0D0, 1
 
         FB.DrawString 36, 120, "Topology : Everything is a Node via Synapses", &H00A3BE8C, 1
         FB.DrawString 36, 140, "Control  : Cap-Checked Routing & Node Registry", &H00D8DEE9, 1
         FB.DrawString 36, 160, "Data     : Axonal Fast-Path 128-Slot Ring Buffers", &H00EBCB8B, 1
 
         Dim smpSchedBuf(64) As Byte
-        SprintF CPtr(Pointer To Byte, smpSchedBuf), 64, "SMP Sched: %u Cores Active / Preemptive Stealing", Arch.Acpi.GetCpuCount()
-        FB.DrawString 36, 180, CPtr(Pointer To Byte, smpSchedBuf), &H00B48EAD, 1
+        SprintF Pointer To Byte(smpSchedBuf), 64, "SMP Sched: %u Cores Active / Preemptive Stealing", Arch.Acpi.GetCpuCount()
+        FB.DrawString 36, 180, Pointer To Byte(smpSchedBuf), &H00B48EAD, 1
 
         ' Left Card 2: Dual-Plane Neural Node Registry (x: 20, y: 222, w: halfCardW, h: 150)
         FB.FillRect 20, 222, halfCardW, 150, &H00232731
@@ -489,6 +496,8 @@ Module KernelMain
         Dim wmBaxAddr As UInt64 = 0
         Dim vfsBaxSize As UInt64 = 0
         Dim vfsBaxAddr As UInt64 = 0
+        Dim ramfsBaxSize As UInt64 = 0
+        Dim ramfsBaxAddr As UInt64 = 0
         Dim baxSize As UInt64 = 0
         Dim baxDataAddr As UInt64 = 0
         Dim sysMonBaxSize As UInt64 = 0
@@ -556,6 +565,13 @@ Module KernelMain
             If vfsBaxAddr <> 0 Then
                 Serial.PrintF "[PRK] Located 'vfs_srv.bax' in ramdisk (%u bytes at 0x%lx)\r\n", _
                               CType(UInt32, vfsBaxSize), vfsBaxAddr
+            End If
+
+            ' 7b. Probe for RamFS Storage Plexus ('ramfs_srv.bax')
+            ramfsBaxAddr = Tar.FindFile(initrdStart, "ramfs_srv.bax", ramfsBaxSize)
+            If ramfsBaxAddr <> 0 Then
+                Serial.PrintF "[PRK] Located 'ramfs_srv.bax' in ramdisk (%u bytes at 0x%lx)\r\n", _
+                              CType(UInt32, ramfsBaxSize), ramfsBaxAddr
             End If
 
             ' 8. Probe for System Monitor ('sys_mon.bax')
@@ -645,6 +661,13 @@ Module KernelMain
         If vfsBaxAddr <> 0 Then
             vfsPid = SchedEngine.CreateBaxProcess("srv.vfs", vfsBaxAddr, vfsBaxSize, 1)
             Serial.PrintF "[PRK] Spawned Storage & VFS Daemon (PID: %u)\r\n", CType(UInt32, vfsPid)
+        End If
+
+        ' Spawn RamFS Storage Plexus Daemon
+        Dim ramfsPid As UInt64 = 0
+        If ramfsBaxAddr <> 0 Then
+            ramfsPid = SchedEngine.CreateBaxProcess("fs.ramfs", ramfsBaxAddr, ramfsBaxSize, 1)
+            Serial.PrintF "[PRK] Spawned RamFS Storage Plexus Daemon (PID: %u)\r\n", CType(UInt32, ramfsPid)
         End If
 
         ' Spawn Standalone Ring 3 BAX Application

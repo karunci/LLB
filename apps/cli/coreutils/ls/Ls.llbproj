@@ -1,0 +1,30 @@
+' Project Name: PROS CoreUtils - ls
+' Filename: apps/cli/coreutils/ls/Ls.llbproj
+' Summary: Standalone Ring 3 directory listing utility.
+
+[Project]
+Name    = "ls"
+Type    = "Executable"
+Version = "1.0.0"
+
+[Target]
+Arch = "x86_64-unknown-none-elf"
+
+[Output]
+OutDir  = "build"
+OutFile = "ls.elf"
+
+[Entry]
+EntryPoint = "_start"
+
+[Linker]
+LinkerScript = "user_linker.ld"
+Libraries    = [
+    "../../../../lib/pros/build/libpros.a"
+]
+
+[Sources]
+Assembly = "../../../../lib/runtime/brt0.S"
+Assembly = "../../../../lib/runtime/mem.S"
+Module   = "LsMain.bas"
+

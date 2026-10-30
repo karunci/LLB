@@ -1,0 +1,30 @@
+' Project Name: PROS CoreUtils - ver
+' Filename: apps/cli/coreutils/ver/Ver.llbproj
+' Summary: Standalone Ring 3 system version utility.
+
+[Project]
+Name    = "ver"
+Type    = "Executable"
+Version = "1.0.0"
+
+[Target]
+Arch = "x86_64-unknown-none-elf"
+
+[Output]
+OutDir  = "build"
+OutFile = "ver.elf"
+
+[Entry]
+EntryPoint = "_start"
+
+[Linker]
+LinkerScript = "user_linker.ld"
+Libraries    = [
+    "../../../../lib/pros/build/libpros.a"
+]
+
+[Sources]
+Assembly = "../../../../lib/runtime/brt0.S"
+Assembly = "../../../../lib/runtime/mem.S"
+Module   = "VerMain.bas"
+

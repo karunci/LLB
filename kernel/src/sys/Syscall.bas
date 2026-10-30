@@ -16,8 +16,15 @@ Use Mem.VirtualMemoryManager As VmmEngine
 Use Mem.BuddyAllocator As Buddy
 Use Drivers.Mouse As MouseDriver
 Use Drivers.Keyboard As Kbd
+Use Mem.PhysicalMemoryManager As PMM
 
 Namespace Sys
+
+    <Packed>
+    Public Structure InitrdInfo
+        Public PhysAddr  As UInt64
+        Public SizeBytes As UInt64
+    End Structure
 
     <Packed>
     Public Structure MouseState
@@ -47,6 +54,7 @@ Namespace Sys
         Public Const SYS_PROCESS_GETPID  As UInt64 = 6
         Public Const SYS_PROCESS_EXIT    As UInt64 = 16
         Public Const SYS_GET_MOUSE       As UInt64 = 19
+        Public Const SYS_GET_KEY         As UInt64 = 20
         Public Const SYS_MEM_ALLOC_PAGES As UInt64 = 26
         Public Const SYS_TIME_UPTIME     As UInt64 = 28
         Public Const SYS_SYSTEM_INFO     As UInt64 = 33
@@ -68,6 +76,10 @@ Namespace Sys
         ' Hardware Display Aperture Extensions
         Public Const SYS_FB_GET_INFO     As UInt64 = 70
         Public Const SYS_FB_MAP          As UInt64 = 71
+
+        ' Initrd Memory Mapping Extensions
+        Public Const SYS_INITRD_GET_INFO As UInt64 = 80
+        Public Const SYS_INITRD_MAP      As UInt64 = 81
 
         ' Hardware MSR Register Constants
         Private Const IA32_EFER          As UInt32 = &HC0000080
@@ -168,7 +180,7 @@ Namespace Sys
                         Dispatch = 0
                         Exit Function
                     End If
-                    Dim bufPtr As Pointer To Byte = CPtr(Pointer To Byte, arg1)
+                    Dim bufPtr As Pointer To Byte = *Byte(arg1)
                     Serial.WriteBuffer bufPtr, arg2
                     Dispatch = arg2
 
@@ -177,14 +189,14 @@ Namespace Sys
                     Dispatch = 0
 
                 Case SYS_PROCESS_SLEEP
-                    SchedEngine.Sleep CType(UInt32, arg1)
+                    SchedEngine.Sleep UInt32(arg1)
                     Dispatch = 0
 
                 Case SYS_PROCESS_GETPID
                     Dispatch = SchedEngine.GetCurrentPid()
 
                 Case SYS_PROCESS_EXIT
-                    SchedEngine.ExitCurrentTask CType(UInt32, arg1)
+                    SchedEngine.ExitCurrentTask UInt32(arg1)
                     Dispatch = 0
 
                 Case SYS_GET_MOUSE
@@ -203,7 +215,7 @@ Namespace Sys
 
                     ' arg1 = userPtr (Pointer To MouseState, 12 bytes)
                     If ValidateUserBuffer(arg1, SizeOf(MouseState)) Then
-                        Dim mPtr As Pointer To MouseState = CPtr(Pointer To MouseState, arg1)
+                        Dim mPtr As Pointer To MouseState = Pointer To MouseState(arg1)
                         Dim mx As Int32 = 0
                         Dim my As Int32 = 0
                         Dim mb As Byte = 0
@@ -213,8 +225,23 @@ Namespace Sys
                         mPtr.Buttons = mb
                         Dispatch = 0
                     Else
-                        Dispatch = CType(UInt64, -1)
+                        Dispatch = UInt64(-1)
                     End If
+
+                Case SYS_GET_KEY
+                    ' Hypervisor failsafe: drain pending PS/2 keyboard/mouse data
+                    Dim ps2LimitKbd As UInt32 = 16
+                    While ps2LimitKbd > 0
+                        Dim ps2StatusKbd As Byte = Arch.X86_64.PortIO.InB(&H64)
+                        If (ps2StatusKbd And &H01) = 0 Then Exit While
+                        If (ps2StatusKbd And &H20) <> 0 Then
+                            MouseDriver.HandleInterrupt
+                        Else
+                            Kbd.HandleInterrupt
+                        End If
+                        ps2LimitKbd = ps2LimitKbd - 1
+                    Wend
+                    Dispatch = UInt64(Kbd.GetChar())
 
                 Case SYS_MEM_ALLOC_PAGES
                     ' arg1 = pageCount (UInt64), arg2 = targetVaddr (UInt64)
@@ -237,7 +264,7 @@ Namespace Sys
                             physFrameLast = physFrame
 
                             ' Zero initialize allocated physical frame
-                            Dim framePtr As Volatile Pointer To UInt64 = CPtr(Volatile Pointer To UInt64, physFrame)
+                            Dim framePtr As Volatile Pointer To UInt64 = Volatile Pointer To UInt64(physFrame)
                             Dim zIdx As UInt32 = 0
                             While zIdx < 512
                                 framePtr(zIdx) = 0
@@ -251,7 +278,7 @@ Namespace Sys
 
                         If Not allocFail Then
                             Serial.PrintF "[MEM_ALLOC_PAGES] PID %u: %u pages @ 0x%lx (Phys: 0x%lx .. 0x%lx)\r\n", _
-                                          CType(UInt32, SchedEngine.GetCurrentPid()), CType(UInt32, reqPages), reqVaddr, _
+                                          UInt32(SchedEngine.GetCurrentPid()), UInt32(reqPages), reqVaddr, _
                                           physFrame0, physFrameLast
                         End If
 
@@ -276,27 +303,27 @@ Namespace Sys
                     Dispatch = SchedEngine.GetUptime()
 
                 Case SYS_SMP_CORE_COUNT
-                    Dispatch = CType(UInt64, Arch.Acpi.GetCpuCount())
+                    Dispatch = UInt64(Arch.Acpi.GetCpuCount())
 
                 Case SYS_NODE_REGISTER
                     ' arg1 = kind (UInt32), arg2 = namePtr (UInt64), arg3 = caps (UInt32)
                     If arg2 <> 0 And ValidateUserBuffer(arg2, 1) Then
-                        Dim nameStr As Pointer To Byte = CPtr(Pointer To Byte, arg2)
-                        Dispatch = Registry.RegisterNode(nameStr, CType(UInt32, arg1), SchedEngine.GetCurrentPid(), CType(UInt32, arg3))
+                        Dim nameStr As Pointer To Byte = *Byte(arg2)
+                        Dispatch = Registry.RegisterNode(nameStr, UInt32(arg1), SchedEngine.GetCurrentPid(), UInt32(arg3))
                     Else
                         Dispatch = 0
                     End If
 
                 Case SYS_SYNAPSE_CONNECT
                     ' arg1 = sourceNode (UInt64), arg2 = targetNode (UInt64), arg3 = caps (UInt32)
-                    Dispatch = Registry.ConnectSynapse(arg1, arg2, CType(UInt32, arg3))
+                    Dispatch = Registry.ConnectSynapse(arg1, arg2, UInt32(arg3))
 
                 Case SYS_SYNAPSE_PUSH
                     ' arg1 = channelId (UInt64), arg2 = packetPtr (UInt64)
                     If ValidateUserBuffer(arg2, SizeOf(AxonPacket)) Then
                         Dim chan As Pointer To SynapseChannel = Registry.GetChannel(arg1)
                         If chan <> 0 Then
-                            Dim pktPtr As Pointer To AxonPacket = CPtr(Pointer To AxonPacket, arg2)
+                            Dim pktPtr As Pointer To AxonPacket = Pointer To AxonPacket(arg2)
                             If chan.PushPacket(pktPtr(0)) Then
                                 Registry.WakeNodeWaiter chan.GetTargetNode()
                                 Dispatch = 1
@@ -313,7 +340,7 @@ Namespace Sys
                 Case SYS_SYNAPSE_POP
                     ' arg1 = channelId or targetNodeId (UInt64), arg2 = packetPtr (UInt64), arg3 = block (0 or 1)
                     If ValidateUserBuffer(arg2, SizeOf(AxonPacket)) Then
-                        Dim outPktPtr As Pointer To AxonPacket = CPtr(Pointer To AxonPacket, arg2)
+                        Dim outPktPtr As Pointer To AxonPacket = Pointer To AxonPacket(arg2)
                         Dim shouldBlock As Boolean = (arg3 <> 0)
                         If arg1 < 5000 Then
                             ' Node-level multiplexed pop: receive from any channel destined to this node
@@ -367,7 +394,7 @@ Namespace Sys
                 Case SYS_NODE_LOOKUP
                     ' arg1 = namePtr (UInt64)
                     If arg1 <> 0 And ValidateUserBuffer(arg1, 1) Then
-                        Dim lookupName As Pointer To Byte = CPtr(Pointer To Byte, arg1)
+                        Dim lookupName As Pointer To Byte = *Byte(arg1)
                         Dispatch = Registry.LookupNode(lookupName)
                     Else
                         Dispatch = 0
@@ -379,16 +406,16 @@ Namespace Sys
                         Dim curPml4 As UInt64 = SchedEngine.GetCurrentCr3()
                         Dim curPid As UInt64 = SchedEngine.GetCurrentPid()
                         Dim shmRes As Int64 = Shmem.CreateShmem(arg1, arg2, curPml4, curPid)
-                        Dispatch = CType(UInt64, shmRes)
+                        Dispatch = UInt64(shmRes)
                     Else
-                        Dispatch = CType(UInt64, -1)
+                        Dispatch = UInt64(-1)
                     End If
 
                 Case SYS_SHMEM_ATTACH
                     ' arg1 = shmid (Int64), arg2 = targetVaddr (UInt64)
                     If ValidateUserBuffer(arg2, 4096) Then
                         Dim attPml4 As UInt64 = SchedEngine.GetCurrentCr3()
-                        Dim attRes As Int64 = Shmem.AttachShmem(CType(Int64, arg1), arg2, attPml4)
+                        Dim attRes As Int64 = Shmem.AttachShmem(Int64(arg1), arg2, attPml4)
                         If attRes = 0 Then
                             Dispatch = arg2
                         Else
@@ -400,13 +427,13 @@ Namespace Sys
 
                 Case SYS_SHMEM_DETACH
                     ' arg1 = shmid (Int64)
-                    Dim detRes As Int64 = Shmem.DetachShmem(CType(Int64, arg1))
-                    Dispatch = CType(UInt64, detRes)
+                    Dim detRes As Int64 = Shmem.DetachShmem(Int64(arg1))
+                    Dispatch = UInt64(detRes)
 
                 Case SYS_FB_GET_INFO
                     ' arg1 = userPtr (Pointer To DisplayInfo, 24 bytes)
                     If ValidateUserBuffer(arg1, SizeOf(DisplayInfo)) Then
-                        Dim dispPtr As Pointer To DisplayInfo = CPtr(Pointer To DisplayInfo, arg1)
+                        Dim dispPtr As Pointer To DisplayInfo = Pointer To DisplayInfo(arg1)
                         dispPtr.Width = FbDriver.GetDisplayWidth()
                         dispPtr.Height = FbDriver.GetDisplayHeight()
                         dispPtr.Pitch = FbDriver.GetDisplayPitch()
@@ -420,8 +447,8 @@ Namespace Sys
                 Case SYS_FB_MAP
                     ' arg1 = targetVaddr (UInt64)
                     Dim lfbPhys As UInt64 = FbDriver.GetFramebufferPhys()
-                    Dim lfbPitch As UInt64 = CType(UInt64, FbDriver.GetDisplayPitch())
-                    Dim lfbHeight As UInt64 = CType(UInt64, FbDriver.GetDisplayHeight())
+                    Dim lfbPitch As UInt64 = UInt64(FbDriver.GetDisplayPitch())
+                    Dim lfbHeight As UInt64 = UInt64(FbDriver.GetDisplayHeight())
                     Dim lfbSize As UInt64 = lfbPitch * lfbHeight
                     If lfbPhys <> 0 And lfbSize > 0 And ValidateUserBuffer(arg1, lfbSize) Then
                         Dim callerCr3 As UInt64 = SchedEngine.GetCurrentCr3()
@@ -430,6 +457,42 @@ Namespace Sys
                         For pIdx = 0 To pageCount - 1
                             VmmEngine.MapPage callerCr3, arg1 + (pIdx * 4096), lfbPhys + (pIdx * 4096), &H1F ' Present | Writable | User | Write-Through | Cache-Disable (Uncacheable MMIO)
                         Next pIdx
+                        Dispatch = 1
+                    Else
+                        Dispatch = 0
+                    End If
+
+                Case SYS_INITRD_GET_INFO
+                    ' arg1 = userPtr (Pointer To InitrdInfo, 16 bytes)
+                    If ValidateUserBuffer(arg1, SizeOf(InitrdInfo)) Then
+                        Dim initrdStartInfo As UInt64 = PMM.GetInitrdStart()
+                        Dim initrdEndInfo As UInt64 = PMM.GetInitrdEnd()
+                        Dim infoPtr As Pointer To InitrdInfo = Pointer To InitrdInfo(arg1)
+                        infoPtr.PhysAddr = initrdStartInfo
+                        If initrdEndInfo > initrdStartInfo Then
+                            infoPtr.SizeBytes = initrdEndInfo - initrdStartInfo
+                        Else
+                            infoPtr.SizeBytes = 0
+                        End If
+                        Dispatch = 1
+                    Else
+                        Dispatch = 0
+                    End If
+
+                Case SYS_INITRD_MAP
+                    ' arg1 = targetVaddr (UInt64)
+                    Dim initrdMapStart As UInt64 = PMM.GetInitrdStart()
+                    Dim initrdMapEnd As UInt64 = PMM.GetInitrdEnd()
+                    Dim initrdMapSize As UInt64 = 0
+                    If initrdMapEnd > initrdMapStart Then initrdMapSize = initrdMapEnd - initrdMapStart
+
+                    If initrdMapStart <> 0 And initrdMapSize > 0 And ValidateUserBuffer(arg1, initrdMapSize) Then
+                        Dim callerMapCr3 As UInt64 = SchedEngine.GetCurrentCr3()
+                        Dim pageMapCount As UInt64 = (initrdMapSize + 4095) / 4096
+                        Dim pmIdx As UInt64
+                        For pmIdx = 0 To pageMapCount - 1
+                            VmmEngine.MapPage callerMapCr3, arg1 + (pmIdx * 4096), initrdMapStart + (pmIdx * 4096), &H05 ' Present | User (Read-Only)
+                        Next pmIdx
                         Dispatch = 1
                     Else
                         Dispatch = 0

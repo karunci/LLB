@@ -1,0 +1,9 @@
+{
+  "name": "ver",
+  "version": "1.0.0",
+  "type": "utility",
+  "entry": "ver.elf",
+  "priority": 3,
+  "description": "PROS System Version Information Utility"
+}
+

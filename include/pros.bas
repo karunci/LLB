@@ -7,6 +7,8 @@
 '          - Declare for libraries
 '          - Alias for long/mangled names
 
+Import "Version.bas"
+
 Module ProsApi
 
     ' =========================================================================
@@ -286,15 +288,48 @@ Module ProsApi
     Public Declare Sub ProcessYield Lib "libpros" Alias "Pros_Sys_Process_Yield" ()
     Public Declare Sub ProcessSleep Lib "libpros" Alias "Pros_Sys_Process_Sleep" (ByVal ms As UInt64)
     Public Declare Function GetPid Lib "libpros" Alias "Pros_Sys_Process_GetPid" () As ProcessId
+    Public Declare Function GetKey Lib "libpros" Alias "Pros_Sys_Process_GetKey" () As Byte
     Public Declare Sub TerminateProcess Lib "libpros" Alias "Pros_Sys_Process_ExitProcess" (ByVal exitCode As UInt64)
     Public Declare Function GetCoreCount Lib "libpros" Alias "Pros_Sys_Process_GetCoreCount" () As UInt64
     Public Declare Function GetUptime Lib "libpros" Alias "Pros_Sys_Process_GetUptime" () As UInt64
     Public Declare Function AllocatePages Lib "libpros" Alias "Pros_Sys_Process_AllocatePages" (ByVal pageCount As UInt64, ByVal targetVaddr As VirtualAddress) As Pointer To UInt32
+    Public Declare Function InitrdGetInfo Lib "libpros" Alias "Pros_Sys_Process_InitrdGetInfo" (ByVal outInfo As Pointer To InitrdInfo) As Boolean
+    Public Declare Function InitrdMap Lib "libpros" Alias "Pros_Sys_Process_InitrdMap" (ByVal targetVaddr As UInt64) As Boolean
 
-    ' Console I/O
+    <Packed>
+    Public Structure InitrdInfo
+        Public PhysAddr  As UInt64
+        Public SizeBytes As UInt64
+    End Structure
+
+    Public Const SYS_INITRD_GET_INFO As UInt64 = 80
+    Public Const SYS_INITRD_MAP      As UInt64 = 81
+
+    Public Const SYS_GET_KEY   As UInt64 = 20
+
+    ' Standard POSIX-Style Stream Descriptors
+    Public Const STDIN_FILENO  As UInt64 = 0
+    Public Const STDOUT_FILENO As UInt64 = 1
+    Public Const STDERR_FILENO As UInt64 = 2
+
+    ' TTY Synapse IPC Protocol Message Types
+    Public Const MSG_TTY_WRITE     As UInt32 = &H0501
+    Public Const MSG_TTY_KEY_INPUT As UInt32 = &H0502
+
+    ' Console & Standard Stream I/O
     Public Declare Sub ConsoleWrite Lib "libpros" Alias "Pros_IO_Console_Write" (ByVal str As String)
     Public Declare Sub ConsoleWriteLine Lib "libpros" Alias "Pros_IO_Console_WriteLine" (ByVal str As String)
     Public Declare Sub ConsolePrintWithUInt Lib "libpros" Alias "Pros_IO_Console_PrintWithUInt" (ByVal prefix As String, ByVal val As UInt64, ByVal suffix As String)
+    Public Declare Function ConsolePrintF Lib "libpros" Alias "Pros_IO_Console_PrintF" (ByVal fmt As String, ParamArray args() As Pointer To Int64) As UInt32
+    Public Declare Function ConsoleWriteBytes Lib "libpros" Alias "Pros_IO_Console_WriteBytes" (ByVal buf As Pointer To Byte, ByVal count As UInt64) As UInt64
+    Public Declare Sub ConsoleSetTtyChannel Lib "libpros" Alias "Pros_IO_Console_SetTtyChannel" (ByVal channelId As UInt64)
+    Public Declare Function ConsoleGetTtyChannel Lib "libpros" Alias "Pros_IO_Console_GetTtyChannel" () As UInt64
+
+    ' Standard FileSystem Library
+    Public Declare Function FileExists Lib "libpros" Alias "Pros_IO_FileSystem_FileExists" (ByVal path As String) As Boolean
+    Public Declare Function DirectoryExists Lib "libpros" Alias "Pros_IO_FileSystem_DirectoryExists" (ByVal path As String) As Boolean
+    Public Declare Function ReadAllText Lib "libpros" Alias "Pros_IO_FileSystem_ReadAllText" (ByVal path As String, ByVal outBuf As Pointer To Byte, ByVal maxLen As UInt32) As UInt32
+    Public Declare Function DirectoryList Lib "libpros" Alias "Pros_IO_FileSystem_DirectoryList" (ByVal dirPath As String, ByVal outBuf As Pointer To Byte, ByVal maxLen As UInt32) As UInt32
 
     ' Neural Nodes & Synapses
     Public Declare Function NodeRegister Lib "libpros" Alias "Pros_Nodes_NodeRegistry_Register" (ByVal kind As UInt32, ByVal name As String, ByVal caps As UInt32) As NodeId
@@ -371,14 +406,17 @@ Module ProsApi
     Public Declare Sub AppendUInt Lib "libpros" Alias "Pros_String_StringUtil_AppendUInt" (ByVal val As UInt64, ByVal buf As Pointer To Byte, ByRef outIdx As UInt32)
     Public Declare Sub AppendHex Lib "libpros" Alias "Pros_String_StringUtil_AppendHex" (ByVal val As UInt64, ByVal buf As Pointer To Byte, ByRef outIdx As UInt32)
     Public Declare Function Trim Lib "libpros" Alias "Pros_String_StringUtil_Trim" (ByVal src As String, ByVal outBuf As Pointer To Byte) As UInt64
+    Public Declare Function StrStartsWith Lib "libpros" Alias "Pros_String_StringUtil_StrStartsWith" (ByVal str As String, ByVal prefix As String) As Boolean
+    Public Declare Function StrCopy Lib "libpros" Alias "Pros_String_StringUtil_StrCopy" (ByVal dest As Pointer To Byte, ByVal maxLen As UInt32, ByVal src As String) As UInt32
+    Public Declare Function PathGetLeaf Lib "libpros" Alias "Pros_String_StringUtil_PathGetLeaf" (ByVal path As String, ByVal outBuf As Pointer To Byte, ByVal maxLen As UInt32) As UInt32
     Public Declare Function StrTrim Lib "libpros" Alias "Pros_String_StringUtil_Trim" (ByVal src As String, ByVal outBuf As Pointer To Byte) As UInt64
 
     ' Numeric & String Formatting
-    Public Declare Function SprintF Lib "libpros" Alias "Format_SprintF" (ByVal outBuf As Pointer To Byte, ByVal maxLen As UInt32, ByVal fmt As Pointer To Byte, ParamArray args() As Pointer To Int64) As UInt32
-    Public Declare Function ToHex Lib "libpros" Alias "Format_ToHex" (ByVal value As UInt64, ByVal outBuf As Pointer To Byte, ByVal prefix As Boolean) As UInt32
-    Public Declare Function ToUInt Lib "libpros" Alias "Format_ToUInt" (ByVal value As UInt64, ByVal outBuf As Pointer To Byte) As UInt32
-    Public Declare Function ToInt Lib "libpros" Alias "Format_ToInt" (ByVal value As Int64, ByVal outBuf As Pointer To Byte) As UInt32
-    Public Declare Function ToBinary Lib "libpros" Alias "Format_ToBinary" (ByVal value As UInt64, ByVal outBuf As Pointer To Byte, ByVal prefix As Boolean, ByVal minWidth As UInt32) As UInt32
+    Public Declare Function SprintF Lib "libpros" (ByVal outBuf As Pointer To Byte, ByVal maxLen As UInt32, ByVal fmt As Pointer To Byte, ParamArray args() As Pointer To Int64) As UInt32
+    Public Declare Function ToHex Lib "libpros" (ByVal value As UInt64, ByVal outBuf As Pointer To Byte, ByVal prefix As Boolean) As UInt32
+    Public Declare Function ToUInt Lib "libpros" (ByVal value As UInt64, ByVal outBuf As Pointer To Byte) As UInt32
+    Public Declare Function ToInt Lib "libpros" (ByVal value As Int64, ByVal outBuf As Pointer To Byte) As UInt32
+    Public Declare Function ToBinary Lib "libpros" (ByVal value As UInt64, ByVal outBuf As Pointer To Byte, ByVal prefix As Boolean, ByVal minWidth As UInt32) As UInt32
 
     ' Memory Operations
     Public Declare Sub Copy Lib "libpros" Alias "Pros_Memory_MemUtil_Copy" (ByVal dest As Pointer To Byte, ByVal src As Pointer To Byte, ByVal count As UInt64)

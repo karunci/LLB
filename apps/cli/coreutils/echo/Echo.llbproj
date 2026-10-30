@@ -1,0 +1,30 @@
+' Project Name: PROS CoreUtils - echo
+' Filename: apps/cli/coreutils/echo/Echo.llbproj
+' Summary: Standalone Ring 3 echo arguments utility.
+
+[Project]
+Name    = "echo"
+Type    = "Executable"
+Version = "1.0.0"
+
+[Target]
+Arch = "x86_64-unknown-none-elf"
+
+[Output]
+OutDir  = "build"
+OutFile = "echo.elf"
+
+[Entry]
+EntryPoint = "_start"
+
+[Linker]
+LinkerScript = "user_linker.ld"
+Libraries    = [
+    "../../../../lib/pros/build/libpros.a"
+]
+
+[Sources]
+Assembly = "../../../../lib/runtime/brt0.S"
+Assembly = "../../../../lib/runtime/mem.S"
+Module   = "EchoMain.bas"
+

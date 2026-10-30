@@ -27,6 +27,12 @@ cd "${PROJECT_ROOT}"
 ./build/llbc-stage0 services/plexus_mgr/PlexusMgr.llbproj
 ./build/llbc-stage0 services/wm/WmService.llbproj
 ./build/llbc-stage0 services/vfs_srv/VfsService.llbproj
+./build/llbc-stage0 services/ramfs_srv/Ramfs.llbproj
+./build/llbc-stage0 apps/cli/coreutils/ls/Ls.llbproj
+./build/llbc-stage0 apps/cli/coreutils/cat/Cat.llbproj
+./build/llbc-stage0 apps/cli/coreutils/uptime/Uptime.llbproj
+./build/llbc-stage0 apps/cli/coreutils/ver/Ver.llbproj
+./build/llbc-stage0 apps/cli/coreutils/echo/Echo.llbproj
 ./build/llbc-stage0 apps/gui/sys_mon/SysMon.llbproj
 ./build/llbc-stage0 apps/gui/terminal/Terminal.llbproj
 ./build/llbc-stage0 apps/gui/node_viewer/NodeViewer.llbproj
@@ -40,38 +46,18 @@ python3 tools/bax_pack.py services/dev_mgr/build/dev_mgr.elf -o services/dev_mgr
 python3 tools/bax_pack.py services/plexus_mgr/build/plexus_mgr.elf -o services/plexus_mgr/build/plexus_mgr.bax --manifest services/plexus_mgr/manifest.json
 python3 tools/bax_pack.py services/wm/build/wm.elf -o services/wm/build/wm.bax --manifest services/wm/manifest.json
 python3 tools/bax_pack.py services/vfs_srv/build/vfs_srv.elf -o services/vfs_srv/build/vfs_srv.bax --manifest services/vfs_srv/manifest.json
+python3 tools/bax_pack.py services/ramfs_srv/build/ramfs_srv.elf -o services/ramfs_srv/build/ramfs_srv.bax --manifest services/ramfs_srv/manifest.json
+python3 tools/bax_pack.py apps/cli/coreutils/ls/build/ls.elf -o apps/cli/coreutils/ls/build/ls.bax --manifest apps/cli/coreutils/ls/manifest.json
+python3 tools/bax_pack.py apps/cli/coreutils/cat/build/cat.elf -o apps/cli/coreutils/cat/build/cat.bax --manifest apps/cli/coreutils/cat/manifest.json
+python3 tools/bax_pack.py apps/cli/coreutils/uptime/build/uptime.elf -o apps/cli/coreutils/uptime/build/uptime.bax --manifest apps/cli/coreutils/uptime/manifest.json
+python3 tools/bax_pack.py apps/cli/coreutils/ver/build/ver.elf -o apps/cli/coreutils/ver/build/ver.bax --manifest apps/cli/coreutils/ver/manifest.json
+python3 tools/bax_pack.py apps/cli/coreutils/echo/build/echo.elf -o apps/cli/coreutils/echo/build/echo.bax --manifest apps/cli/coreutils/echo/manifest.json
 python3 tools/bax_pack.py apps/gui/sys_mon/build/sys_mon.elf -o apps/gui/sys_mon/build/sys_mon.bax --manifest apps/gui/sys_mon/manifest.json
 python3 tools/bax_pack.py apps/gui/terminal/build/terminal.elf -o apps/gui/terminal/build/terminal.bax --manifest apps/gui/terminal/manifest.json
 python3 tools/bax_pack.py apps/gui/node_viewer/build/node_viewer.elf -o apps/gui/node_viewer/build/node_viewer.bax --manifest apps/gui/node_viewer/manifest.json
 python3 tools/bax_pack.py apps/gui/user_app/build/user_app.elf -o apps/gui/user_app/build/user_app.bax --manifest apps/gui/user_app/manifest.json
 
-STAGING_DIR="${PROJECT_ROOT}/build/initrd_staging"
-rm -rf "${STAGING_DIR}"
-mkdir -p "${STAGING_DIR}/System/Servers"
-mkdir -p "${STAGING_DIR}/System/Libraries"
-mkdir -p "${STAGING_DIR}/System/Configs"
-mkdir -p "${STAGING_DIR}/Apps/UserApp"
-mkdir -p "${STAGING_DIR}/Users/Default"
-
-cp "${PROJECT_ROOT}/services/genesis/build/genesis.bax" "${STAGING_DIR}/System/Servers/"
-cp "${PROJECT_ROOT}/services/disp_srv/build/disp_srv.bax" "${STAGING_DIR}/System/Servers/"
-cp "${PROJECT_ROOT}/services/input_srv/build/input_srv.bax" "${STAGING_DIR}/System/Servers/"
-cp "${PROJECT_ROOT}/services/compositor/build/compositor.bax" "${STAGING_DIR}/System/Servers/"
-cp "${PROJECT_ROOT}/services/dev_mgr/build/dev_mgr.bax" "${STAGING_DIR}/System/Servers/"
-cp "${PROJECT_ROOT}/services/plexus_mgr/build/plexus_mgr.bax" "${STAGING_DIR}/System/Servers/"
-cp "${PROJECT_ROOT}/services/wm/build/wm.bax" "${STAGING_DIR}/System/Servers/"
-cp "${PROJECT_ROOT}/services/vfs_srv/build/vfs_srv.bax" "${STAGING_DIR}/System/Servers/"
-cp "${PROJECT_ROOT}/apps/gui/sys_mon/build/sys_mon.bax" "${STAGING_DIR}/System/Servers/"
-cp "${PROJECT_ROOT}/apps/gui/terminal/build/terminal.bax" "${STAGING_DIR}/System/Servers/"
-cp "${PROJECT_ROOT}/apps/gui/node_viewer/build/node_viewer.bax" "${STAGING_DIR}/System/Servers/"
-cp "${PROJECT_ROOT}/apps/gui/user_app/build/user_app.bax" "${STAGING_DIR}/Apps/UserApp/"
-
-# Dual compatibility: provide root-level copies so flat lookups and hierarchical lookups both succeed
-cp "${STAGING_DIR}/System/Servers/"*.bax "${STAGING_DIR}/"
-cp "${STAGING_DIR}/Apps/UserApp/user_app.bax" "${STAGING_DIR}/"
-
-mkdir -p "${PROJECT_ROOT}/build"
-tar -cf "${INITRD_TAR}" -C "${STAGING_DIR}" .
+bash tools/pack_initrd.sh
 
 echo "[+] Building Dedicated Kernel ELFs (MB2 and MB1)..."
 ./build/llbc-stage0 kernel/Kernel_MB2.llbproj

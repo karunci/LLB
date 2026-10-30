@@ -3731,6 +3731,11 @@ std::string LlvmEmitter::instantiateGenericProcedure(const std::string& baseName
 
 
 void LlvmEmitter::emitStructure(const StructureNode& structNode) {
+    if (structNode.line > 0) {
+        m_currentLine = structNode.line;
+        m_currentCol = structNode.column > 0 ? structNode.column : 1;
+    }
+
     if (!structNode.genericParams.empty()) {
         // Register generic structure template for on-demand monomorphization
         m_genericStructTemplates[structNode.name] = &structNode;
@@ -3751,6 +3756,10 @@ void LlvmEmitter::emitStructure(const StructureNode& structNode) {
         uint64_t maxFieldSize = 0;
         unsigned idx = 0;
         for (const auto& field : structNode.fields) {
+            if (field.line > 0) {
+                m_currentLine = field.line;
+                m_currentCol = field.column > 0 ? field.column : 1;
+            }
             llvm::Type* fTy = getLlvmType(field.type);
             uint64_t sz = dl.getTypeAllocSize(fTy);
             if (sz > maxFieldSize) maxFieldSize = sz;
@@ -3796,6 +3805,10 @@ void LlvmEmitter::emitStructure(const StructureNode& structNode) {
         const auto& firstField = structNode.fields[i];
         if (firstField.bitfieldWidth == 0) {
             // Standard non-bitfield member
+            if (firstField.line > 0) {
+                m_currentLine = firstField.line;
+                m_currentCol = firstField.column > 0 ? firstField.column : 1;
+            }
             llvm::Type* fTy = getLlvmType(firstField.type);
             fieldTypes.push_back(fTy);
             fieldIndices[firstField.name] = containerIndex;
@@ -5990,6 +6003,11 @@ void LlvmEmitter::emitInputStatement(const InputStmtNode& inputNode) {
 llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
     if (!expr) return nullptr;
 
+    if (expr->line > 0) {
+        m_currentLine = expr->line;
+        m_currentCol = expr->column > 0 ? expr->column : 1;
+    }
+
     // Numbers
     if (auto num = dynamic_cast<NumberExprASTNode*>(expr)) {
         if (num->isFloat) {
@@ -7661,13 +7679,21 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
                     }
                 }
                 std::string targetType = !calleeType.name.empty() ? calleeType.name : "Type";
-                Diagnostic::report(m_sourceFilePath, call->line > 0 ? call->line : m_currentLine,
-                                   call->column > 0 ? call->column : m_currentCol,
+                size_t errLine = (call && call->line > 0) ? call->line : m_currentLine;
+                size_t errCol = (call && call->column > 0) ? call->column : m_currentCol;
+                Diagnostic::report(m_sourceFilePath, errLine, errCol,
                                    true, "Type '" + targetType + "' has no method or member named '" + call->funcName + "'.", m_sourceText);
             } else {
-                Diagnostic::report(m_sourceFilePath, call->line > 0 ? call->line : m_currentLine,
-                                   call->column > 0 ? call->column : m_currentCol,
-                                   true, "Undeclared function or subroutine '" + targetFuncName + "'.", m_sourceText);
+                size_t errLine = (call && call->line > 0) ? call->line : m_currentLine;
+                size_t errCol = (call && call->column > 0) ? call->column : m_currentCol;
+                if (targetFuncName == "=" || targetFuncName == "+" || targetFuncName == "-" ||
+                    targetFuncName == "*" || targetFuncName == "/" || targetFuncName == ",") {
+                    Diagnostic::report(m_sourceFilePath, errLine, errCol,
+                                       true, "Unexpected token '" + targetFuncName + "' in statement; expected assignment or procedure call.", m_sourceText);
+                } else {
+                    Diagnostic::report(m_sourceFilePath, errLine, errCol,
+                                       true, "Undeclared function or subroutine '" + targetFuncName + "'.", m_sourceText);
+                }
             }
             m_hadError = true;
             return nullptr;
@@ -7931,12 +7957,9 @@ llvm::Value* LlvmEmitter::emitExpression(ExprASTNode* expr) {
                 if (varargCount == 1) {
                     ExprASTNode* singleArg = call->args[remainingFixedParams].get();
                     if (auto varNode = dynamic_cast<VariableExprASTNode*>(singleArg)) {
-                        auto itPA = m_procParamArray.find(varNode->name);
-                        if (itPA == m_procParamArray.end()) itPA = m_procParamArray.find(toLower(varNode->name));
-                        auto tIt = m_variableTypes.find(varNode->name);
-                        if (tIt == m_variableTypes.end()) tIt = m_variableTypes.find(toLower(varNode->name));
-                        if ((itPA != m_procParamArray.end() && itPA->second) ||
-                            (tIt != m_variableTypes.end() && tIt->second.pointerDepth > 0)) {
+                        bool isFwdPA = (m_paramArrayVars.find(varNode->name) != m_paramArrayVars.end()) ||
+                                       (m_paramArrayVars.find(toLower(varNode->name)) != m_paramArrayVars.end());
+                        if (isFwdPA) {
                             llvm::Value* fwdVal = emitExpression(singleArg);
                             if (fwdVal && fwdVal->getType()->isPointerTy()) {
                                 typedBuf = fwdVal;
@@ -8538,6 +8561,11 @@ void LlvmEmitter::registerExternalProcedure(const std::string& name, const TypeS
 }
 
 llvm::Function* LlvmEmitter::emitProcedure(const ProcedureNode& procNode, const std::string& className, const std::vector<std::unique_ptr<ASTNode>>* bodyStatements, bool isClassMethod) {
+    if (procNode.line > 0) {
+        m_currentLine = procNode.line;
+        m_currentCol = procNode.column > 0 ? procNode.column : 1;
+    }
+
     if (!procNode.genericParams.empty()) {
         m_genericProcTemplates[procNode.name] = &procNode;
 
@@ -8676,6 +8704,7 @@ llvm::Function* LlvmEmitter::emitProcedure(const ProcedureNode& procNode, const 
     m_referencedLabels.clear();
     m_catchStack.clear();
     m_byRefParams.clear();
+    m_paramArrayVars.clear();
 
     // DWARF DISubprogram for procedure
     llvm::DISubprogram* diSubprogram = nullptr;
@@ -8734,6 +8763,10 @@ llvm::Function* LlvmEmitter::emitProcedure(const ProcedureNode& procNode, const 
         if (paramNode.isByRef) {
             m_byRefParams.insert(paramNode.name);
             m_byRefParams.insert(toLower(paramNode.name));
+        }
+        if (paramNode.isParamArray) {
+            m_paramArrayVars.insert(paramNode.name);
+            m_paramArrayVars.insert(toLower(paramNode.name));
         }
     }
 
@@ -8872,6 +8905,10 @@ bool LlvmEmitter::emitModule(const ModuleNode& moduleNode) {
     // 2.5 Emit Module-level Constants (Const)
     for (const auto& member : moduleNode.members) {
         if (auto c = dynamic_cast<const ConstStmtNode*>(member.get())) {
+            if (c->line > 0) {
+                m_currentLine = c->line;
+                m_currentCol = c->column > 0 ? c->column : 1;
+            }
             std::string modName = moduleNode.name;
             std::string fullName = !modName.empty() ? (modName + "." + c->name) : c->name;
             std::string mangledName = !modName.empty() ? (modName + "_" + c->name) : c->name;
@@ -8955,7 +8992,14 @@ bool LlvmEmitter::emitModule(const ModuleNode& moduleNode) {
         m_classInstancing[toLower(moduleNode.name)] = moduleNode.instancing;
 
         // Interface Implementation Validation
-        for (const auto& ifaceName : moduleNode.implementsInterfaces) {
+        for (size_t ifIdx = 0; ifIdx < moduleNode.implementsInterfaces.size(); ++ifIdx) {
+            const auto& ifaceName = moduleNode.implementsInterfaces[ifIdx];
+            size_t ifLine = (ifIdx < moduleNode.implementsList.size() && moduleNode.implementsList[ifIdx].line > 0)
+                ? moduleNode.implementsList[ifIdx].line
+                : (moduleNode.line > 0 ? moduleNode.line : 1);
+            size_t ifCol = (ifIdx < moduleNode.implementsList.size() && moduleNode.implementsList[ifIdx].column > 0)
+                ? moduleNode.implementsList[ifIdx].column
+                : (moduleNode.column > 0 ? moduleNode.column : 1);
             auto ifIt = m_interfaces.find(ifaceName);
             if (ifIt == m_interfaces.end()) ifIt = m_interfaces.find(toLower(ifaceName));
             if (ifIt == m_interfaces.end() && !moduleNode.name.empty()) {
@@ -8977,7 +9021,7 @@ bool LlvmEmitter::emitModule(const ModuleNode& moduleNode) {
                 }
             }
             if (ifIt == m_interfaces.end()) {
-                Diagnostic::report(m_sourceFilePath, 1, 1, true,
+                Diagnostic::report(m_sourceFilePath, ifLine, ifCol, true,
                                    "Cannot find interface '" + ifaceName + "' implemented by class '" + moduleNode.name + "'.", m_sourceText);
                 m_hadError = true;
             } else {
@@ -8994,7 +9038,9 @@ bool LlvmEmitter::emitModule(const ModuleNode& moduleNode) {
                         }
                     }
                     if (!foundMethod) {
-                        Diagnostic::report(m_sourceFilePath, 1, 1, true,
+                        size_t clsLine = moduleNode.line > 0 ? moduleNode.line : 1;
+                        size_t clsCol = moduleNode.column > 0 ? moduleNode.column : 1;
+                        Diagnostic::report(m_sourceFilePath, clsLine, clsCol, true,
                                            "Class '" + moduleNode.name + "' does not implement required interface method '" + requiredMethod.name + "' from interface '" + targetIface->name + "'.", m_sourceText);
                         m_hadError = true;
                     }
@@ -9006,6 +9052,10 @@ bool LlvmEmitter::emitModule(const ModuleNode& moduleNode) {
         unsigned fieldIndex = 0;
         for (const auto& member : moduleNode.members) {
             if (auto dim = dynamic_cast<const DimStmtNode*>(member.get())) {
+                if (dim->line > 0) {
+                    m_currentLine = dim->line;
+                    m_currentCol = dim->column > 0 ? dim->column : 1;
+                }
                 llvm::Type* fTy = getLlvmType(dim->type);
                 memberTypes.push_back(fTy);
                 m_structFieldIndices[moduleNode.name][toLower(dim->varName)] = fieldIndex;
@@ -9086,7 +9136,11 @@ bool LlvmEmitter::emitModule(const ModuleNode& moduleNode) {
     if (!moduleNode.isClass) {
         for (const auto& member : moduleNode.members) {
             if (auto dim = dynamic_cast<const DimStmtNode*>(member.get())) {
-            llvm::Type* varType = getLlvmType(dim->type);
+                if (dim->line > 0) {
+                    m_currentLine = dim->line;
+                    m_currentCol = dim->column > 0 ? dim->column : 1;
+                }
+                llvm::Type* varType = getLlvmType(dim->type);
             llvm::Constant* initVal = nullptr;
             if (dim->initValue) {
                 initVal = emitConstantValue(dim->initValue.get(), varType);

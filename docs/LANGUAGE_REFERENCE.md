@@ -248,16 +248,23 @@ To prevent the historical ambiguity between 16-bit real-mode (VB6) and 32/64-bit
 ### Hardware Pointer Types
 - **`Pointer To T`**: Strongly typed raw memory pointer (`T*` in C).
   ```vb
-  Dim fb As Pointer To UInt32 = CPtr(Pointer To UInt32, &HE0000000)
+  Dim fb As Pointer To UInt32 = Pointer To UInt32(&HE0000000)
   fb(0) = &H00FF0000 ' Write red pixel directly
   ```
 - **`Volatile Pointer To T`**: Prevents LLVM optimization passes from stripping reads/writes for MMIO hardware registers (e.g. APIC, UART, VGA):
   ```vb
-  Dim lapicReg As Volatile Pointer To UInt32 = CPtr(Volatile Pointer To UInt32, &HFEE00020)
+  Dim lapicReg As Volatile Pointer To UInt32 = Volatile Pointer To UInt32(&HFEE00020)
   Dim coreId As UInt32 = lapicReg(0)
   ```
 - **`Pointer`**: Untyped raw memory pointer (`void*` in C). Used for opaque buffers and dynamic memory allocators.
-- **`CPtr(Type, Expr)`**: Direct address casting operator. Converts integers to pointers or casts between distinct pointer types.
+- **Explicit Pointer Constructors**: Direct address casting via `Pointer To <Type>(expr)` or `Volatile Pointer To <Type>(expr)`. Converts integers to pointers or casts between distinct pointer types without FreeBASIC/C-legacy macros.
+- **Prefix Cast & Dereference Shorthand**: Shorthand syntax `*Type(expr)` allows concise pointer casting and immediate dereferencing (e.g., `*Byte(addr)` or `*UInt32(addr)`).
+- **Concise Type Casting**: Shorthand constructor functions (`UInt64(expr)`, `Int32(expr)`, `Byte(expr)`, `UInt32(expr)`) provide clean, zero-overhead scalar conversions.
+- **Semantic Type Aliases**: `TypeAlias Name = Type` defines clean semantic pointer names:
+  ```vb
+  TypeAlias PagePtr = Pointer To Byte
+  Dim page As PagePtr = PagePtr(physAddr)
+  ```
 
 ### User-Defined Structures (`Structure` / `Type`)
 Structures define custom layout data types. Members are accessed via dot notation:
@@ -357,7 +364,7 @@ End Structure
 Dim pt As Point = { 1024, 768 }
 ```
 - **Static `.rodata` Lowering:** When used with `Const` or global/module variables, aggregate initializers are emitted as zero-overhead compile-time constant tables (`ConstantArray` / `ConstantStruct`).
-- **Array Peeling & Pointer Decay:** To extract the pointer to an array constant in `.rodata`, use `CPtr(Pointer To T, AddressOf ArrayName)`.
+- **Array Peeling & Pointer Decay:** To extract the pointer to an array constant in `.rodata`, use `Pointer To T(AddressOf ArrayName)`.
 
 ---
 
@@ -423,7 +430,7 @@ End Sub
 ```
 
 ### The `Unsafe` Modifier
-Procedures that execute raw pointer casting (`CPtr`), dereference raw pointers (`Pointer To T`), or execute inline assembly (`Asm`) must be decorated with `Unsafe`. Attempting low-level operations in a safe procedure triggers a compile-time rejection:
+Procedures that execute raw pointer casting (`Pointer To <Type>(expr)`, `*Type(expr)`), dereference raw pointers (`Pointer To T`), or execute inline assembly (`Asm`) must be decorated with `Unsafe`. Attempting low-level operations in a safe procedure triggers a compile-time rejection:
 ```vb
 Public Unsafe Sub WritePort(ByVal port As UInt16, ByVal val As Byte)
     Asm
@@ -657,17 +664,36 @@ End Using
 
 ## 9. Low-Level Memory & Pointers
 
-### Pointer Declarations & Dereferencing
+### Pointer Declarations & Indexing
+Pointers in LLB are strongly typed, bounds-free hardware memory references:
 ```vb
 ' Pointer to typed data
 Dim ptr As Pointer To Int32
 ptr = AddressOf myVariable
-ptr(0) = 500 ' Dereference offset 0
+ptr(0) = 500 ' Dereference offset 0 (identical to *ptr in C)
+ptr(1) = 600 ' Dereference element offset 1 (scaled by SizeOf(Int32))
 
-' Memory-Mapped I/O volatile pointer
-Dim vga As Volatile Pointer To UInt16
-vga = CPtr(Volatile Pointer To UInt16, &HB8000)
+' Pointer arithmetic scales automatically by element size:
+Dim nextPtr As Pointer To Int32 = ptr + 1 ' Advances by 4 bytes!
+```
+
+### Pure LLB Pointer Constructors & Prefix Casts
+LLB eliminates legacy C-style casts (`CPtr`, `CType`) in favor of strongly-typed constructor and prefix forms:
+```vb
+' Explicit Pointer Constructor Cast
+Dim fb As Pointer To UInt32 = Pointer To UInt32(&HE0000000)
+fb(0) = &H00FF8800
+
+' Volatile Pointer for Memory-Mapped I/O (prevents LLVM optimization stripping)
+Dim vga As Volatile Pointer To UInt16 = Volatile Pointer To UInt16(&HB8000)
 vga(0) = &H0F41 ' Write 'A' White on Black
+
+' Prefix Dereference / Cast Shorthand (*Type)
+Dim val As UInt32 = *UInt32(rawAddress)
+*Byte(rawAddress) = 255
+
+' Pointer-to-Integer Conversion
+Dim physAddr As UInt64 = UInt64(ptr)
 ```
 
 ### Dynamic Array Resizing & Memory Zeroing
@@ -907,7 +933,7 @@ Low-Level Basic occupies a unique position in modern systems programming. While 
 ### Design Principles: The LLB Triangle
 
 1. **Zero Runtime Taxation:** No garbage collector, no hidden runtime thread pools, no mandatory dynamic heap allocation. LLB code compiles directly to native instructions with zero-overhead abstractions.
-2. **Explicit Memory Intent:** Safe operations (array lookups, object method calls, scalar arithmetic) are fully checked. Operations involving raw memory casting (`CPtr`), direct address dereferencing, or inline assembly require explicit `Unsafe` qualification.
+2. **Explicit Memory Intent:** Safe operations (array lookups, object method calls, scalar arithmetic) are fully checked. Operations involving raw memory casting (`Pointer To <Type>(expr)`, `*Type(expr)`), direct address dereferencing, or inline assembly require explicit `Unsafe` qualification.
 3. **Approachable Syntactic Clarity:** By retaining `Module`, `Class`, `Sub`, `Function`, `Select Case`, `With`, and `Print`, code bases remain effortlessly readable without line noise, bracket matching, or convoluted macro definitions.
 
 ---
@@ -939,7 +965,7 @@ Low-Level Basic pairs ahead-of-time LLVM code generation with comprehensive stat
 4. **Mandatory Function Return Value:**
    - Non-void `Function` definitions must assign to their function name (`Func = value`) along all execution paths before exiting.
 5. **Strict `Unsafe` Enforcement:**
-   - Any procedure using `CPtr`, raw pointer dereferencing (`ptr(i)`), or inline assembly (`Asm`) must be declared with `Unsafe`. Safe procedures attempting unsafe operations are rejected at compile time.
+   - Any procedure using raw pointer casting (`Pointer To <Type>(expr)`, `*Type(expr)`), raw pointer dereferencing (`ptr(i)`), or inline assembly (`Asm`) must be declared with `Unsafe`. Safe procedures attempting unsafe operations are rejected at compile time.
 6. **Class Instancing Invariants:**
    - `<Instancing(SingleUse)>` classes can only be instantiated once per scope.
    - Objects must be initialized via `.Initialize(...)` before members or methods can be accessed.
@@ -1127,7 +1153,36 @@ Low-Level Basic provides standard runtime libraries tailored for each environmen
 - **`Std.Strings`**: Null-terminated ASCII string operations (`Length`, `Compare`, `CompareN`, `CompareI`, `Copy`, `CopyN`, `Concat`, `SubString`, `Find`).
 - **`Std.Memory`**: Freestanding memory primitives (`Fill`, `SetBytes`, `Copy`, `CopyFast`, `Move`, `Compare`, `Search`).
 - **`Conv`**: Numeric string parsing (`ParseUInt`, `ParseInt`, `ParseHex`).
-- **`Format`**: Number formatting (`ToHex`, `ToUInt`, `ToInt`) and full variadic formatting (`SprintF` supporting `%s`, `%u`, `%d`/`%i`, `%x`/`%X`, `%c`, `%%`).
+- **`Format`**: Number formatting (`ToHex`, `ToHexEx`, `ToUInt`, `ToUIntEx`, `ToInt`, `ToIntEx`, `ToBinary`) and zero-allocation variadic formatting (`SprintF`).
+
+#### `SprintF` Zero-Allocation Formatting Engine
+`SprintF` formats data into a caller-supplied byte buffer without heap allocations (`malloc`), making it suitable for bare-metal kernels and real-time userland compositors:
+```vb
+Public Declare Function SprintF Lib "libpros" ( _
+    ByVal outBuf As Pointer To Byte, _
+    ByVal maxLen As UInt32, _
+    ByVal fmt As Pointer To Byte, _
+    ParamArray args() As Pointer To Int64 _
+) As UInt32
+```
+
+Supported format specifiers and modifiers:
+| Specifier | Description | Example Input | Output |
+| :--- | :--- | :--- | :--- |
+| `%d`, `%i` | Signed decimal integer | `-42` | `-42` |
+| `%u` | Unsigned decimal integer | `1024` | `1024` |
+| `%02d`, `%04u` | Zero-padded integer with minimum field width | `7` | `07`, `0007` |
+| `%x` | Lowercase hexadecimal | `42` | `2a` |
+| `%X` | Uppercase hexadecimal | `42` | `2A` |
+| `%08x`, `%08X` | Zero-padded 32-bit hexadecimal | `255` | `000000ff`, `000000FF` |
+| `%p` | 64-bit hardware memory pointer with `0x` prefix | `&H40000000` | `0x0000000040000000` |
+| `%b` | Raw binary representation | `9` | `1001` |
+| `%s` | Null-terminated string literal or byte buffer | `"PROS"` | `PROS` |
+| `%-10s` | Left-aligned string padded with spaces to minimum width | `"APP"` | `APP       ` |
+| `%c` | Single ASCII character | `65` | `A` |
+| `%%` | Escaped literal percent sign | — | `%` |
+| `%lx`, `%lu`, `%ld` | 64-bit integer length modifier | `&H100000000` | `100000000` |
+
 - **`TextWriter` / `ICharSink`**: Stream abstraction for outputting text across devices (`Write`, `WriteLine`, `WriteHex`, `WriteInt`, `WriteUInt`, and `PrintF` variadic formatter).
 
 ## 28. Intermediate Build Artifact Management
@@ -1246,7 +1301,7 @@ End Sub
 ' Variadic Formatter with ParamArray
 Public Unsafe Sub PrintF(ByVal fmt As Pointer To Byte, ParamArray args() As Pointer To Int64)
     Dim outBuf(256) As Byte
-    Dim outPtr As Pointer To Byte = CPtr(Pointer To Byte, outBuf)
+    Dim outPtr As Pointer To Byte = Pointer To Byte(outBuf)
     Format.SprintF outPtr, 256, fmt, args
     Me.WriteString outPtr
 End Sub
@@ -1283,7 +1338,7 @@ Public Unsafe Sub TimerInterruptHandler(ByVal frame As Pointer To InterruptFrame
 End Sub
 
 ' Memory-Mapped I/O (MMIO) with Volatile Pointers
-Dim vgaBuffer As Volatile Pointer To UInt16 = CPtr(Volatile Pointer To UInt16, &HB8000)
+Dim vgaBuffer As Volatile Pointer To UInt16 = Volatile Pointer To UInt16(&HB8000)
 vgaBuffer(0) = &H0F41 ' White-on-black character 'A'
 
 ' Compile-time Structure Layout Verification
@@ -1310,7 +1365,7 @@ A comprehensive capability audit assessing Low-Level Basic (LLB) against contemp
 | Subsystem / Feature Area | Low-Level Basic (Current) | C23 Standard | Zig / Modern Rust | Architectural Role & OS Impact |
 | :--- | :---: | :---: | :---: | :--- |
 | **Aggregate Initializers (`{ ... }`)** | **✅ Supported** | ✅ Supported | ✅ Supported | Native `{ expr1, expr2, ... }` for arrays, slices, and structs with `.rodata` static tables. |
-| **Direct Hardware MMIO & Pointers** | **✅ Supported** | ✅ Supported | ✅ Supported | `Volatile Pointer To T`, `CPtr`, element-scaled pointer arithmetic. |
+| **Direct Hardware MMIO & Pointers** | **✅ Supported** | ✅ Supported | ✅ Supported | `Volatile Pointer To T`, `Pointer To <Type>(expr)`, element-scaled pointer arithmetic. |
 | **Inline Assembly with Constraints** | **✅ Supported** | ✅ Supported | ✅ Supported | Inline `Asm "..." : outputs : inputs : clobbers` with early-clobber `"=&r"` operands. |
 | **Packed Layouts & Alignment** | **✅ Supported** | ✅ Supported | ✅ Supported | `<Packed>`, `<Align(N)>`, `#Assert SizeOf(...)` for IDT/GDT/TSS hardware descriptors. |
 | **Object Models & Interfaces** | **✅ Supported** | ❌ Struct of Fn Ptrs | Traits / Protocols | `Interface`, `Implements`, `Class` `<Instancing(Global/SingleUse/MultiUse)>`. |

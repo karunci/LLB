@@ -649,6 +649,8 @@ UseDirective Parser::parseUseStatement() {
 
 std::unique_ptr<DimStmtNode> Parser::parseDimStatement() {
     auto dimNode = std::make_unique<DimStmtNode>();
+    dimNode->line = m_currentToken.line;
+    dimNode->column = m_currentToken.column;
     
     // Identifier variable name
     std::string name = m_currentToken.text;
@@ -716,6 +718,8 @@ std::unique_ptr<DimStmtNode> Parser::parseDimStatement() {
 std::unique_ptr<ConstStmtNode> Parser::parseConstStatement(bool isPublic) {
     auto constNode = std::make_unique<ConstStmtNode>();
     constNode->isPublic = isPublic;
+    constNode->line = m_currentToken.line;
+    constNode->column = m_currentToken.column;
 
     std::string name = m_currentToken.text;
     expect(TokenType::Identifier, "Expected constant identifier");
@@ -862,9 +866,10 @@ std::unique_ptr<ForStmtNode> Parser::parseForStatement() {
     m_forDepth--;
 
     if (m_currentToken.type == TokenType::KwNext || checkKeyword("Next")) {
+        size_t nextLine = m_currentToken.line;
         consume();
-        // Optional loop variable after Next, e.g. "Next i"
-        if (m_currentToken.type == TokenType::Identifier) {
+        // Optional loop variable after Next, e.g. "Next i" (must be on the same line)
+        if (m_currentToken.line == nextLine && m_currentToken.type == TokenType::Identifier) {
             consume();
         }
     }
@@ -892,9 +897,10 @@ std::unique_ptr<ForEachStmtNode> Parser::parseForEachStatement() {
     m_forDepth--;
 
     if (m_currentToken.type == TokenType::KwNext || checkKeyword("Next")) {
+        size_t nextLine = m_currentToken.line;
         consume();
-        // Optional loop variable after Next, e.g. "Next item"
-        if (m_currentToken.type == TokenType::Identifier) {
+        // Optional loop variable after Next, e.g. "Next item" (must be on the same line)
+        if (m_currentToken.line == nextLine && m_currentToken.type == TokenType::Identifier) {
             consume();
         }
     }
@@ -1292,19 +1298,30 @@ std::unique_ptr<UsingStmtNode> Parser::parseUsingStatement() {
 }
 
 std::unique_ptr<ASTNode> Parser::parseAssignOrCallStatement() {
+    size_t startLine = m_currentToken.line;
+    size_t startCol = m_currentToken.column;
     auto targetExpr = parsePostfixExpr();
+    if (targetExpr) {
+        if (targetExpr->line == 0) targetExpr->line = startLine;
+        if (targetExpr->column == 0) targetExpr->column = startCol;
+    }
 
     // Check if target is a label definition: e.g. "MyLabel:"
     if (m_currentToken.type == TokenType::Colon) {
         if (auto var = dynamic_cast<VariableExprASTNode*>(targetExpr.get())) {
             consume(); // consume ':'
-            return std::make_unique<LabelStmtNode>(var->name);
+            auto lbl = std::make_unique<LabelStmtNode>(var->name);
+            lbl->line = startLine;
+            lbl->column = startCol;
+            return lbl;
         }
     }
 
     // Check if followed by '=' -> Assignment
     if (match(TokenType::Equal)) {
         auto assignNode = std::make_unique<AssignStmtNode>();
+        assignNode->line = startLine;
+        assignNode->column = startCol;
 
         // If target was parsed as CallExprASTNode (e.g. buffer(i) or matrix(r, c) or arr(i)(j)), convert to IndexExprASTNode
         std::function<std::unique_ptr<ExprASTNode>(std::unique_ptr<ExprASTNode>)> convertCallToIndex =
@@ -1318,11 +1335,19 @@ std::unique_ptr<ASTNode> Parser::parseAssignOrCallStatement() {
                         } else {
                             base = std::make_unique<VariableExprASTNode>(call->funcName);
                         }
-                        if (call->args.size() == 1) {
-                            return std::make_unique<IndexExprASTNode>(std::move(base), std::move(call->args[0]));
-                        } else {
-                            return std::make_unique<IndexExprASTNode>(std::move(base), std::move(call->args));
+                        if (base) {
+                            base->line = call->line;
+                            base->column = call->column;
                         }
+                        std::unique_ptr<IndexExprASTNode> idxNode;
+                        if (call->args.size() == 1) {
+                            idxNode = std::make_unique<IndexExprASTNode>(std::move(base), std::move(call->args[0]));
+                        } else {
+                            idxNode = std::make_unique<IndexExprASTNode>(std::move(base), std::move(call->args));
+                        }
+                        idxNode->line = call->line;
+                        idxNode->column = call->column;
+                        return idxNode;
                     }
                 }
                 if (auto member = dynamic_cast<MemberAccessExprASTNode*>(node.get())) {
@@ -1342,19 +1367,27 @@ std::unique_ptr<ASTNode> Parser::parseAssignOrCallStatement() {
     // Case A: targetExpr is already a CallExprASTNode with parens: func(arg1, arg2)
     if (auto call = dynamic_cast<CallExprASTNode*>(targetExpr.get())) {
         std::unique_ptr<CallExprASTNode> callPtr(static_cast<CallExprASTNode*>(targetExpr.release()));
-        return std::make_unique<CallStmtNode>(std::move(callPtr));
+        auto callStmt = std::make_unique<CallStmtNode>(std::move(callPtr));
+        callStmt->line = startLine;
+        callStmt->column = startCol;
+        return callStmt;
     }
 
     // Case B: Unparenthesized call: SubName arg1, arg2
     auto callNode = std::make_unique<CallExprASTNode>();
-    callNode->line = targetExpr ? targetExpr->line : m_currentToken.line;
-    callNode->column = targetExpr ? targetExpr->column : m_currentToken.column;
+    callNode->line = (targetExpr && targetExpr->line > 0) ? targetExpr->line : startLine;
+    callNode->column = (targetExpr && targetExpr->column > 0) ? targetExpr->column : startCol;
     if (auto var = dynamic_cast<VariableExprASTNode*>(targetExpr.get())) {
+        if (var->name == "=" || var->name == "+" || var->name == "-" || var->name == "*" || var->name == "/" || var->name == ",") {
+            reportError("Unexpected token '" + var->name + "' at start of statement; expected assignment, variable, or procedure call");
+            throw std::runtime_error("Parse failure");
+        }
         callNode->funcName = var->name;
     } else if (auto member = dynamic_cast<MemberAccessExprASTNode*>(targetExpr.get())) {
         callNode->funcName = member->memberName;
         callNode->calleeExpr = std::move(member->base);
     } else {
+        reportError("Expected subroutine or procedure call statement");
         throw std::runtime_error("Syntax error: Expected subroutine or procedure call statement at line " + 
                                  std::to_string(callNode->line) + ", column " + std::to_string(callNode->column));
     }
@@ -1417,6 +1450,8 @@ std::unique_ptr<ASTNode> Parser::parseStatement() {
         UseDirective useDir = parseUseStatement();
         if (useDir.isNew) {
             auto dimNode = std::make_unique<DimStmtNode>();
+            dimNode->line = stmtLine;
+            dimNode->column = stmtCol;
             dimNode->varName = useDir.aliasName;
             std::string className = !useDir.containerPath.empty() 
                 ? (useDir.containerPath + "." + useDir.targetPath) 
@@ -1426,6 +1461,8 @@ std::unique_ptr<ASTNode> Parser::parseStatement() {
         } else {
             // For non-new Use statements in procedure bodies, create a UseStmtNode
             auto useNode = std::make_unique<UseStmtNode>();
+            useNode->line = stmtLine;
+            useNode->column = stmtCol;
             useNode->directive = std::move(useDir);
             result = std::move(useNode);
         }
@@ -1842,9 +1879,13 @@ std::unique_ptr<ExprASTNode> Parser::parseExpression() {
 std::unique_ptr<ExprASTNode> Parser::parseLogicalOr() {
     auto lhs = parseLogicalXor();
     while (!m_currentToken.hasLeadingNewline && (m_currentToken.type == TokenType::KwOr || checkKeyword("Or"))) {
+        size_t opLine = m_currentToken.line;
+        size_t opCol = m_currentToken.column;
         consume();
         auto rhs = parseLogicalXor();
-        lhs = std::make_unique<BinaryExprASTNode>("Or", std::move(lhs), std::move(rhs));
+        auto bin = std::make_unique<BinaryExprASTNode>("Or", std::move(lhs), std::move(rhs));
+        if (bin->line == 0) { bin->line = opLine; bin->column = opCol; }
+        lhs = std::move(bin);
     }
     return lhs;
 }
@@ -1852,9 +1893,13 @@ std::unique_ptr<ExprASTNode> Parser::parseLogicalOr() {
 std::unique_ptr<ExprASTNode> Parser::parseLogicalXor() {
     auto lhs = parseLogicalAnd();
     while (!m_currentToken.hasLeadingNewline && (m_currentToken.type == TokenType::KwXor || checkKeyword("Xor"))) {
+        size_t opLine = m_currentToken.line;
+        size_t opCol = m_currentToken.column;
         consume();
         auto rhs = parseLogicalAnd();
-        lhs = std::make_unique<BinaryExprASTNode>("Xor", std::move(lhs), std::move(rhs));
+        auto bin = std::make_unique<BinaryExprASTNode>("Xor", std::move(lhs), std::move(rhs));
+        if (bin->line == 0) { bin->line = opLine; bin->column = opCol; }
+        lhs = std::move(bin);
     }
     return lhs;
 }
@@ -1862,9 +1907,13 @@ std::unique_ptr<ExprASTNode> Parser::parseLogicalXor() {
 std::unique_ptr<ExprASTNode> Parser::parseLogicalAnd() {
     auto lhs = parseEquality();
     while (!m_currentToken.hasLeadingNewline && (m_currentToken.type == TokenType::KwAnd || checkKeyword("And"))) {
+        size_t opLine = m_currentToken.line;
+        size_t opCol = m_currentToken.column;
         consume();
         auto rhs = parseEquality();
-        lhs = std::make_unique<BinaryExprASTNode>("And", std::move(lhs), std::move(rhs));
+        auto bin = std::make_unique<BinaryExprASTNode>("And", std::move(lhs), std::move(rhs));
+        if (bin->line == 0) { bin->line = opLine; bin->column = opCol; }
+        lhs = std::move(bin);
     }
     return lhs;
 }
@@ -1874,10 +1923,16 @@ std::unique_ptr<ExprASTNode> Parser::parseEquality() {
     while (!m_currentToken.hasLeadingNewline) {
         if (m_currentToken.type == TokenType::Equal || m_currentToken.type == TokenType::NotEqual) {
             std::string op = m_currentToken.text;
+            size_t opLine = m_currentToken.line;
+            size_t opCol = m_currentToken.column;
             consume();
             auto rhs = parseRelational();
-            lhs = std::make_unique<BinaryExprASTNode>(op, std::move(lhs), std::move(rhs));
+            auto bin = std::make_unique<BinaryExprASTNode>(op, std::move(lhs), std::move(rhs));
+            if (bin->line == 0) { bin->line = opLine; bin->column = opCol; }
+            lhs = std::move(bin);
         } else if (m_currentToken.type == TokenType::KwIs || checkKeyword("Is")) {
+            size_t opLine = m_currentToken.line;
+            size_t opCol = m_currentToken.column;
             consume();
             bool isNot = false;
             if (m_currentToken.type == TokenType::KwNot || checkKeyword("Not")) {
@@ -1886,7 +1941,9 @@ std::unique_ptr<ExprASTNode> Parser::parseEquality() {
             }
             auto rhs = parseRelational();
             std::string op = isNot ? "<>" : "=";
-            lhs = std::make_unique<BinaryExprASTNode>(op, std::move(lhs), std::move(rhs));
+            auto bin = std::make_unique<BinaryExprASTNode>(op, std::move(lhs), std::move(rhs));
+            if (bin->line == 0) { bin->line = opLine; bin->column = opCol; }
+            lhs = std::move(bin);
         } else {
             break;
         }
@@ -1902,9 +1959,13 @@ std::unique_ptr<ExprASTNode> Parser::parseRelational() {
            m_currentToken.type == TokenType::GreaterEqual ||
            m_currentToken.type == TokenType::KwLike || checkKeyword("Like"))) {
         std::string op = m_currentToken.text;
+        size_t opLine = m_currentToken.line;
+        size_t opCol = m_currentToken.column;
         consume();
         auto rhs = parseShift();
-        lhs = std::make_unique<BinaryExprASTNode>(op, std::move(lhs), std::move(rhs));
+        auto bin = std::make_unique<BinaryExprASTNode>(op, std::move(lhs), std::move(rhs));
+        if (bin->line == 0) { bin->line = opLine; bin->column = opCol; }
+        lhs = std::move(bin);
     }
     return lhs;
 }
@@ -1914,9 +1975,13 @@ std::unique_ptr<ExprASTNode> Parser::parseShift() {
     while (!m_currentToken.hasLeadingNewline && (m_currentToken.type == TokenType::KwLShift || checkKeyword("LShift") ||
            m_currentToken.type == TokenType::KwRShift || checkKeyword("RShift"))) {
         std::string op = m_currentToken.text;
+        size_t opLine = m_currentToken.line;
+        size_t opCol = m_currentToken.column;
         consume();
         auto rhs = parseAdditiveExpr();
-        lhs = std::make_unique<BinaryExprASTNode>(op, std::move(lhs), std::move(rhs));
+        auto bin = std::make_unique<BinaryExprASTNode>(op, std::move(lhs), std::move(rhs));
+        if (bin->line == 0) { bin->line = opLine; bin->column = opCol; }
+        lhs = std::move(bin);
     }
     return lhs;
 }
@@ -1925,9 +1990,13 @@ std::unique_ptr<ExprASTNode> Parser::parseAdditiveExpr() {
     auto lhs = parseMultiplicative();
     while (!m_currentToken.hasLeadingNewline && (m_currentToken.type == TokenType::Plus || m_currentToken.type == TokenType::Minus || m_currentToken.type == TokenType::Ampersand)) {
         std::string op = m_currentToken.text;
+        size_t opLine = m_currentToken.line;
+        size_t opCol = m_currentToken.column;
         consume();
         auto rhs = parseMultiplicative();
-        lhs = std::make_unique<BinaryExprASTNode>(op, std::move(lhs), std::move(rhs));
+        auto bin = std::make_unique<BinaryExprASTNode>(op, std::move(lhs), std::move(rhs));
+        if (bin->line == 0) { bin->line = opLine; bin->column = opCol; }
+        lhs = std::move(bin);
     }
     return lhs;
 }
@@ -1938,35 +2007,56 @@ std::unique_ptr<ExprASTNode> Parser::parseMultiplicative() {
            m_currentToken.type == TokenType::Slash || 
            m_currentToken.type == TokenType::KwMod || checkKeyword("Mod"))) {
         std::string op = m_currentToken.text;
+        size_t opLine = m_currentToken.line;
+        size_t opCol = m_currentToken.column;
         consume();
         auto rhs = parseUnary();
-        lhs = std::make_unique<BinaryExprASTNode>(op, std::move(lhs), std::move(rhs));
+        auto bin = std::make_unique<BinaryExprASTNode>(op, std::move(lhs), std::move(rhs));
+        if (bin->line == 0) { bin->line = opLine; bin->column = opCol; }
+        lhs = std::move(bin);
     }
     return lhs;
 }
 
 std::unique_ptr<ExprASTNode> Parser::parseUnary() {
     if (m_currentToken.type == TokenType::KwNot || checkKeyword("Not")) {
+        size_t tokLine = m_currentToken.line;
+        size_t tokCol = m_currentToken.column;
         consume();
         auto expr = parseUnary();
-        return std::make_unique<UnaryExprASTNode>("Not", std::move(expr));
+        auto un = std::make_unique<UnaryExprASTNode>("Not", std::move(expr));
+        un->line = tokLine;
+        un->column = tokCol;
+        return un;
     }
     if (m_currentToken.type == TokenType::Minus) {
+        size_t tokLine = m_currentToken.line;
+        size_t tokCol = m_currentToken.column;
         consume();
         auto expr = parseUnary();
-        return std::make_unique<UnaryExprASTNode>("-", std::move(expr));
+        auto un = std::make_unique<UnaryExprASTNode>("-", std::move(expr));
+        un->line = tokLine;
+        un->column = tokCol;
+        return un;
     }
     if (m_currentToken.type == TokenType::Plus) {
         consume();
         return parseUnary();
     }
     if (m_currentToken.type == TokenType::At) {
+        size_t tokLine = m_currentToken.line;
+        size_t tokCol = m_currentToken.column;
         consume();
         auto expr = parseUnary();
+        std::unique_ptr<AddressOfExprASTNode> addr;
         if (auto var = dynamic_cast<VariableExprASTNode*>(expr.get())) {
-            return std::make_unique<AddressOfExprASTNode>(var->name);
+            addr = std::make_unique<AddressOfExprASTNode>(var->name);
+        } else {
+            addr = std::make_unique<AddressOfExprASTNode>(std::move(expr));
         }
-        return std::make_unique<AddressOfExprASTNode>(std::move(expr));
+        addr->line = tokLine;
+        addr->column = tokCol;
+        return addr;
     }
     if (m_currentToken.type == TokenType::Asterisk) {
         size_t starLine = m_currentToken.line;
@@ -2113,20 +2203,31 @@ std::unique_ptr<ExprASTNode> Parser::parsePrimaryExpr() {
 
     // String Literal
     if (m_currentToken.type == TokenType::StringLiteral) {
+        size_t tokLine = m_currentToken.line;
+        size_t tokCol = m_currentToken.column;
         auto node = std::make_unique<StringExprASTNode>(m_currentToken.text);
+        node->line = tokLine;
+        node->column = tokCol;
         consume();
         return node;
     }
 
     // Implicit With Member Access: .Member
     if (m_withDepth > 0 && match(TokenType::Dot)) {
+        size_t tokLine = m_prevToken.line;
+        size_t tokCol = m_prevToken.column;
         std::string member = m_currentToken.text;
         expect(TokenType::Identifier, "Expected member name after '.'");
-        return std::make_unique<MemberAccessExprASTNode>(nullptr, member);
+        auto node = std::make_unique<MemberAccessExprASTNode>(nullptr, member);
+        node->line = tokLine;
+        node->column = tokCol;
+        return node;
     }
 
     // Number Literal
     if (m_currentToken.type == TokenType::NumberLiteral) {
+        size_t tokLine = m_currentToken.line;
+        size_t tokCol = m_currentToken.column;
         std::string text = m_currentToken.text;
         if (text.size() >= 2 && text[0] == '&' && (text[1] == 'H' || text[1] == 'h')) {
             int64_t val = 0;
@@ -2141,7 +2242,10 @@ std::unique_ptr<ExprASTNode> Parser::parsePrimaryExpr() {
                 val = 0;
             }
             consume();
-            return std::make_unique<NumberExprASTNode>(val, hint);
+            auto node = std::make_unique<NumberExprASTNode>(val, hint);
+            node->line = tokLine;
+            node->column = tokCol;
+            return node;
         }
 
         if (text.find('.') != std::string::npos || text.find('e') != std::string::npos || text.find('E') != std::string::npos) {
@@ -2156,7 +2260,10 @@ std::unique_ptr<ExprASTNode> Parser::parsePrimaryExpr() {
                 hint = "single";
             }
             consume();
-            return std::make_unique<NumberExprASTNode>(val, hint);
+            auto node = std::make_unique<NumberExprASTNode>(val, hint);
+            node->line = tokLine;
+            node->column = tokCol;
+            return node;
         }
         int64_t val = 0;
         std::string hint = "";
@@ -2171,23 +2278,41 @@ std::unique_ptr<ExprASTNode> Parser::parsePrimaryExpr() {
             }
         }
         consume();
-        return std::make_unique<NumberExprASTNode>(val, hint);
+        auto node = std::make_unique<NumberExprASTNode>(val, hint);
+        node->line = tokLine;
+        node->column = tokCol;
+        return node;
     }
 
     // Boolean Literals
     if (m_currentToken.type == TokenType::KwTrue || checkKeyword("True")) {
+        size_t tokLine = m_currentToken.line;
+        size_t tokCol = m_currentToken.column;
         consume();
-        return std::make_unique<NumberExprASTNode>(static_cast<int64_t>(1), "Boolean");
+        auto node = std::make_unique<NumberExprASTNode>(static_cast<int64_t>(1), "Boolean");
+        node->line = tokLine;
+        node->column = tokCol;
+        return node;
     }
     if (m_currentToken.type == TokenType::KwFalse || checkKeyword("False")) {
+        size_t tokLine = m_currentToken.line;
+        size_t tokCol = m_currentToken.column;
         consume();
-        return std::make_unique<NumberExprASTNode>(static_cast<int64_t>(0), "Boolean");
+        auto node = std::make_unique<NumberExprASTNode>(static_cast<int64_t>(0), "Boolean");
+        node->line = tokLine;
+        node->column = tokCol;
+        return node;
     }
 
     // Nothing literal (null pointer / zero object reference)
     if (m_currentToken.type == TokenType::KwNothing || checkKeyword("Nothing")) {
+        size_t tokLine = m_currentToken.line;
+        size_t tokCol = m_currentToken.column;
         consume();
-        return std::make_unique<NumberExprASTNode>(static_cast<int64_t>(0), "Nothing");
+        auto node = std::make_unique<NumberExprASTNode>(static_cast<int64_t>(0), "Nothing");
+        node->line = tokLine;
+        node->column = tokCol;
+        return node;
     }
 
     // Explicit pointer constructor cast: Pointer To <Type>(expr), Volatile Pointer To <Type>(expr), Pointer(expr)
@@ -2212,37 +2337,54 @@ std::unique_ptr<ExprASTNode> Parser::parsePrimaryExpr() {
 
     // Built-in CPtr(Type, Expr)
     if (m_currentToken.type == TokenType::KwCPtr || checkKeyword("CPtr")) {
+        size_t tokLine = m_currentToken.line;
+        size_t tokCol = m_currentToken.column;
         consume();
         expect(TokenType::LParen, "Expected '(' after CPtr");
         TypeSpec targetType = parseTypeSpec();
         expect(TokenType::Comma, "Expected ',' after type in CPtr");
         auto castExpr = parseExpression();
         expect(TokenType::RParen, "Expected ')' after CPtr expression");
-        return std::make_unique<CastExprASTNode>(CastExprASTNode::CastKind::CPtr, std::move(targetType), std::move(castExpr));
+        auto castNode = std::make_unique<CastExprASTNode>(CastExprASTNode::CastKind::CPtr, std::move(targetType), std::move(castExpr));
+        castNode->line = tokLine;
+        castNode->column = tokCol;
+        return castNode;
     }
 
     // Built-in CType(Type, Expr)
     if (m_currentToken.type == TokenType::KwCType || checkKeyword("CType")) {
+        size_t tokLine = m_currentToken.line;
+        size_t tokCol = m_currentToken.column;
         consume();
         expect(TokenType::LParen, "Expected '(' after CType");
         TypeSpec targetType = parseTypeSpec();
         expect(TokenType::Comma, "Expected ',' after type in CType");
         auto castExpr = parseExpression();
         expect(TokenType::RParen, "Expected ')' after CType expression");
-        return std::make_unique<CastExprASTNode>(CastExprASTNode::CastKind::CType, std::move(targetType), std::move(castExpr));
+        auto castNode = std::make_unique<CastExprASTNode>(CastExprASTNode::CastKind::CType, std::move(targetType), std::move(castExpr));
+        castNode->line = tokLine;
+        castNode->column = tokCol;
+        return castNode;
     }
 
     // SizeOf(TypeName)
     if (checkKeyword("SizeOf")) {
+        size_t tokLine = m_currentToken.line;
+        size_t tokCol = m_currentToken.column;
         consume();
         expect(TokenType::LParen, "Expected '(' after 'SizeOf'");
         TypeSpec t = parseTypeSpec();
         expect(TokenType::RParen, "Expected ')' after type in 'SizeOf'");
-        return std::make_unique<SizeOfExprASTNode>(std::move(t));
+        auto node = std::make_unique<SizeOfExprASTNode>(std::move(t));
+        node->line = tokLine;
+        node->column = tokCol;
+        return node;
     }
 
     // OffsetOf(TypeName, FieldName)
     if (checkKeyword("OffsetOf")) {
+        size_t tokLine = m_currentToken.line;
+        size_t tokCol = m_currentToken.column;
         consume();
         expect(TokenType::LParen, "Expected '(' after 'OffsetOf'");
         TypeSpec t = parseTypeSpec();
@@ -2250,23 +2392,37 @@ std::unique_ptr<ExprASTNode> Parser::parsePrimaryExpr() {
         std::string field = m_currentToken.text;
         expect(TokenType::Identifier, "Expected field name in 'OffsetOf'");
         expect(TokenType::RParen, "Expected ')' after field name in 'OffsetOf'");
-        return std::make_unique<OffsetOfExprASTNode>(std::move(t), field);
+        auto node = std::make_unique<OffsetOfExprASTNode>(std::move(t), field);
+        node->line = tokLine;
+        node->column = tokCol;
+        return node;
     }
 
     // AddressOf expr (variable, array element, or procedure identifier)
     if (m_currentToken.type == TokenType::KwAddressOf || checkKeyword("AddressOf")) {
+        size_t tokLine = m_currentToken.line;
+        size_t tokCol = m_currentToken.column;
         consume();
         auto expr = parseUnary();
+        std::unique_ptr<AddressOfExprASTNode> addr;
         if (auto var = dynamic_cast<VariableExprASTNode*>(expr.get())) {
-            return std::make_unique<AddressOfExprASTNode>(var->name);
+            addr = std::make_unique<AddressOfExprASTNode>(var->name);
+        } else {
+            addr = std::make_unique<AddressOfExprASTNode>(std::move(expr));
         }
-        return std::make_unique<AddressOfExprASTNode>(std::move(expr));
+        addr->line = tokLine;
+        addr->column = tokCol;
+        return addr;
     }
 
     // New ClassName[(args...)]
     if (m_currentToken.type == TokenType::KwNew || checkKeyword("New")) {
+        size_t tokLine = m_currentToken.line;
+        size_t tokCol = m_currentToken.column;
         consume();
         auto newNode = std::make_unique<NewExprASTNode>();
+        newNode->line = tokLine;
+        newNode->column = tokCol;
         newNode->className = m_currentToken.text;
         expect(TokenType::Identifier, "Expected class name after 'New'");
         newNode->typeSpec.name = newNode->className;
@@ -2285,6 +2441,8 @@ std::unique_ptr<ExprASTNode> Parser::parsePrimaryExpr() {
 
     // TypeOf expr Is [Not] TypeName
     if (m_currentToken.type == TokenType::KwTypeOf || checkKeyword("TypeOf")) {
+        size_t tokLine = m_currentToken.line;
+        size_t tokCol = m_currentToken.column;
         consume();
         auto exprNode = parsePostfixExpr();
         if (m_currentToken.type == TokenType::KwIs || checkKeyword("Is")) {
@@ -2298,7 +2456,10 @@ std::unique_ptr<ExprASTNode> Parser::parsePrimaryExpr() {
             isNot = true;
         }
         TypeSpec targetType = parseTypeSpec();
-        return std::make_unique<TypeOfExprASTNode>(std::move(exprNode), std::move(targetType), isNot);
+        auto typeOfNode = std::make_unique<TypeOfExprASTNode>(std::move(exprNode), std::move(targetType), isNot);
+        typeOfNode->line = tokLine;
+        typeOfNode->column = tokCol;
+        return typeOfNode;
     }
 
 
@@ -2312,8 +2473,12 @@ std::unique_ptr<ExprASTNode> Parser::parsePrimaryExpr() {
 
     // Lambda Expression: Function([params]) [As Type] => Expr
     if (m_currentToken.type == TokenType::KwFunction || checkKeyword("Function")) {
+        size_t tokLine = m_currentToken.line;
+        size_t tokCol = m_currentToken.column;
         consume();
         auto lambdaNode = std::make_unique<LambdaExprASTNode>();
+        lambdaNode->line = tokLine;
+        lambdaNode->column = tokCol;
         if (match(TokenType::LParen)) {
             if (!check(TokenType::RParen)) {
                 do {
@@ -2388,9 +2553,15 @@ std::unique_ptr<ExprASTNode> Parser::parsePrimaryExpr() {
     }
 
     // Fallback for unexpected token
+    size_t tokLine = m_currentToken.line > 0 ? m_currentToken.line : m_prevToken.line;
+    size_t tokCol = m_currentToken.column > 0 ? m_currentToken.column : m_prevToken.column;
     std::string unexp = m_currentToken.text;
+    reportError("Unexpected token in expression: '" + unexp + "'");
     consume();
-    return std::make_unique<VariableExprASTNode>(unexp);
+    auto varNode = std::make_unique<VariableExprASTNode>(unexp);
+    varNode->line = tokLine;
+    varNode->column = tokCol;
+    return varNode;
 }
 
 // --- Procedure & Module Parsing ---
@@ -2574,6 +2745,8 @@ std::unique_ptr<ProcedureNode> Parser::parseProcedure(bool isPublic, bool isInli
 
 std::unique_ptr<StructureNode> Parser::parseStructure(bool isPacked, int alignment) {
     auto structNode = std::make_unique<StructureNode>();
+    structNode->line = m_currentToken.line;
+    structNode->column = m_currentToken.column;
     structNode->isPacked = isPacked;
     structNode->alignment = alignment;
 
@@ -2620,6 +2793,8 @@ std::unique_ptr<StructureNode> Parser::parseStructure(bool isPacked, int alignme
         }
 
         StructureField field;
+        field.line = m_currentToken.line;
+        field.column = m_currentToken.column;
         field.isPublic = isFieldPublic;
         field.name = m_currentToken.text;
         expect(TokenType::Identifier, "Expected structure field name");
@@ -2698,6 +2873,8 @@ std::unique_ptr<StructureNode> Parser::parseStructure(bool isPacked, int alignme
 
 std::unique_ptr<StructureNode> Parser::parseUnion(bool isPacked, int alignment) {
     auto unionNode = std::make_unique<StructureNode>();
+    unionNode->line = m_currentToken.line;
+    unionNode->column = m_currentToken.column;
     unionNode->isUnion = true;
     unionNode->isPacked = isPacked;
     unionNode->alignment = alignment;
@@ -2731,6 +2908,8 @@ std::unique_ptr<StructureNode> Parser::parseUnion(bool isPacked, int alignment) 
         }
 
         StructureField field;
+        field.line = m_currentToken.line;
+        field.column = m_currentToken.column;
         field.isPublic = isFieldPublic;
         field.name = m_currentToken.text;
         expect(TokenType::Identifier, "Expected union field name");
@@ -2809,6 +2988,8 @@ std::unique_ptr<StructureNode> Parser::parseUnion(bool isPacked, int alignment) 
 
 std::unique_ptr<EnumNode> Parser::parseEnum(bool isPublic) {
     auto enumNode = std::make_unique<EnumNode>();
+    enumNode->line = m_currentToken.line;
+    enumNode->column = m_currentToken.column;
     enumNode->isPublic = isPublic;
 
     enumNode->name = m_currentToken.text;
@@ -3132,15 +3313,23 @@ std::unique_ptr<ModuleNode> Parser::parseModule() {
     }
 
     if (m_currentToken.type == TokenType::KwModule || checkKeyword("Module")) {
+        moduleNode->line = m_currentToken.line;
+        moduleNode->column = m_currentToken.column;
         consume();
         moduleNode->isClass = false;
     } else if (m_currentToken.type == TokenType::KwClass || checkKeyword("Class")) {
+        moduleNode->line = m_currentToken.line;
+        moduleNode->column = m_currentToken.column;
         consume();
         moduleNode->isClass = true;
     } else if (m_currentToken.type == TokenType::KwInterface || checkKeyword("Interface")) {
+        moduleNode->line = m_currentToken.line;
+        moduleNode->column = m_currentToken.column;
         consume();
         moduleNode->isInterface = true;
     } else if (m_currentToken.type == TokenType::KwNamespace || checkKeyword("Namespace")) {
+        moduleNode->line = m_currentToken.line;
+        moduleNode->column = m_currentToken.column;
         consume();
         moduleNode->isClass = false;
         moduleNode->isNamespace = true;
@@ -3308,6 +3497,8 @@ void Parser::parseContainerMembers(ModuleNode* container) {
 
         // Implements InterfaceName (inside Class)
         if (m_currentToken.type == TokenType::KwImplements || checkKeyword("Implements")) {
+            size_t impLine = m_currentToken.line;
+            size_t impCol = m_currentToken.column;
             consume();
             std::string ifaceName = m_currentToken.text;
             expect(TokenType::Identifier, "Expected interface identifier after 'Implements'");
@@ -3316,6 +3507,7 @@ void Parser::parseContainerMembers(ModuleNode* container) {
                 expect(TokenType::Identifier, "Expected identifier after '.' in interface name");
             }
             container->implementsInterfaces.push_back(ifaceName);
+            container->implementsList.push_back({ifaceName, impLine, impCol});
             continue;
         }
 
@@ -3463,6 +3655,8 @@ void Parser::parseContainerMembers(ModuleNode* container) {
         // Module / Class inside Namespace
         if (m_currentToken.type == TokenType::KwModule || checkKeyword("Module") ||
             m_currentToken.type == TokenType::KwClass || checkKeyword("Class")) {
+            size_t tokLine = m_currentToken.line;
+            size_t tokCol = m_currentToken.column;
             bool isInnerClass = (m_currentToken.type == TokenType::KwClass || checkKeyword("Class"));
             consume();
             std::string subName = m_currentToken.text;
@@ -3473,6 +3667,8 @@ void Parser::parseContainerMembers(ModuleNode* container) {
             }
 
             auto innerMod = std::make_shared<ModuleNode>();
+            innerMod->line = tokLine;
+            innerMod->column = tokCol;
             innerMod->name = container->name.empty() ? subName : (container->name + "." + subName);
             innerMod->sourceFilePath = container->sourceFilePath;
             innerMod->isClass = isInnerClass;
@@ -3495,6 +3691,8 @@ void Parser::parseContainerMembers(ModuleNode* container) {
 
             if (m_currentToken.type == TokenType::KwModule || checkKeyword("Module") ||
                 m_currentToken.type == TokenType::KwClass || checkKeyword("Class")) {
+                size_t tokLine = m_currentToken.line;
+                size_t tokCol = m_currentToken.column;
                 bool isInnerClass = (m_currentToken.type == TokenType::KwClass || checkKeyword("Class"));
                 consume();
                 std::string subName = m_currentToken.text;
@@ -3505,6 +3703,8 @@ void Parser::parseContainerMembers(ModuleNode* container) {
                 }
 
                 auto innerMod = std::make_shared<ModuleNode>();
+                innerMod->line = tokLine;
+                innerMod->column = tokCol;
                 innerMod->name = container->name.empty() ? subName : (container->name + "." + subName);
                 innerMod->sourceFilePath = container->sourceFilePath;
                 innerMod->isClass = isInnerClass;
@@ -3566,7 +3766,11 @@ void Parser::parseContainerMembers(ModuleNode* container) {
                 !checkKeyword("Property") && !checkKeyword("Declare") &&
                 !checkKeyword("Unsafe")) {
                 
+                size_t tokLine = m_currentToken.line;
+                size_t tokCol = m_currentToken.column;
                 auto dimNode = std::make_unique<DimStmtNode>();
+                dimNode->line = tokLine;
+                dimNode->column = tokCol;
                 dimNode->isPublic = isPub;
                 dimNode->varName = m_currentToken.text;
                 consume();

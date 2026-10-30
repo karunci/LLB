@@ -74,6 +74,7 @@ public:
 
     llvm::Module* getModule() const { return m_module.get(); }
     void printIR() const;
+    bool hadError() const { return m_hadError; }
     void registerTypeAlias(const std::string& name, const TypeSpec& targetType);
 
 private:
@@ -180,6 +181,7 @@ private:
     std::vector<llvm::BasicBlock*> m_catchStack;
     std::vector<llvm::AllocaInst*> m_tryErrAllocaStack;
     std::unordered_set<std::string> m_byRefParams;
+    std::unordered_set<std::string> m_paramArrayVars;
     std::unordered_set<std::string> m_privateFields;
     std::string m_currentScopeClass;
     std::string m_currentProcName;

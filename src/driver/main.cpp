@@ -409,13 +409,17 @@ static std::string compileSourceFile(
         std::string impPath = resolveImportPath(imp, sourcePath);
         if (impPath.empty()) {
             std::string impTarget = !imp.moduleName.empty() ? imp.moduleName : imp.filePath;
-            llbc::Diagnostic::report(sourcePath, 1, 1, true, "Could not find imported module or file '" + impTarget + "'.");
+            size_t impLine = imp.line > 0 ? imp.line : 1;
+            size_t impCol = imp.column > 0 ? imp.column : 1;
+            llbc::Diagnostic::report(sourcePath, impLine, impCol, true, "Could not find imported module or file '" + impTarget + "'.");
             return "";
         }
 
         auto targetMod = getOrParseModule(impPath);
         if (!targetMod) {
-            llbc::Diagnostic::report(sourcePath, 1, 1, true, "Failed to parse imported module '" + impPath + "'.");
+            size_t impLine = imp.line > 0 ? imp.line : 1;
+            size_t impCol = imp.column > 0 ? imp.column : 1;
+            llbc::Diagnostic::report(sourcePath, impLine, impCol, true, "Failed to parse imported module '" + impPath + "'.");
             return "";
         }
 
@@ -753,7 +757,9 @@ static std::string compileSourceFile(
     }
 
     if (!irEmitter.emitModule(*moduleAST)) {
-        std::cerr << "Error: IR Verification failed for module " << moduleAST->name << "\n";
+        if (!irEmitter.hadError()) {
+            std::cerr << "Error: IR Verification failed for module " << moduleAST->name << "\n";
+        }
         return "";
     }
 
@@ -1076,6 +1082,8 @@ int main(int argc, char** argv) {
         } else if (arg == "-T" && i + 1 < argc) {
             cliOpts.linkerScript = argv[++i];
             cliOpts.cliHasLinkerScript = true;
+        } else if (arg == "-emit-llvm" || arg == "--emit-llvm") {
+            cliOpts.emitLlvm = true;
         } else if (arg == "-e" && i + 1 < argc) {
             cliOpts.entryPoint = argv[++i];
             cliOpts.cliHasEntryPoint = true;
@@ -1153,14 +1161,14 @@ int main(int argc, char** argv) {
             cliOpts.cliHasFreestanding = true;
         } else if (arg == "-c") {
             cliOpts.compileOnly = true;
-        } else if (arg == "-emit-llvm" || arg == "--emit-llvm") {
-            cliOpts.emitLlvm = true;
         } else if (arg == "-S") {
             // In compiler convention, -S means emit assembly or readable IR; we support emitLlvm / compileOnly
             cliOpts.emitLlvm = true;
             cliOpts.compileOnly = true;
-        } else if (arg == "-Wall" || arg == "-Wextra" || arg == "-Werror") {
+        } else if (arg == "-Wall" || arg == "-Wextra" || arg == "-Werror" || arg == "-w" || arg.rfind("-Wno-", 0) == 0) {
             // Accepted standard compiler warning flags
+        } else if (arg == "-fcolor-diagnostics" || arg == "-fno-color-diagnostics") {
+            // Accepted diagnostic formatting flags
         } else if (arg == "-O0") {
             cliOpts.optLevel = 0;
             cliOpts.cliHasOptLevel = true;
@@ -1177,8 +1185,23 @@ int main(int argc, char** argv) {
             // Size optimizations map to level 2
             cliOpts.optLevel = 2;
             cliOpts.cliHasOptLevel = true;
-        } else if (arg.rfind("-l", 0) == 0 || arg.rfind("-L", 0) == 0) {
-            // Forward library flags to object / link inputs
+        } else if (arg == "-L") {
+            if (i + 1 < argc) {
+                objectFiles.push_back(std::string("-L") + argv[++i]);
+            } else {
+                std::cerr << "Error: Missing directory argument for '-L'\n";
+                return 1;
+            }
+        } else if (arg.rfind("-L", 0) == 0) {
+            objectFiles.push_back(arg);
+        } else if (arg == "-l") {
+            if (i + 1 < argc) {
+                objectFiles.push_back(std::string("-l") + argv[++i]);
+            } else {
+                std::cerr << "Error: Missing library name argument for '-l'\n";
+                return 1;
+            }
+        } else if (arg.rfind("-l", 0) == 0) {
             objectFiles.push_back(arg);
         } else if (!arg.empty() && arg[0] != '-') {
             inputFiles.push_back(arg);

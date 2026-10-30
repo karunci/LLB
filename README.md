@@ -55,13 +55,14 @@ End Module
 
 ### 2. Bare-Metal Kernel Hardware Driver (VGA Buffer)
 ```vb
+<Instancing(MultiUse)>
 Class Drivers.Terminal
     Private Const VGA_ADDRESS As UInt64 = &HB8000
     Private buffer As Volatile Pointer To UInt16
 
     Public Unsafe Sub Initialize()
         ' Explicit cast to MMIO volatile pointer using pure LLB constructor syntax
-        Me.buffer = Pointer To UInt16(VGA_ADDRESS)
+        Me.buffer = Volatile Pointer To UInt16(VGA_ADDRESS)
         ' Write colored ASCII character ('A', Green on Black)
         Me.buffer(0) = &H0A41
     End Sub

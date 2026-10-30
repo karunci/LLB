@@ -36,13 +36,15 @@ struct ParameterNode {
     bool isOptional{false};
     bool isParamArray{false};
     std::unique_ptr<ExprASTNode> defaultValue;
+    size_t line{0};
+    size_t column{0};
 };
 
 class ASTNode {
 public:
     virtual ~ASTNode() = default;
-    size_t line{1};
-    size_t column{1};
+    size_t line{0};
+    size_t column{0};
 };
 
 // --- Expressions ---
@@ -87,7 +89,15 @@ public:
     std::unique_ptr<ExprASTNode> lhs;
     std::unique_ptr<ExprASTNode> rhs;
     BinaryExprASTNode(std::string o, std::unique_ptr<ExprASTNode> l, std::unique_ptr<ExprASTNode> r)
-        : op(std::move(o)), lhs(std::move(l)), rhs(std::move(r)) {}
+        : op(std::move(o)), lhs(std::move(l)), rhs(std::move(r)) {
+        if (lhs && lhs->line > 0) {
+            line = lhs->line;
+            column = lhs->column;
+        } else if (rhs && rhs->line > 0) {
+            line = rhs->line;
+            column = rhs->column;
+        }
+    }
 };
 
 class UnaryExprASTNode : public ExprASTNode {
@@ -245,7 +255,12 @@ public:
 class CallStmtNode : public ASTNode {
 public:
     std::unique_ptr<CallExprASTNode> call;
-    explicit CallStmtNode(std::unique_ptr<CallExprASTNode> c) : call(std::move(c)) {}
+    explicit CallStmtNode(std::unique_ptr<CallExprASTNode> c) : call(std::move(c)) {
+        if (call) {
+            line = call->line;
+            column = call->column;
+        }
+    }
 };
 
 struct IfBranch {
@@ -455,6 +470,8 @@ struct StructureField {
     TypeSpec type;
     bool isPublic{true};
     uint32_t bitfieldWidth{0}; // 0 = standard field; > 0 = bitfield width in bits
+    size_t line{0};
+    size_t column{0};
 };
 
 class StructureNode : public ASTNode {
@@ -526,8 +543,8 @@ struct ImportDirective {
     std::string symbolName;
     std::string aliasName;
     std::string filePath;
-    size_t line{1};
-    size_t column{1};
+    size_t line{0};
+    size_t column{0};
 };
 
 struct InterfaceMethod {
@@ -535,6 +552,14 @@ struct InterfaceMethod {
     bool isFunction{false};
     TypeSpec returnType;
     std::vector<ParameterNode> parameters;
+    size_t line{0};
+    size_t column{0};
+};
+
+struct ImplementedInterface {
+    std::string name;
+    size_t line{0};
+    size_t column{0};
 };
 
 class InterfaceNode : public ASTNode {
@@ -562,6 +587,7 @@ public:
     bool isNamespace{false};
     InstancingKind instancing{InstancingKind::Unspecified};
     std::vector<std::string> implementsInterfaces;
+    std::vector<ImplementedInterface> implementsList;
     std::vector<ImportDirective> imports;
     std::vector<UseDirective> uses;
     std::unordered_map<std::string, TypeSpec> typeAliases;

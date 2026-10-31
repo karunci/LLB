@@ -29,6 +29,7 @@ echo "=== 3. Building CoreUtils & GUI Apps ==="
 (cd apps/gui/terminal && "${LLBC}" Terminal.llbproj)
 (cd apps/gui/node_viewer && "${LLBC}" NodeViewer.llbproj)
 (cd apps/gui/user_app && "${LLBC}" UserApp.llbproj)
+(cd tools/bax_pack && "${LLBC}" BaxPack.llbproj)
 
 echo "=== 4. Packing initrd.tar ==="
 bash ./tools/pack_initrd.sh

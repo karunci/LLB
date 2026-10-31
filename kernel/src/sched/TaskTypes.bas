@@ -35,6 +35,7 @@ Public Structure TaskControlBlock
     Public ContextRsp As UInt64          ' Stack pointer saved during switch_context
     Public Rsp As UInt64                 ' Saved user or current stack pointer
     Public NextTask As UInt64            ' Pointer To TaskControlBlock (circular linked list)
+    Public ExitCode As UInt32            ' Exit status code on termination
 End Structure
 
 Module TaskRoutines

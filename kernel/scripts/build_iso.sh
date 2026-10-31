@@ -16,52 +16,69 @@ OUTPUT_ISO="${KERNEL_DIR}/build/kernel.iso"
 
 INITRD_TAR="${PROJECT_ROOT}/build/initrd.tar"
 
+LLBC="${PROJECT_ROOT}/../llbc/build/llbc-stage0"
+if [ ! -f "${LLBC}" ]; then
+    LLBC="$(command -v llbc-stage0 || command -v llbc || true)"
+fi
+
 echo "[+] Building and packaging Userland Services and Applications..."
 cd "${PROJECT_ROOT}"
-./build/llbc-stage0 lib/pros/Pros.llbproj
-./build/llbc-stage0 services/genesis/Genesis.llbproj
-./build/llbc-stage0 services/disp_srv/DispService.llbproj
-./build/llbc-stage0 services/input_srv/InputService.llbproj
-./build/llbc-stage0 services/compositor/Compositor.llbproj
-./build/llbc-stage0 services/dev_mgr/DevMgr.llbproj
-./build/llbc-stage0 services/plexus_mgr/PlexusMgr.llbproj
-./build/llbc-stage0 services/wm/WmService.llbproj
-./build/llbc-stage0 services/vfs_srv/VfsService.llbproj
-./build/llbc-stage0 services/ramfs_srv/Ramfs.llbproj
-./build/llbc-stage0 apps/cli/coreutils/ls/Ls.llbproj
-./build/llbc-stage0 apps/cli/coreutils/cat/Cat.llbproj
-./build/llbc-stage0 apps/cli/coreutils/uptime/Uptime.llbproj
-./build/llbc-stage0 apps/cli/coreutils/ver/Ver.llbproj
-./build/llbc-stage0 apps/cli/coreutils/echo/Echo.llbproj
-./build/llbc-stage0 apps/gui/sys_mon/SysMon.llbproj
-./build/llbc-stage0 apps/gui/terminal/Terminal.llbproj
-./build/llbc-stage0 apps/gui/node_viewer/NodeViewer.llbproj
-./build/llbc-stage0 apps/gui/user_app/UserApp.llbproj
+if [ -n "${LLBC}" ] && [ -f "${LLBC}" ]; then
+    "${LLBC}" lib/pros/Pros.llbproj
+    "${LLBC}" services/genesis/Genesis.llbproj
+    "${LLBC}" services/disp_srv/DispService.llbproj
+    "${LLBC}" services/input_srv/InputService.llbproj
+    "${LLBC}" services/compositor/Compositor.llbproj
+    "${LLBC}" services/dev_mgr/DevMgr.llbproj
+    "${LLBC}" services/plexus_mgr/PlexusMgr.llbproj
+    "${LLBC}" services/wm/WmService.llbproj
+    "${LLBC}" services/vfs_srv/VfsService.llbproj
+    "${LLBC}" services/ramfs_srv/Ramfs.llbproj
+    "${LLBC}" apps/cli/coreutils/ls/Ls.llbproj
+    "${LLBC}" apps/cli/coreutils/cat/Cat.llbproj
+    "${LLBC}" apps/cli/coreutils/uptime/Uptime.llbproj
+    "${LLBC}" apps/cli/coreutils/ver/Ver.llbproj
+    "${LLBC}" apps/cli/coreutils/echo/Echo.llbproj
+    "${LLBC}" apps/gui/sys_mon/SysMon.llbproj
+    "${LLBC}" apps/gui/terminal/Terminal.llbproj
+    "${LLBC}" apps/gui/node_viewer/NodeViewer.llbproj
+    "${LLBC}" apps/gui/user_app/UserApp.llbproj
+    "${LLBC}" tools/bax_pack/BaxPack.llbproj
+fi
 
-python3 tools/bax_pack.py services/genesis/build/genesis.elf -o services/genesis/build/genesis.bax --manifest services/genesis/manifest.json
-python3 tools/bax_pack.py services/disp_srv/build/disp_srv.elf -o services/disp_srv/build/disp_srv.bax --manifest services/disp_srv/manifest.json
-python3 tools/bax_pack.py services/input_srv/build/input_srv.elf -o services/input_srv/build/input_srv.bax --manifest services/input_srv/manifest.json
-python3 tools/bax_pack.py services/compositor/build/compositor.elf -o services/compositor/build/compositor.bax --manifest services/compositor/manifest.json
-python3 tools/bax_pack.py services/dev_mgr/build/dev_mgr.elf -o services/dev_mgr/build/dev_mgr.bax --manifest services/dev_mgr/manifest.json
-python3 tools/bax_pack.py services/plexus_mgr/build/plexus_mgr.elf -o services/plexus_mgr/build/plexus_mgr.bax --manifest services/plexus_mgr/manifest.json
-python3 tools/bax_pack.py services/wm/build/wm.elf -o services/wm/build/wm.bax --manifest services/wm/manifest.json
-python3 tools/bax_pack.py services/vfs_srv/build/vfs_srv.elf -o services/vfs_srv/build/vfs_srv.bax --manifest services/vfs_srv/manifest.json
-python3 tools/bax_pack.py services/ramfs_srv/build/ramfs_srv.elf -o services/ramfs_srv/build/ramfs_srv.bax --manifest services/ramfs_srv/manifest.json
-python3 tools/bax_pack.py apps/cli/coreutils/ls/build/ls.elf -o apps/cli/coreutils/ls/build/ls.bax --manifest apps/cli/coreutils/ls/manifest.json
-python3 tools/bax_pack.py apps/cli/coreutils/cat/build/cat.elf -o apps/cli/coreutils/cat/build/cat.bax --manifest apps/cli/coreutils/cat/manifest.json
-python3 tools/bax_pack.py apps/cli/coreutils/uptime/build/uptime.elf -o apps/cli/coreutils/uptime/build/uptime.bax --manifest apps/cli/coreutils/uptime/manifest.json
-python3 tools/bax_pack.py apps/cli/coreutils/ver/build/ver.elf -o apps/cli/coreutils/ver/build/ver.bax --manifest apps/cli/coreutils/ver/manifest.json
-python3 tools/bax_pack.py apps/cli/coreutils/echo/build/echo.elf -o apps/cli/coreutils/echo/build/echo.bax --manifest apps/cli/coreutils/echo/manifest.json
-python3 tools/bax_pack.py apps/gui/sys_mon/build/sys_mon.elf -o apps/gui/sys_mon/build/sys_mon.bax --manifest apps/gui/sys_mon/manifest.json
-python3 tools/bax_pack.py apps/gui/terminal/build/terminal.elf -o apps/gui/terminal/build/terminal.bax --manifest apps/gui/terminal/manifest.json
-python3 tools/bax_pack.py apps/gui/node_viewer/build/node_viewer.elf -o apps/gui/node_viewer/build/node_viewer.bax --manifest apps/gui/node_viewer/manifest.json
-python3 tools/bax_pack.py apps/gui/user_app/build/user_app.elf -o apps/gui/user_app/build/user_app.bax --manifest apps/gui/user_app/manifest.json
+echo "[+] Packaging ELF binaries into Neural BAX containers..."
+BAX_CMD="tools/bax_pack/build/bax_pack"
+if [ ! -x "${BAX_CMD}" ]; then
+    BAX_CMD="python3 tools/bax_pack.py"
+fi
+
+${BAX_CMD} services/genesis/build/genesis.elf -o services/genesis/build/genesis.bax --manifest services/genesis/manifest.json
+${BAX_CMD} services/disp_srv/build/disp_srv.elf -o services/disp_srv/build/disp_srv.bax --manifest services/disp_srv/manifest.json
+${BAX_CMD} services/input_srv/build/input_srv.elf -o services/input_srv/build/input_srv.bax --manifest services/input_srv/manifest.json
+${BAX_CMD} services/compositor/build/compositor.elf -o services/compositor/build/compositor.bax --manifest services/compositor/manifest.json
+${BAX_CMD} services/dev_mgr/build/dev_mgr.elf -o services/dev_mgr/build/dev_mgr.bax --manifest services/dev_mgr/manifest.json
+${BAX_CMD} services/plexus_mgr/build/plexus_mgr.elf -o services/plexus_mgr/build/plexus_mgr.bax --manifest services/plexus_mgr/manifest.json
+${BAX_CMD} services/wm/build/wm.elf -o services/wm/build/wm.bax --manifest services/wm/manifest.json
+${BAX_CMD} services/vfs_srv/build/vfs_srv.elf -o services/vfs_srv/build/vfs_srv.bax --manifest services/vfs_srv/manifest.json
+${BAX_CMD} services/ramfs_srv/build/ramfs_srv.elf -o services/ramfs_srv/build/ramfs_srv.bax --manifest services/ramfs_srv/manifest.json
+${BAX_CMD} apps/cli/coreutils/ls/build/ls.elf -o apps/cli/coreutils/ls/build/ls.bax --manifest apps/cli/coreutils/ls/manifest.json
+${BAX_CMD} apps/cli/coreutils/cat/build/cat.elf -o apps/cli/coreutils/cat/build/cat.bax --manifest apps/cli/coreutils/cat/manifest.json
+${BAX_CMD} apps/cli/coreutils/uptime/build/uptime.elf -o apps/cli/coreutils/uptime/build/uptime.bax --manifest apps/cli/coreutils/uptime/manifest.json
+${BAX_CMD} apps/cli/coreutils/ver/build/ver.elf -o apps/cli/coreutils/ver/build/ver.bax --manifest apps/cli/coreutils/ver/manifest.json
+${BAX_CMD} apps/cli/coreutils/echo/build/echo.elf -o apps/cli/coreutils/echo/build/echo.bax --manifest apps/cli/coreutils/echo/manifest.json
+${BAX_CMD} apps/gui/sys_mon/build/sys_mon.elf -o apps/gui/sys_mon/build/sys_mon.bax --manifest apps/gui/sys_mon/manifest.json
+${BAX_CMD} apps/gui/terminal/build/terminal.elf -o apps/gui/terminal/build/terminal.bax --manifest apps/gui/terminal/manifest.json
+${BAX_CMD} apps/gui/node_viewer/build/node_viewer.elf -o apps/gui/node_viewer/build/node_viewer.bax --manifest apps/gui/node_viewer/manifest.json
+${BAX_CMD} apps/gui/user_app/build/user_app.elf -o apps/gui/user_app/build/user_app.bax --manifest apps/gui/user_app/manifest.json
 
 bash tools/pack_initrd.sh
 
 echo "[+] Building Dedicated Kernel ELFs (MB2 and MB1)..."
-./build/llbc-stage0 kernel/Kernel_MB2.llbproj
-./build/llbc-stage0 kernel/Kernel_MB1.llbproj
+cd "${PROJECT_ROOT}"
+if [ -n "${LLBC}" ] && [ -f "${LLBC}" ]; then
+    "${LLBC}" kernel/Kernel_MB2.llbproj
+    "${LLBC}" kernel/Kernel_MB1.llbproj
+fi
 cp "${KERNEL_DIR}/build/kernel_mb2.elf" "${KERNEL_DIR}/build/kernel.elf"
 
 echo "[+] Preparing GRUB ISO staging tree at ${ISO_DIR}..."

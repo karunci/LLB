@@ -264,6 +264,37 @@ Namespace Core.Nodes
             Sync.SpinlockOps.ReleaseIrqRestore registryLock, flags
         End Sub
 
+        ''
+        ' @brief Find an active Kernel Node registered to a specific Process ID.
+        ' @param pid Owning Process ID.
+        ' @return Node ID if found, 0 otherwise.
+        ''
+        Public Unsafe Function FindNodeByPid(ByVal pid As UInt64) As UInt64
+            If pid = 0 Then
+                FindNodeByPid = 0
+                Exit Function
+            End If
+
+            Dim flags As UInt64 = Sync.SpinlockOps.AcquireIrqSave(registryLock)
+            Dim fallbackNid As UInt64 = 0
+            Dim i As UInt32 = 0
+            While i < SynapseCaps.MAX_NODES
+                If (nodes(i).Flags And SynapseCaps.NODE_FLAG_ACTIVE) <> 0 And nodes(i).OwnerPid = pid Then
+                    Dim isFs As Boolean = (nodes(i).Name(0) = 102 And nodes(i).Name(1) = 115) ' "fs"
+                    Dim isCl As Boolean = (nodes(i).Name(0) = 99 And nodes(i).Name(1) = 108)  ' "cl" (client.)
+                    If Not isFs And Not isCl Then
+                        Sync.SpinlockOps.ReleaseIrqRestore registryLock, flags
+                        FindNodeByPid = nodes(i).NodeId
+                        Exit Function
+                    End If
+                    fallbackNid = nodes(i).NodeId
+                End If
+                i = i + 1
+            Wend
+            Sync.SpinlockOps.ReleaseIrqRestore registryLock, flags
+            FindNodeByPid = fallbackNid
+        End Function
+
     End Class
 
 End Namespace

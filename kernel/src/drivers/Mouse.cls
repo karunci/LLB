@@ -163,7 +163,8 @@ Namespace Drivers
         Public Sub TickIdle()
             If mouseCycle > 0 Then
                 idleTicks = idleTicks + 1
-                If idleTicks > 25 Then
+                ' Timeout threshold: 250 ticks = 250ms at 1000Hz (prevents corrupting 3-byte packets)
+                If idleTicks > 250 Then
                     mouseCycle = 0
                     idleTicks = 0
                 End If

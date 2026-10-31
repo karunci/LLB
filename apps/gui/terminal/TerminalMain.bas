@@ -31,6 +31,7 @@ Module TerminalMain
     Private clientSurf As Surface
     Private g_winId As UInt32 = 0
     Private g_termNodeId As NodeId = 0
+    Private g_rxPkt As AxonPacket
 
     ' Character Grid Buffers
     Private gridChar(2048) As Byte
@@ -47,9 +48,51 @@ Module TerminalMain
     Private currentDirBuf(128) As Byte
     Private currentDir As String = "X:\\"
 
+    ' Module-level dirty bounding box accumulators (coalesced, flushed once per render operation)
+    Private g_dirtyX1 As Int32 = 0
+    Private g_dirtyY1 As Int32 = 0
+    Private g_dirtyX2 As Int32 = 0
+    Private g_dirtyY2 As Int32 = 0
+    Private g_dirtyActive As Boolean = False
+
     ' Command Output Data Plane Buffers
     Private termLsBuf(65536) As Byte
     Private termCatBuf(65536) As Byte
+    Private g_pathDirs(1024) As Byte
+    Private g_pathCount As UInt32 = 0
+    Private g_cfgBuf(512) As Byte
+
+    ''
+    ' @brief Expand the module-level dirty bounding box to include rect (x, y, w, h).
+    '        Call FlushDirty once per logical render operation to emit a single WmSignalDirty.
+    ''
+    Private Sub MarkDirty(ByVal x As Int32, ByVal y As Int32, ByVal w As Int32, ByVal h As Int32)
+        Dim x2 As Int32 = x + w
+        Dim y2 As Int32 = y + h
+        If Not g_dirtyActive Then
+            g_dirtyX1 = x
+            g_dirtyY1 = y
+            g_dirtyX2 = x2
+            g_dirtyY2 = y2
+            g_dirtyActive = True
+        Else
+            If x < g_dirtyX1 Then g_dirtyX1 = x
+            If y < g_dirtyY1 Then g_dirtyY1 = y
+            If x2 > g_dirtyX2 Then g_dirtyX2 = x2
+            If y2 > g_dirtyY2 Then g_dirtyY2 = y2
+        End If
+    End Sub
+
+    ''
+    ' @brief Flush the accumulated dirty bounding box to the compositor as a single WmSignalDirty.
+    '        Resets the accumulator. No-op if nothing was dirtied.
+    ''
+    Private Unsafe Sub FlushDirty()
+        If g_dirtyActive And g_winId <> 0 Then
+            WmSignalDirty g_winId, g_dirtyX1, g_dirtyY1, g_dirtyX2 - g_dirtyX1, g_dirtyY2 - g_dirtyY1
+        End If
+        g_dirtyActive = False
+    End Sub
 
     ''
     ' @brief Test equality of two null-terminated ASCII strings.
@@ -112,7 +155,7 @@ Module TerminalMain
         If ch > 32 And ch <= 126 Then
             DrawGlyph8x16 clientSurf, x, y, ch, fg
         End If
-        WmSignalDirty g_winId, x, y, 8, 16
+        MarkDirty x, y, 8, 16
     End Sub
 
     ''
@@ -128,7 +171,8 @@ Module TerminalMain
         Else
             FillRect clientSurf, cx, cy + 14, 8, 2, COLOR_TERM_BG
         End If
-        WmSignalDirty g_winId, cx, cy + 14, 8, 2
+        MarkDirty cx, cy + 14, 8, 2
+        FlushDirty
     End Sub
 
     ''
@@ -172,7 +216,8 @@ Module TerminalMain
             Wend
             r2 = r2 + 1
         Wend
-        WmSignalDirty g_winId, 0, 16, CANVAS_W, CANVAS_H - 16
+        MarkDirty 0, 16, CANVAS_W, CANVAS_H - 16
+        FlushDirty
     End Sub
 
     ''
@@ -196,7 +241,8 @@ Module TerminalMain
 
         cursorCol = 0
         cursorRow = 0
-        WmSignalDirty g_winId, 0, 0, CANVAS_W, CANVAS_H
+        MarkDirty 0, 0, CANVAS_W, CANVAS_H
+        FlushDirty
     End Sub
 
     ''
@@ -258,6 +304,7 @@ Module TerminalMain
 
         ' 3. Synchronize cursor position
         UpdateCursorPos
+        FlushDirty
     End Sub
 
     ''
@@ -341,6 +388,7 @@ Module TerminalMain
             PutChar strPtr(i), fgColor
             i = i + 1
         Wend
+        FlushDirty
     End Sub
 
     ''
@@ -380,6 +428,7 @@ Module TerminalMain
         cursorIdx = 0
         cmdLen = 0
         cmdBuf(0) = 0
+        FlushDirty
     End Sub
 
     ''
@@ -524,6 +573,56 @@ Module TerminalMain
     End Function
 
     ''
+    ' @brief Parse PATH variable from environment.cfg or initialize fallback search paths.
+    ''
+    Private Unsafe Sub InitPathDirs()
+        g_pathCount = 0
+        If Pros.Nodes.NodeRegistry.Lookup("srv.vfs") <> 0 Then
+            Dim readBytes As UInt32 = ReadAllText("X:\System\Configurations\environment.cfg", @g_cfgBuf(0), 512)
+            If readBytes > 0 Then
+                g_cfgBuf(readBytes) = 0
+                Dim idx As UInt32 = 0
+                While idx + 4 < readBytes
+                    If g_cfgBuf(idx) = 80 And g_cfgBuf(idx + 1) = 65 And g_cfgBuf(idx + 2) = 84 And g_cfgBuf(idx + 3) = 72 Then ' "PATH"
+                        idx = idx + 4
+                        While idx < readBytes And (g_cfgBuf(idx) = 32 Or g_cfgBuf(idx) = 61 Or g_cfgBuf(idx) = 34 Or g_cfgBuf(idx) = 9)
+                            idx = idx + 1
+                        Wend
+                        While idx < readBytes And g_cfgBuf(idx) <> 34 And g_cfgBuf(idx) <> 13 And g_cfgBuf(idx) <> 10 And g_pathCount < 8
+                            Dim dIdx As UInt32 = 0
+                            While idx < readBytes And g_cfgBuf(idx) <> 59 And g_cfgBuf(idx) <> 34 And g_cfgBuf(idx) <> 13 And g_cfgBuf(idx) <> 10 And dIdx < 127
+                                g_pathDirs((g_pathCount * 128) + dIdx) = g_cfgBuf(idx)
+                                dIdx = dIdx + 1
+                                idx = idx + 1
+                            Wend
+                            g_pathDirs((g_pathCount * 128) + dIdx) = 0
+                            If dIdx > 0 Then
+                                g_pathCount = g_pathCount + 1
+                            End If
+                            If idx < readBytes And g_cfgBuf(idx) = 59 Then
+                                idx = idx + 1
+                            End If
+                        Wend
+                        Exit While
+                    End If
+                    idx = idx + 1
+                Wend
+            End If
+        End If
+
+        ' Fallback paths if configuration file not loaded
+        If g_pathCount = 0 Then
+            StrCopy @g_pathDirs(0), 128, "."
+            StrCopy @g_pathDirs(128), 128, "X:\System\Apps\CoreUtils"
+            StrCopy @g_pathDirs(256), 128, "X:\System\Apps"
+            StrCopy @g_pathDirs(384), 128, "X:\Apps"
+            StrCopy @g_pathDirs(512), 128, "X:\System\Services"
+            StrCopy @g_pathDirs(640), 128, "X:\System\Drivers"
+            g_pathCount = 6
+        End If
+    End Sub
+
+    ''
     ' @brief Parse and execute built-in interactive shell command.
     ' @param cmd Null-terminated command line buffer.
     ''
@@ -553,7 +652,7 @@ Module TerminalMain
         Wend
         Dim args As Pointer To Byte = cmd + cIdx
 
-        ' 1. help command
+        ' Built-in shell commands
         If StrEquals(@verb(0), "help") Then
             PutLine "PROS Shell Diagnostic Utilities:", COLOR_CYAN
             PutLine "  help      - Display this list of shell commands", COLOR_TEXT
@@ -562,110 +661,13 @@ Module TerminalMain
             PutLine "  ps        - List running system services & processes", COLOR_TEXT
             PutLine "  mem       - Query physical and shared memory info", COLOR_TEXT
             PutLine "  ls / dir  - List installed applications and files", COLOR_TEXT
+            PutLine "  cat <file>- Print file contents to terminal", COLOR_TEXT
             PutLine "  uptime    - Display elapsed system running time", COLOR_TEXT
             PutLine "  clear     - Clear terminal screen", COLOR_TEXT
             PutLine "  echo <str>- Print text argument to terminal", COLOR_TEXT
             Exit Sub
         End If
 
-        ' 2. ver command
-        If StrEquals(@verb(0), "ver") Then
-            Dim verBuf(128) As Byte
-            SprintF @verBuf(0), 128, "%s - %s", SYSTEM_NAME, SYSTEM_VERSION_TAG
-            PutLine @verBuf(0), COLOR_INFO
-            PutLine "Architecture: x86_64 Long Mode (SMP Cores: 4)", COLOR_TEXT
-            PutLine "Kernel ABI  : Native Microkernel Syscall (SCE/STAR/LSTAR)", COLOR_TEXT
-            Exit Sub
-        End If
-
-        ' 3. nodes command
-        If StrEquals(@verb(0), "nodes") Then
-            PutLine "Active Registered Neural Nodes:", COLOR_CYAN
-            PutLine "  Node 1000: kernel.core     (Kind: System)  Caps: R/W/Notify", COLOR_TEXT
-            PutLine "  Node 1001: srv.compositor  (Kind: System)  Caps: R/W/Notify", COLOR_TEXT
-            PutLine "  Node 1002: srv.input       (Kind: Device)  Caps: R/W/Notify", COLOR_TEXT
-            PutLine "  Node 1003: srv.wm          (Kind: System)  Caps: R/W/Notify", COLOR_TEXT
-            PutLine "  Node 1004: srv.vfs         (Kind: Storage) Caps: R/W/Notify", COLOR_TEXT
-            PutLine "  Node 1005: apps.terminal   (Kind: Client)  Caps: R/W/Notify", COLOR_TEXT
-            Exit Sub
-        End If
-
-        ' 4. ps command
-        If StrEquals(@verb(0), "ps") Then
-            PutLine "Running System Tasks & Services:", COLOR_CYAN
-            PutLine "  PID  NAME            STATE     RING  PRIORITY", COLOR_TEXT
-            PutLine "  ---  --------------  --------  ----  --------", COLOR_TEXT
-            PutLine "  1    srv.genesis     RUNNABLE  CPL=3 Normal", COLOR_TEXT
-            PutLine "  2    srv.compositor  RUNNABLE  CPL=3 High", COLOR_TEXT
-            PutLine "  3    srv.input       RUNNABLE  CPL=3 High", COLOR_TEXT
-            PutLine "  4    srv.wm          RUNNABLE  CPL=3 Normal", COLOR_TEXT
-            PutLine "  5    srv.vfs         RUNNABLE  CPL=3 Normal", COLOR_TEXT
-            PutLine "  6    apps.sysmon     RUNNABLE  CPL=3 Low", COLOR_TEXT
-            PutLine "  7    apps.terminal   RUNNING   CPL=3 Interactive", COLOR_TEXT
-            Exit Sub
-        End If
-
-        ' 5. mem command
-        If StrEquals(@verb(0), "mem") Then
-            PutLine "Physical & Virtual Memory Status:", COLOR_CYAN
-            PutLine "  Total Physical RAM: 1024 MB (Buddy Allocator Active)", COLOR_TEXT
-            PutLine "  Lower-Half Space  : 0x000000000000 .. 0x00007FFFFFFFFFFF", COLOR_TEXT
-            PutLine "  Terminal Surface  : 0x65000000 (SHM 1024000 Bytes)", COLOR_TEXT
-            PutLine "  Framebuffer Apert : 1024x768x32 ARGB (Paced 60 FPS)", COLOR_TEXT
-            Exit Sub
-        End If
-
-        ' 6. ls / dir command
-        If StrEquals(@verb(0), "ls") Or StrEquals(@verb(0), "dir") Then
-            Dim targetDir(128) As Byte
-            If args(0) <> 0 Then
-                PathResolve currentDir, args, @targetDir(0), 128
-            Else
-                StrCopy @targetDir(0), 128, currentDir
-            End If
-
-            Dim lsHdr(160) As Byte
-            SprintF @lsHdr(0), 160, "Directory Listing of %s:", @targetDir(0)
-            PutLine @lsHdr(0), COLOR_CYAN
-
-            Dim fileCount As UInt32 = DirectoryList(@targetDir(0), @termLsBuf(0), 65536)
-            If fileCount = 0 Then
-                PutLine "  (empty directory or not found)", COLOR_WARN
-            Else
-                Dim eIdx As UInt32 = 0
-                Dim ei As UInt32
-                For ei = 0 To fileCount - 1
-                    PutLine @termLsBuf(eIdx), COLOR_TEXT
-                    While termLsBuf(eIdx) <> 0 And eIdx < 65530
-                        eIdx = eIdx + 1
-                    Wend
-                    eIdx = eIdx + 1
-                Next ei
-            End If
-            Exit Sub
-        End If
-
-        ' 7. cat command
-        If StrEquals(@verb(0), "cat") Then
-            If args(0) = 0 Then
-                PutLine "cat: missing file argument", COLOR_WARN
-                Exit Sub
-            End If
-
-            Dim catPath(128) As Byte
-            PathResolve currentDir, args, @catPath(0), 128
-
-            Dim readLen As UInt32 = ReadAllText(@catPath(0), @termCatBuf(0), 65535)
-            If readLen > 0 Then
-                termCatBuf(readLen) = 0
-                PutLine @termCatBuf(0), COLOR_TEXT
-            Else
-                PutLine "cat: file not found or empty", COLOR_WARN
-            End If
-            Exit Sub
-        End If
-
-        ' 8. cd command
         If StrEquals(@verb(0), "cd") Then
             If args(0) = 0 Or StrEquals(args, "~") Then
                 currentDir = "X:\\"
@@ -692,13 +694,65 @@ Module TerminalMain
             End If
         End If
 
-        ' 9. pwd command
         If StrEquals(@verb(0), "pwd") Then
             PutLine currentDir, COLOR_INFO
             Exit Sub
         End If
 
-        ' 10. uptime command
+        If StrEquals(@verb(0), "clear") Then
+            ClearGrid
+            Exit Sub
+        End If
+
+        If StrEquals(@verb(0), "echo") Then
+            PutLine args, COLOR_TEXT
+            Exit Sub
+        End If
+
+        If StrEquals(@verb(0), "nodes") Then
+            PutLine "Active Registered Neural Nodes:", COLOR_CYAN
+            PutLine "  Node 1000: kernel.core     (Kind: System)  Caps: R/W/Notify", COLOR_TEXT
+            PutLine "  Node 1001: srv.compositor  (Kind: System)  Caps: R/W/Notify", COLOR_TEXT
+            PutLine "  Node 1002: srv.input       (Kind: Device)  Caps: R/W/Notify", COLOR_TEXT
+            PutLine "  Node 1003: srv.wm          (Kind: System)  Caps: R/W/Notify", COLOR_TEXT
+            PutLine "  Node 1004: srv.vfs         (Kind: Storage) Caps: R/W/Notify", COLOR_TEXT
+            PutLine "  Node 1005: apps.terminal   (Kind: Client)  Caps: R/W/Notify", COLOR_TEXT
+            Exit Sub
+        End If
+
+        If StrEquals(@verb(0), "ps") Then
+            PutLine "Running System Tasks & Services:", COLOR_CYAN
+            PutLine "  PID  NAME            STATE     RING  PRIORITY", COLOR_TEXT
+            PutLine "  ---  --------------  --------  ----  --------", COLOR_TEXT
+            PutLine "  1    srv.genesis     RUNNABLE  CPL=3 Normal", COLOR_TEXT
+            PutLine "  2    srv.compositor  RUNNABLE  CPL=3 High", COLOR_TEXT
+            PutLine "  3    srv.input       RUNNABLE  CPL=3 High", COLOR_TEXT
+            PutLine "  4    srv.wm          RUNNABLE  CPL=3 Normal", COLOR_TEXT
+            PutLine "  5    srv.vfs         RUNNABLE  CPL=3 Normal", COLOR_TEXT
+            PutLine "  6    apps.sysmon     RUNNABLE  CPL=3 Low", COLOR_TEXT
+            PutLine "  7    apps.terminal   RUNNING   CPL=3 Interactive", COLOR_TEXT
+            Exit Sub
+        End If
+
+        If StrEquals(@verb(0), "mem") Then
+            PutLine "Physical & Virtual Memory Status:", COLOR_CYAN
+            PutLine "  Total Physical RAM: 1024 MB (Buddy Allocator Active)", COLOR_TEXT
+            PutLine "  Lower-Half Space  : 0x000000000000 .. 0x00007FFFFFFFFFFF", COLOR_TEXT
+            PutLine "  Terminal Surface  : 0x65000000 (SHM 1024000 Bytes)", COLOR_TEXT
+            PutLine "  Framebuffer Apert : 1024x768x32 ARGB (Paced 60 FPS)", COLOR_TEXT
+            Exit Sub
+        End If
+
+        ' Built-in shell commands
+        If StrEquals(@verb(0), "ver") Then
+            Dim verBuf(128) As Byte
+            SprintF @verBuf(0), 128, "%s - %s", SYSTEM_NAME, SYSTEM_VERSION_TAG
+            PutLine @verBuf(0), COLOR_INFO
+            PutLine "Architecture: x86_64 Long Mode (SMP Cores: 4)", COLOR_TEXT
+            PutLine "Kernel ABI  : Native Microkernel Syscall (SCE/STAR/LSTAR)", COLOR_TEXT
+            Exit Sub
+        End If
+
         If StrEquals(@verb(0), "uptime") Then
             Dim upMs As UInt64 = GetUptime()
             Dim upBuf(96) As Byte
@@ -707,22 +761,244 @@ Module TerminalMain
             Exit Sub
         End If
 
-        ' 11. ver command
-        If StrEquals(@verb(0), "ver") Then
-            PutLine "Personal Research Operating System [PRK-OS / PROS]", COLOR_INFO
-            PutLine Sys.Version.SYSTEM_VERSION_TAG, COLOR_CYAN
+        If StrEquals(@verb(0), "ls") Or StrEquals(@verb(0), "dir") Then
+            Dim targetDir(128) As Byte
+            If args(0) <> 0 Then
+                PathResolve currentDir, args, @targetDir(0), 128
+            Else
+                StrCopy @targetDir(0), 128, currentDir
+            End If
+
+            If StrEquals(@verb(0), "dir") Then
+                Dim lsHdr(160) As Byte
+                SprintF @lsHdr(0), 160, "Directory Listing of %s:", @targetDir(0)
+                PutLine @lsHdr(0), COLOR_CYAN
+            End If
+
+            Dim fileCount As UInt32 = DirectoryList(@targetDir(0), @termLsBuf(0), 65536)
+            If fileCount = 0 Then
+                PutLine "  (empty directory or not found)", COLOR_WARN
+            Else
+                Dim eIdx As UInt32 = 0
+                Dim ei As UInt32
+                For ei = 0 To fileCount - 1
+                    ' Skip any zero padding or empty string entries
+                    While termLsBuf(eIdx) = 0 And eIdx < 65530
+                        eIdx = eIdx + 1
+                    Wend
+                    If eIdx >= 65530 Then Exit For
+                    PutLine @termLsBuf(eIdx), COLOR_TEXT
+                    While termLsBuf(eIdx) <> 0 And eIdx < 65530
+                        eIdx = eIdx + 1
+                    Wend
+                    eIdx = eIdx + 1
+                Next ei
+            End If
             Exit Sub
         End If
 
-        ' 12. clear command
-        If StrEquals(@verb(0), "clear") Then
-            ClearGrid
+        If StrEquals(@verb(0), "cat") Then
+            If args(0) = 0 Then
+                PutLine "cat: missing file argument", COLOR_WARN
+                Exit Sub
+            End If
+
+            Dim catPath(128) As Byte
+            PathResolve currentDir, args, @catPath(0), 128
+
+            Dim readLen As UInt32 = ReadAllText(@catPath(0), @termCatBuf(0), 65535)
+            If readLen > 0 Then
+                ' Check if binary file (presence of nulls or non-printable control chars)
+                Dim isBinary As Boolean = False
+                Dim chkLen As UInt32 = readLen
+                If chkLen > 512 Then chkLen = 512
+                Dim bi As UInt32
+                For bi = 0 To chkLen - 1
+                    Dim cb As Byte = termCatBuf(bi)
+                    If cb = 0 Or (cb < 7) Or (cb > 13 And cb < 32) Then
+                        isBinary = True
+                        Exit For
+                    End If
+                Next bi
+
+                If isBinary Then
+                    Dim maxDump As UInt32 = readLen
+                    If maxDump > 512 Then maxDump = 512
+                    Dim binHdr(96) As Byte
+                    SprintF @binHdr(0), 96, "[CAT] Binary content detected (%u bytes). Hex dump:", readLen
+                    PutLine @binHdr(0), COLOR_WARN
+
+                    Dim hexRow(80) As Byte
+                    Dim off As UInt32 = 0
+                    Dim hChars As String = "0123456789ABCDEF"
+
+                    While off < maxDump
+                        Dim rLen As UInt32 = maxDump - off
+                        If rLen > 16 Then rLen = 16
+
+                        Dim c As UInt32
+                        For c = 0 To 79
+                            hexRow(c) = 32
+                        Next c
+
+                        ' Offset (4 hex digits)
+                        Dim wVal As UInt32 = off And &HFFFF
+                        hexRow(0) = Byte(hChars((wVal RShift 12) And &H0F))
+                        hexRow(1) = Byte(hChars((wVal RShift 8) And &H0F))
+                        hexRow(2) = Byte(hChars((wVal RShift 4) And &H0F))
+                        hexRow(3) = Byte(hChars(wVal And &H0F))
+                        hexRow(4) = 58 ' ':'
+                        hexRow(5) = 32 ' ' '
+
+                        ' Hex bytes
+                        Dim b As UInt32
+                        For b = 0 To rLen - 1
+                            Dim col As UInt32 = 6 + (b * 3)
+                            If b >= 8 Then col = col + 1
+                            Dim bVal As Byte = termCatBuf(off + b)
+                            hexRow(col) = Byte(hChars((bVal RShift 4) And &H0F))
+                            hexRow(col + 1) = Byte(hChars(bVal And &H0F))
+                        Next b
+
+                        ' ASCII representation
+                        Dim aStart As UInt32 = 57
+                        hexRow(aStart) = 124 ' '|'
+                        For b = 0 To rLen - 1
+                            Dim ch As Byte = termCatBuf(off + b)
+                            If ch >= 32 And ch <= 126 Then
+                                hexRow(aStart + 1 + b) = ch
+                            Else
+                                hexRow(aStart + 1 + b) = 46 ' '.'
+                            End If
+                        Next b
+                        hexRow(aStart + 1 + rLen) = 124 ' '|'
+                        hexRow(aStart + 2 + rLen) = 0
+
+                        PutLine @hexRow(0), COLOR_TEXT
+                        off = off + 16
+                    Wend
+
+                    If readLen > maxDump Then
+                        Dim remBuf(96) As Byte
+                        SprintF @remBuf(0), 96, "[CAT] ... (remaining %u bytes omitted)", readLen - maxDump
+                        PutLine @remBuf(0), COLOR_INFO
+                    End If
+                Else
+                    termCatBuf(readLen) = 0
+                    PutLine @termCatBuf(0), COLOR_TEXT
+                End If
+            Else
+                PutLine "cat: file not found or empty", COLOR_WARN
+            End If
             Exit Sub
         End If
 
-        ' 13. echo command
-        If StrEquals(@verb(0), "echo") Then
-            PutLine args, COLOR_TEXT
+        ' Dynamic Binary Execution from PATH (for external utilities: sys_mon, node_viewer, etc.)
+        Dim candPath(160) As Byte
+        Dim foundBinary As Boolean = False
+
+        Dim pi As UInt32 = 0
+        While pi < g_pathCount And Not foundBinary
+            Dim pDir As Pointer To Byte = @g_pathDirs(pi * 128)
+
+            ' Try 1: pDir \ verb .bax
+            Dim vBax(64) As Byte
+            StrCopy @vBax(0), 64, @verb(0)
+            Dim vLen As UInt32 = UInt32(StrLen(@vBax(0)))
+            vBax(vLen) = 46 ' '.'
+            vBax(vLen + 1) = 98 ' 'b'
+            vBax(vLen + 2) = 97 ' 'a'
+            vBax(vLen + 3) = 120 ' 'x'
+            vBax(vLen + 4) = 0
+
+            Dim testPath1(160) As Byte
+            PathResolve pDir, @vBax(0), @testPath1(0), 160
+            If FileExists(@testPath1(0)) Then
+                StrCopy @candPath(0), 160, @testPath1(0)
+                foundBinary = True
+                Exit While
+            End If
+
+            ' Try 2: pDir \ verb \ verb .bax
+            Dim vNested(96) As Byte
+            StrCopy @vNested(0), 96, @verb(0)
+            Dim vnLen As UInt32 = UInt32(StrLen(@vNested(0)))
+            vNested(vnLen) = 92 ' '\'
+            vnLen = vnLen + 1
+            Dim vi As UInt32 = 0
+            While verb(vi) <> 0 And vnLen + 5 < 96
+                vNested(vnLen) = verb(vi)
+                vnLen = vnLen + 1
+                vi = vi + 1
+            Wend
+            vNested(vnLen) = 46 ' '.'
+            vNested(vnLen + 1) = 98 ' 'b'
+            vNested(vnLen + 2) = 97 ' 'a'
+            vNested(vnLen + 3) = 120 ' 'x'
+            vNested(vnLen + 4) = 0
+
+            Dim testPath2(160) As Byte
+            PathResolve pDir, @vNested(0), @testPath2(0), 160
+            If FileExists(@testPath2(0)) Then
+                StrCopy @candPath(0), 160, @testPath2(0)
+                foundBinary = True
+                Exit While
+            End If
+
+            pi = pi + 1
+        Wend
+
+        If foundBinary Then
+            DrawCursor False
+
+            ' Pass shell current directory or resolved absolute path to child utility
+            Dim childArgs(160) As Byte
+            If args(0) <> 0 Then
+                PathResolve currentDir, args, @childArgs(0), 160
+            Else
+                StrCopy @childArgs(0), 160, currentDir
+            End If
+
+            Dim childPid As ProcessId = ProcessSpawn(@candPath(0), @childArgs(0))
+            If childPid = 0 Then
+                Dim spawnErr(180) As Byte
+                SprintF @spawnErr(0), 180, "pros: failed to spawn: %s", @candPath(0)
+                PutLine @spawnErr(0), COLOR_WARN
+                Exit Sub
+            End If
+
+            ' Interactive wait loop pumping incoming MSG_TTY_WRITE Synapse packets to terminal
+            Dim exitCode As UInt32 = 0
+            Do While ProcessPollExit(childPid, exitCode) = 1
+                If g_termNodeId <> 0 Then
+                    While SynapsePop(g_termNodeId, g_rxPkt)
+                        If g_rxPkt.PacketType = MSG_TTY_WRITE Then
+                            Dim p As UInt32 = 0
+                            While p < g_rxPkt.PayloadLength
+                                PutChar g_rxPkt.Payload(p), COLOR_TEXT
+                                p = p + 1
+                            Wend
+                        End If
+                    Wend
+                    FlushDirty
+                End If
+                ProcessSleep 10
+            Loop
+
+            ' Drain any final residual packets after child process exit
+            If g_termNodeId <> 0 Then
+                While SynapsePop(g_termNodeId, g_rxPkt)
+                    If g_rxPkt.PacketType = MSG_TTY_WRITE Then
+                        Dim p2 As UInt32 = 0
+                        While p2 < g_rxPkt.PayloadLength
+                            PutChar g_rxPkt.Payload(p2), COLOR_TEXT
+                            p2 = p2 + 1
+                        Wend
+                    End If
+                Wend
+                FlushDirty
+            End If
+
             Exit Sub
         End If
 
@@ -775,12 +1051,16 @@ Module TerminalMain
         End If
         g_winId = winId
         ConsolePrintWithUInt "[TERMINAL] Registered window with WindowManager -> ID #", winId, "\r\n"
+        WmRequestFocus g_winId
 
         ' 3. Register apps.terminal Neural Node for incoming TTY streams
         g_termNodeId = NodeRegister(NODE_KIND_CLIENT, "apps.terminal", CAP_SYNAPSE_READ Or CAP_SYNAPSE_WRITE)
         If g_termNodeId <> 0 Then
             ConsolePrintWithUInt "[TERMINAL] Registered Neural Node 'apps.terminal' -> Node #", g_termNodeId, "\r\n"
         End If
+
+        ' Initialize search paths from environment.cfg
+        InitPathDirs
 
         ' 4. Initialize Terminal Grid and display boot banner
         ClearGrid
@@ -793,11 +1073,22 @@ Module TerminalMain
         ' 5. Event and Keystroke Polling Loop
         Dim blinkCounter As UInt32 = 0
         Dim cursorState As Boolean = True
+        Dim lastFocusedState As Boolean = True
 
         Do
-            ' Poll microkernel keyboard ring buffer (SYS_GET_KEY)
-            Dim key As Byte = GetKey()
-            If key <> 0 Then
+            Dim isFocused As Boolean = WmIsFocused(g_winId)
+
+            ' If window just gained focus from unfocused state, discard any stale keys accumulated in microkernel buffer
+            If isFocused And Not lastFocusedState Then
+                While GetKey() <> 0
+                Wend
+            End If
+            lastFocusedState = isFocused
+
+            ' Poll microkernel keyboard ring buffer (SYS_GET_KEY) only when window has input focus
+            If isFocused Then
+                Dim key As Byte = GetKey()
+                If key <> 0 Then
                 If key = 27 Then
                     ' ANSI Escape Sequence (\x1B[...)
                     Dim b2 As Byte = GetKey()
@@ -927,29 +1218,37 @@ Module TerminalMain
                     End If
                 End If
             End If
+            End If
 
             ' Poll incoming Synapse TTY packets from other processes
             If g_termNodeId <> 0 Then
-                Dim rxPkt As AxonPacket
-                If SynapsePop(g_termNodeId, rxPkt) Then
-                    If rxPkt.PacketType = MSG_TTY_WRITE Then
+                If SynapsePop(g_termNodeId, g_rxPkt) Then
+                    If g_rxPkt.PacketType = MSG_TTY_WRITE Then
                         DrawCursor False
                         Dim p As UInt32 = 0
-                        While p < rxPkt.PayloadLength
-                            PutChar rxPkt.Payload(p), COLOR_TEXT
+                        While p < g_rxPkt.PayloadLength
+                            PutChar g_rxPkt.Payload(p), COLOR_TEXT
                             p = p + 1
                         Wend
+                        FlushDirty
                         DrawCursor True
                     End If
                 End If
             End If
 
             ' 500ms Cursor Blink Management
-            blinkCounter = blinkCounter + 20
-            If blinkCounter >= 500 Then
-                blinkCounter = 0
-                cursorState = Not cursorState
-                DrawCursor cursorState
+            If isFocused Then
+                blinkCounter = blinkCounter + 20
+                If blinkCounter >= 500 Then
+                    blinkCounter = 0
+                    cursorState = Not cursorState
+                    DrawCursor cursorState
+                End If
+            Else
+                If cursorState Then
+                    cursorState = False
+                    DrawCursor False
+                End If
             End If
 
             ProcessSleep 20

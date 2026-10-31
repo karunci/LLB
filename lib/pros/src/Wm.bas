@@ -16,7 +16,76 @@ Namespace Pros.Gui
     Public Const WM_RESP_OK            As UInt32 = 200
     Public Const WM_RESP_ERROR         As UInt32 = 201
 
+    <Packed>
+    Public Structure WindowDescriptor
+        Public WinId         As UInt32
+        Public OwnerPid      As UInt64
+        Public X             As Int32
+        Public Y             As Int32
+        Public Width         As Int32
+        Public Height        As Int32
+        Public SurfaceWidth  As Int32
+        Public SurfaceHeight As Int32
+        Public State         As Int32
+        Public Focused       As Boolean
+        Public ShmId         As UInt64
+        Public ClientVaddr   As UInt64
+        Public Title(32)     As Byte
+    End Structure
+
+    <Packed>
+    Public Structure WindowTable
+        Public Revision    As UInt32
+        Public Count       As Int32
+        Public Windows(16) As WindowDescriptor
+    End Structure
+
     Public Module WindowManagerClient
+
+        ' Cached compositor channel for SignalDirty — resolved once per process lifetime
+        Private g_compNodeId  As UInt64 = 0
+        Private g_compSynChan As UInt64 = 0
+        Private g_clientNodeId As UInt64 = 0
+        Private g_pWindowTable As Pointer To WindowTable = 0
+
+        ''
+        ' @brief Resolve and cache the compositor synapse channel for dirty-rect signaling.
+        '        Called automatically by SignalDirty on first use; safe to call repeatedly.
+        ' @return True if channel is ready.
+        ''
+        Private Unsafe Function EnsureCompChannel() As Boolean
+            If g_compSynChan <> 0 Then
+                EnsureCompChannel = True
+                Exit Function
+            End If
+
+            g_compNodeId = Pros.Nodes.NodeRegistry.Lookup("srv.compositor")
+            If g_compNodeId = 0 Then
+                EnsureCompChannel = False
+                Exit Function
+            End If
+
+            If g_clientNodeId = 0 Then
+                Dim myPid As UInt64 = Pros.Sys.Process.GetPid()
+                Dim clientName(32) As Byte
+                Dim cIdx As UInt32 = 0
+                AppendStr "client.", @clientName(0), cIdx
+                AppendUInt myPid, @clientName(0), cIdx
+                clientName(cIdx) = 0
+                g_clientNodeId = Pros.Nodes.NodeRegistry.Lookup(@clientName(0))
+                If g_clientNodeId = 0 Then
+                    g_clientNodeId = Pros.Nodes.NodeRegistry.Register(1, @clientName(0), 7)
+                End If
+            End If
+
+            If g_clientNodeId = 0 Then
+                EnsureCompChannel = False
+                Exit Function
+            End If
+
+            g_compSynChan = Pros.Nodes.NodeRegistry.Connect(g_clientNodeId, g_compNodeId, 7)
+            EnsureCompChannel = (g_compSynChan <> 0)
+        End Function
 
         ''
         ' @brief Request focus change for a specific window via Synaptic IPC.
@@ -159,7 +228,14 @@ Namespace Pros.Gui
                 If Pros.Nodes.NodeRegistry.Pop(clientNodeId, respPkt) Then
                     If respPkt.PacketType = WM_RESP_OK Then
                         Dim pResId As Pointer To UInt32 = *UInt32(@respPkt.Payload(0))
+                        Dim pTableShm As Pointer To UInt64 = *UInt64(@respPkt.Payload(8))
                         CreateWindow = pResId(0)
+                        If g_pWindowTable = 0 And pTableShm(0) <> 0 Then
+                            Dim tableVaddr As UInt64 = &H6A000000
+                            If Pros.Sys.RawSyscall.Call2(61, pTableShm(0), tableVaddr) <> 0 Then
+                                g_pWindowTable = Pointer To WindowTable(tableVaddr)
+                            End If
+                        End If
                         Exit Function
                     ElseIf respPkt.PacketType = WM_RESP_ERROR Then
                         CreateWindow = 0
@@ -171,6 +247,27 @@ Namespace Pros.Gui
             Wend
 
             CreateWindow = 0
+        End Function
+
+        ''
+        ' @brief Check whether the specified window currently holds input focus.
+        ' @param winId Target window identifier.
+        ' @return True if window is active / focused.
+        ''
+        Public Unsafe Function IsFocused(ByVal winId As UInt32) As Boolean
+            If g_pWindowTable = 0 Then
+                IsFocused = True
+                Exit Function
+            End If
+            Dim i As Int32 = 0
+            While i < g_pWindowTable.Count
+                If g_pWindowTable.Windows(i).WinId = winId Then
+                    IsFocused = g_pWindowTable.Windows(i).Focused
+                    Exit Function
+                End If
+                i = i + 1
+            Wend
+            IsFocused = False
         End Function
 
         ''
@@ -241,28 +338,11 @@ Namespace Pros.Gui
 
         ''
         ' @brief Signal dirty client region for compositor blitting.
+        '        Uses a cached synapse channel (resolved once per process lifetime) to avoid
+        '        per-call Lookup+Connect syscall overhead that caused <10 FPS on bare metal.
         ''
         Public Unsafe Function SignalDirty(ByVal winId As UInt32, ByVal rx As Int32, ByVal ry As Int32, ByVal rw As Int32, ByVal rh As Int32) As Boolean
-            Dim compNodeId As UInt64 = Pros.Nodes.NodeRegistry.Lookup("srv.compositor")
-            If compNodeId = 0 Then
-                SignalDirty = False
-                Exit Function
-            End If
-
-            Dim myPid As UInt64 = Pros.Sys.Process.GetPid()
-            Dim clientName(32) As Byte
-            Dim cIdx As UInt32 = 0
-            AppendStr "client.", @clientName(0), cIdx
-            AppendUInt myPid, @clientName(0), cIdx
-            clientName(cIdx) = 0
-
-            Dim clientNodeId As UInt64 = Pros.Nodes.NodeRegistry.Lookup(@clientName(0))
-            If clientNodeId = 0 Then
-                clientNodeId = Pros.Nodes.NodeRegistry.Register(1, @clientName(0), 7)
-            End If
-
-            Dim synChan As UInt64 = Pros.Nodes.NodeRegistry.Connect(clientNodeId, compNodeId, 7)
-            If synChan = 0 Then
+            If Not EnsureCompChannel() Then
                 SignalDirty = False
                 Exit Function
             End If
@@ -270,8 +350,8 @@ Namespace Pros.Gui
             Dim reqPkt As Pros.Nodes.AxonPacket
             reqPkt.Sequence = 1
             reqPkt.PacketType = WM_CMD_WINDOW_DIRTY
-            reqPkt.SourceNode = clientNodeId
-            reqPkt.TargetNode = compNodeId
+            reqPkt.SourceNode = g_clientNodeId
+            reqPkt.TargetNode = g_compNodeId
             Dim pPayload As Pointer To Int32 = *Int32(@reqPkt.Payload(0))
             pPayload(0) = Int32(winId)
             pPayload(1) = rx
@@ -280,7 +360,7 @@ Namespace Pros.Gui
             pPayload(4) = rh
             reqPkt.PayloadLength = 20
 
-            SignalDirty = Pros.Nodes.NodeRegistry.Push(synChan, reqPkt)
+            SignalDirty = Pros.Nodes.NodeRegistry.Push(g_compSynChan, reqPkt)
         End Function
 
     End Module

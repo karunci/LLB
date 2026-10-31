@@ -3,6 +3,8 @@
 ' Summary: High-level Process management procedures for PROS applications.
 
 Import Pros.Sys.RawSyscall
+Import Pros.Memory.Shmem
+Import Pros.IO.FileSystem
 
 Namespace Pros.Sys
 
@@ -97,6 +99,80 @@ Namespace Pros.Sys
         ''
         Public Unsafe Function InitrdMap(ByVal targetVaddr As UInt64) As Boolean
             InitrdMap = (Pros.Sys.RawSyscall.Call1(SYS_INITRD_MAP, targetVaddr) <> 0)
+        End Function
+
+        ''
+        ' @brief Spawn a new child process from an executable binary (.bax) on the filesystem.
+        ' @param path Fully qualified or relative path to the binary image.
+        ' @param args Command-line arguments string passed to the child process.
+        ' @param inSyn Optional inbound synapse channel ID.
+        ' @param outSyn Optional outbound synapse channel ID.
+        ' @param errSyn Optional error synapse channel ID.
+        ' @return Process ID (>0) on success, or 0 on error.
+        ''
+        Public Unsafe Function Spawn(ByVal path As String, ByVal args As String, _
+                                     Optional ByVal inSyn As UInt64 = 0, _
+                                     Optional ByVal outSyn As UInt64 = 0, _
+                                     Optional ByVal errSyn As UInt64 = 0) As UInt64
+            If path = 0 Then
+                Spawn = 0
+                Exit Function
+            End If
+
+            ' 1. Allocate 64KB Shared Memory transfer window at 0x67000000
+            Dim spawnShmVaddr As UInt64 = &H67000000
+            Dim shmId As UInt64 = Pros.Memory.Shmem.Create(65536, spawnShmVaddr)
+            If shmId = 0 Then
+                Spawn = 0
+                Exit Function
+            End If
+
+            ' 2. Stream binary from VFS into Shared Memory window
+            Dim bytesRead As UInt32 = Pros.IO.FileSystem.ReadAllText(path, Pointer To Byte(spawnShmVaddr), 65536)
+            If bytesRead = 0 Then
+                Pros.Memory.Shmem.Detach shmId
+                Spawn = 0
+                Exit Function
+            End If
+
+            Dim argPtr As UInt64 = 0
+            If args <> 0 Then
+                argPtr = UInt64(Pointer To Byte(args))
+            End If
+
+            ' 3. Invoke microkernel Syscall 10 (SYS_PROCESS_SPAWN)
+            ' %rdi=path, %rsi=shmId, %rdx=argc(0), %r10=argv(args), %r8=priority(1)
+            Dim childPid As UInt64 = Pros.Sys.RawSyscall.Call5(SYS_PROCESS_SPAWN, _
+                                                              UInt64(Pointer To Byte(path)), _
+                                                              shmId, _
+                                                              0, _
+                                                              argPtr, _
+                                                              1)
+
+            ' 4. Detach caller's mapping to the shared memory buffer
+            Pros.Memory.Shmem.Detach shmId
+
+            Spawn = childPid
+        End Function
+
+        ''
+        ' @brief Synchronously wait for a child process to terminate and retrieve its exit code.
+        ' @param pid Target Process ID.
+        ' @param outExitCode ByRef variable receiving the child process exit code.
+        ' @return True if process exited cleanly, False on invalid PID or error.
+        ''
+        Public Unsafe Function WaitForExit(ByVal pid As UInt64, ByRef outExitCode As UInt32) As Boolean
+            WaitForExit = (Pros.Sys.RawSyscall.Call3(SYS_PROCESS_WAIT, pid, UInt64(@outExitCode), 0) = 0)
+        End Function
+
+        ''
+        ' @brief Non-blocking poll of a child process exit status.
+        ' @param pid Target Process ID.
+        ' @param outExitCode ByRef variable receiving the exit code if terminated.
+        ' @return 0 if child exited, 1 if still running, -1 on error.
+        ''
+        Public Unsafe Function PollExit(ByVal pid As UInt64, ByRef outExitCode As UInt32) As Int32
+            PollExit = Int32(Pros.Sys.RawSyscall.Call3(SYS_PROCESS_WAIT, pid, UInt64(@outExitCode), 1))
         End Function
 
     End Module

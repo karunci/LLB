@@ -69,7 +69,7 @@ Module KernelMain
             ' Hypervisor failsafe: drain pending PS/2 keyboard/mouse data on BSP
             DispatchPs2
             MouseDriver.TickIdle
-            SchedEngine.OnTimerTick 10
+            SchedEngine.OnTimerTick 1
         Else
             SchedEngine.OnTimerTick 0
         End If
@@ -677,6 +677,13 @@ Module KernelMain
             Serial.PrintF "[PRK] Spawned Standalone Ring 3 BAX Process (PID: %u)\r\n", CType(UInt32, userPid)
         End If
 
+        ' Spawn Autonomous Ring 3 Neural Node Viewer GUI Process
+        Dim nodeViewPid As UInt64 = 0
+        If nodeViewBaxAddr <> 0 Then
+            nodeViewPid = SchedEngine.CreateBaxProcess("apps.node_viewer", nodeViewBaxAddr, nodeViewBaxSize, 2)
+            Serial.PrintF "[PRK] Spawned Neural Node Viewer GUI Process (PID: %u)\r\n", CType(UInt32, nodeViewPid)
+        End If
+
         ' Spawn Autonomous Ring 3 System Monitor GUI Process
         Dim sysMonPid As UInt64 = 0
         If sysMonBaxAddr <> 0 Then
@@ -684,18 +691,11 @@ Module KernelMain
             Serial.PrintF "[PRK] Spawned System Monitor GUI Process (PID: %u)\r\n", CType(UInt32, sysMonPid)
         End If
 
-        ' Spawn Autonomous Ring 3 Terminal Console GUI Process
+        ' Spawn Autonomous Ring 3 Terminal Console GUI Process (Focused Interactive Console)
         Dim termPid As UInt64 = 0
         If termBaxAddr <> 0 Then
             termPid = SchedEngine.CreateBaxProcess("apps.terminal", termBaxAddr, termBaxSize, 2)
             Serial.PrintF "[PRK] Spawned Terminal Console GUI Process (PID: %u)\r\n", CType(UInt32, termPid)
-        End If
-
-        ' Spawn Autonomous Ring 3 Neural Node Viewer GUI Process
-        Dim nodeViewPid As UInt64 = 0
-        If nodeViewBaxAddr <> 0 Then
-            nodeViewPid = SchedEngine.CreateBaxProcess("apps.node_viewer", nodeViewBaxAddr, nodeViewBaxSize, 2)
-            Serial.PrintF "[PRK] Spawned Neural Node Viewer GUI Process (PID: %u)\r\n", CType(UInt32, nodeViewPid)
         End If
 
         Serial.PrintF "[PRK] Kernel boot and userland dispatch completed successfully.\r\n"

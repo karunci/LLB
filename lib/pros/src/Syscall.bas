@@ -8,6 +8,8 @@ Namespace Pros.Sys
     Public Const SYS_PROCESS_YIELD   As UInt64 = 2
     Public Const SYS_PROCESS_SLEEP   As UInt64 = 3
     Public Const SYS_PROCESS_GETPID  As UInt64 = 6
+    Public Const SYS_PROCESS_SPAWN   As UInt64 = 10
+    Public Const SYS_PROCESS_WAIT    As UInt64 = 11
     Public Const SYS_PROCESS_EXIT    As UInt64 = 16
     Public Const SYS_GET_MOUSE       As UInt64 = 19
     Public Const SYS_GET_KEY         As UInt64 = 20
@@ -80,7 +82,7 @@ Namespace Pros.Sys
         ''
         Public Unsafe Function Call4(ByVal id As UInt64, ByVal a1 As UInt64, ByVal a2 As UInt64, ByVal a3 As UInt64, ByVal a4 As UInt64) As UInt64
             Dim ret As UInt64 = 0
-            Asm "movq %4, %%r10\n\tsyscall" : "=a"(ret) : "a"(id), "D"(a1), "S"(a2), "d"(a3), "r"(a4) : "rcx", "r11", "r10", "memory"
+            Asm "movq %5, %%r10\n\tsyscall" : "=a"(ret) : "a"(id), "D"(a1), "S"(a2), "d"(a3), "r"(a4) : "rcx", "r11", "r10", "memory"
             Call4 = ret
         End Function
 
@@ -89,7 +91,7 @@ Namespace Pros.Sys
         ''
         Public Unsafe Function Call5(ByVal id As UInt64, ByVal a1 As UInt64, ByVal a2 As UInt64, ByVal a3 As UInt64, ByVal a4 As UInt64, ByVal a5 As UInt64) As UInt64
             Dim ret As UInt64 = 0
-            Asm "movq %4, %%r10\n\tmovq %5, %%r8\n\tsyscall" : "=a"(ret) : "a"(id), "D"(a1), "S"(a2), "d"(a3), "r"(a4), "r"(a5) : "rcx", "r11", "r10", "r8", "memory"
+            Asm "movq %5, %%r10\n\tmovq %6, %%r8\n\tsyscall" : "=a"(ret) : "a"(id), "D"(a1), "S"(a2), "d"(a3), "r"(a4), "r"(a5) : "rcx", "r11", "r10", "r8", "memory"
             Call5 = ret
         End Function
 

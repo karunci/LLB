@@ -435,35 +435,41 @@ Module CompositorMain
     End Sub
 
     ' -------------------------------------------------------------------------
-    ' Desktop Background & Initial Window Canvas Pre-Renderer
+    ' Desktop Background & Window Canvas Renderer (with Scissor Clipping)
     ' -------------------------------------------------------------------------
-    Private Unsafe Sub DrawDesktopScene()
+    Private Unsafe Sub DrawDesktopSceneClipped(ByVal cx0 As Int32, ByVal cy0 As Int32, ByVal cw As Int32, ByVal ch As Int32)
         If backSurf.Pixels = 0 Then Exit Sub
+        If cw <= 0 Or ch <= 0 Then Exit Sub
 
-        ' 1. Clear desktop to Nord Dark Background (#191D24)
-        FillRect backSurf, 0, 0, dispInfo.Width, dispInfo.Height, &HFF191D24
+        ' 1. Clear ONLY the clipped dirty area to Nord Dark Background (#191D24)
+        FillRect backSurf, cx0, cy0, cw, ch, &HFF191D24
 
-        ' 2. Top System Menu Bar (y: 0..26)
-        FillRect backSurf, 0, 0, dispInfo.Width, 26, &HFF232731
-        FillRect backSurf, 0, 25, dispInfo.Width, 1, &HFF4C566A
-        FillRect backSurf, 0, 0, 4, 25, &HFF88C0D0
+        ' 2. If top menu bar intersects clip region (y < 26), redraw menu bar
+        If cy0 < 26 Then
+            FillRect backSurf, 0, 0, dispInfo.Width, 26, &HFF232731
+            FillRect backSurf, 0, 25, dispInfo.Width, 1, &HFF4C566A
+            FillRect backSurf, 0, 0, 4, 25, &HFF88C0D0
 
-        DrawText5x7 backSurf, 16, 10, "PROS WORKSTATION  |  APPLICATIONS  NODES  SERVICES", &HFFECEFF4
-        RenderMouseCoordinates False
-        DrawText5x7 backSurf, dispInfo.Width - 360, 10, SYSTEM_VERSION_TAG, &HFF88C0D0
-        DrawText5x7 backSurf, dispInfo.Width - 170, 10, "SMP 4 CORES  ONLINE", &HFFA3BE8C
+            DrawText5x7 backSurf, 16, 10, "PROS WORKSTATION  |  APPLICATIONS  NODES  SERVICES", &HFFECEFF4
+            RenderMouseCoordinates False
+            DrawText5x7 backSurf, dispInfo.Width - 360, 10, SYSTEM_VERSION_TAG, &HFF88C0D0
+            DrawText5x7 backSurf, dispInfo.Width - 170, 10, "SMP 4 CORES  ONLINE", &HFFA3BE8C
+        End If
 
         ' 3. Render all active desktop windows from shared memory
         RenderDesktopWindows
 
-        ' 4. Initialize Telemetry Status Badge Container
-        If dispInfo.Width > 220 And dispInfo.Height > 60 Then
-            badgeX = dispInfo.Width - 210
-            badgeY = dispInfo.Height - 34
-            FillRect backSurf, badgeX, badgeY, 200, 26, &HFF2E3440
-            FillRect backSurf, badgeX, badgeY, 200, 1, &HFF434C5E
-            badgeActive = True
+        ' 4. If telemetry badge container intersects clip region, re-render its frame
+        If badgeActive Then
+            If (cx0 + cw) > badgeX And cx0 < (badgeX + 200) And (cy0 + ch) > badgeY And cy0 < (badgeY + 26) Then
+                FillRect backSurf, badgeX, badgeY, 200, 26, &HFF2E3440
+                FillRect backSurf, badgeX, badgeY, 200, 1, &HFF434C5E
+            End If
         End If
+    End Sub
+
+    Private Unsafe Sub DrawDesktopScene()
+        DrawDesktopSceneClipped 0, 0, dispInfo.Width, dispInfo.Height
     End Sub
 
     ' -------------------------------------------------------------------------
@@ -791,12 +797,22 @@ Module CompositorMain
                             Wend
                         End If
                     Else
-                        ' Full scene rebuild (window geometry changed or first frame)
-                        dirtyX0 = 0
-                        dirtyY0 = 0
-                        dirtyX1 = dispInfo.Width
-                        dirtyY1 = dispInfo.Height
-                        DrawDesktopScene
+                        ' Window moved/created: scissor-clipped redraw of dirty delta
+                        If dirtyX0 < 0 Then dirtyX0 = 0
+                        If dirtyY0 < 0 Then dirtyY0 = 0
+                        If dirtyX1 > dispInfo.Width Then dirtyX1 = dispInfo.Width
+                        If dirtyY1 > dispInfo.Height Then dirtyY1 = dispInfo.Height
+                        Dim cdw As Int32 = dirtyX1 - dirtyX0
+                        Dim cdh As Int32 = dirtyY1 - dirtyY0
+                        If cdw > 0 And cdh > 0 And anyWindowMoved Then
+                            DrawDesktopSceneClipped dirtyX0, dirtyY0, cdw, cdh
+                        Else
+                            dirtyX0 = 0
+                            dirtyY0 = 0
+                            dirtyX1 = dispInfo.Width
+                            dirtyY1 = dispInfo.Height
+                            DrawDesktopScene
+                        End If
                     End If
 
                     If pWindowTable <> 0 Then
@@ -809,31 +825,12 @@ Module CompositorMain
                     RenderMouseCoordinates False
                     RenderTelemetryBadge False
 
-                    ' Always include HUD regions and cursor erase area in dirty rect
-                    ' Mouse coords bar: x=430,y=6,w=180,h=14
-                    If 430 < dirtyX0 Then dirtyX0 = 430
-                    If 6 < dirtyY0 Then dirtyY0 = 6
-                    If 610 > dirtyX1 Then dirtyX1 = 610
-                    If 20 > dirtyY1 Then dirtyY1 = 20
-                    ' Badge
-                    If badgeActive Then
-                        If badgeX < dirtyX0 Then dirtyX0 = badgeX
-                        If badgeY < dirtyY0 Then dirtyY0 = badgeY
-                        If (badgeX + 200) > dirtyX1 Then dirtyX1 = badgeX + 200
-                        If (badgeY + 26) > dirtyY1 Then dirtyY1 = badgeY + 26
+                    ' Erase old cursor on frontSurf from clean backSurf (16x18 = 288 pixels)
+                    If oldCursorX <> cursorX Or oldCursorY <> cursorY Then
+                        FlushDirtyRegion oldCursorX, oldCursorY, CURSOR_W, CURSOR_H
                     End If
-                    ' Old cursor erase region
-                    If oldCursorX < dirtyX0 Then dirtyX0 = oldCursorX
-                    If oldCursorY < dirtyY0 Then dirtyY0 = oldCursorY
-                    If (oldCursorX + CURSOR_W) > dirtyX1 Then dirtyX1 = oldCursorX + CURSOR_W
-                    If (oldCursorY + CURSOR_H) > dirtyY1 Then dirtyY1 = oldCursorY + CURSOR_H
-                    ' New cursor region
-                    If cursorX < dirtyX0 Then dirtyX0 = cursorX
-                    If cursorY < dirtyY0 Then dirtyY0 = cursorY
-                    If (cursorX + CURSOR_W) > dirtyX1 Then dirtyX1 = cursorX + CURSOR_W
-                    If (cursorY + CURSOR_H) > dirtyY1 Then dirtyY1 = cursorY + CURSOR_H
 
-                    ' Flush single merged dirty rect (includes HUD + cursor erase zone)
+                    ' Flush ONLY the calculated window dirty bounding box to VRAM
                     If dirtyX0 < 0 Then dirtyX0 = 0
                     If dirtyY0 < 0 Then dirtyY0 = 0
                     If dirtyX1 > dispInfo.Width Then dirtyX1 = dispInfo.Width
@@ -842,6 +839,12 @@ Module CompositorMain
                     Dim dirtyH As Int32 = dirtyY1 - dirtyY0
                     If dirtyW > 0 And dirtyH > 0 Then
                         FlushDirtyRegion dirtyX0, dirtyY0, dirtyW, dirtyH
+                    End If
+
+                    ' Flush HUD bars independently without inflating window dirty rect
+                    FlushDirtyRegion 430, 6, 180, 14
+                    If badgeActive Then
+                        FlushDirtyRegion badgeX, badgeY, 200, 26
                     End If
 
                     ' Draw active cursor directly onto frontSurf (VRAM) AFTER flush
@@ -854,48 +857,21 @@ Module CompositorMain
                     cursorX = targetMx
                     cursorY = targetMy
 
-                    ' Strict order: erase old cursor -> render HUD -> flush HUD+erase -> draw new cursor
-                    ' Step 1: Update HUD in backSurf (coords text, badge animation)
-                    RenderMouseCoordinates False
-                    RenderTelemetryBadge False
+                    ' Zero-lag decoupled mouse update:
+                    ' 1. Erase old cursor from clean backSurf (16x18 box = 288 pixels)
+                    FlushDirtyRegion oldCursorX, oldCursorY, CURSOR_W, CURSOR_H
 
-                    ' Step 2: Determine unified flush rect (old cursor + new cursor + HUD regions)
-                    Dim mDX0 As Int32 = oldCursorX
-                    Dim mDY0 As Int32 = oldCursorY
-                    Dim mDX1 As Int32 = oldCursorX + CURSOR_W
-                    Dim mDY1 As Int32 = oldCursorY + CURSOR_H
-                    If cursorX < mDX0 Then mDX0 = cursorX
-                    If cursorY < mDY0 Then mDY0 = cursorY
-                    If (cursorX + CURSOR_W) > mDX1 Then mDX1 = cursorX + CURSOR_W
-                    If (cursorY + CURSOR_H) > mDY1 Then mDY1 = cursorY + CURSOR_H
-                    ' Include mouse coord bar
-                    If 430 < mDX0 Then mDX0 = 430
-                    If 6 < mDY0 Then mDY0 = 6
-                    If 610 > mDX1 Then mDX1 = 610
-                    If 20 > mDY1 Then mDY1 = 20
-                    ' Include badge
-                    If badgeActive Then
-                        If badgeX < mDX0 Then mDX0 = badgeX
-                        If badgeY < mDY0 Then mDY0 = badgeY
-                        If (badgeX + 200) > mDX1 Then mDX1 = badgeX + 200
-                        If (badgeY + 26) > mDY1 Then mDY1 = badgeY + 26
-                    End If
-                    If mDX0 < 0 Then mDX0 = 0
-                    If mDY0 < 0 Then mDY0 = 0
-                    If mDX1 > dispInfo.Width Then mDX1 = dispInfo.Width
-                    If mDY1 > dispInfo.Height Then mDY1 = dispInfo.Height
+                    ' 2. Update mouse coordinates box on top bar (180x14 box = 2520 pixels)
+                    RenderMouseCoordinates True
 
-                    ' Step 3: Single flush — clears old cursor ghost + updates HUD in one pass
-                    FlushDirtyRegion mDX0, mDY0, mDX1 - mDX0, mDY1 - mDY0
-
-                    ' Step 4: Draw new cursor on frontSurf AFTER flush (guaranteed no ghost)
+                    ' 3. Draw new cursor directly on frontSurf (VRAM)
                     CursorTheme.DrawCursor frontSurf, cursorX, cursorY, currentCursor
 
                     oldCursorX = cursorX
                     oldCursorY = cursorY
                     mouseDirty = False
                 Else
-                    ' Idle frame: only animate badge (no window/mouse changes)
+                    ' Idle frame: only animate badge
                     RenderTelemetryBadge True
                 End If
 

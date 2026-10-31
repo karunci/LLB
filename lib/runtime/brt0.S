@@ -12,6 +12,7 @@
 .weak user_main
 .weak Main
 .set Main, user_main
+.weak Pros_IO_Console_SetTtyChannel
 
 _start:
     /* 1. Clear Frame Pointer for clean stack backtrace boundary */
@@ -21,6 +22,29 @@ _start:
     popq %rdi                  /* %rdi = argc */
     movq %rsp, %rsi            /* %rsi = argv */
 
+    /* If %rdx is non-zero (NodeStartupContext*), check for OutboundSynapse */
+    testq %rdx, %rdx
+    jz .Lno_ctx
+    movq 32(%rdx), %r8         /* 32(%rdx) = OutboundSynapse */
+    testq %r8, %r8
+    jz .Lno_ctx
+    movabsq $Pros_IO_Console_SetTtyChannel, %rax
+    testq %rax, %rax
+    jz .Lno_ctx
+    pushq %rdi
+    pushq %rsi
+    pushq %rdx
+    pushq %r8
+    subq $8, %rsp              /* Align stack to 16-byte boundary prior to call */
+    movq %r8, %rdi
+    call *%rax
+    addq $8, %rsp
+    popq %r8
+    popq %rdx
+    popq %rsi
+    popq %rdi
+
+.Lno_ctx:
     /* 3. Align stack pointer to 16 bytes prior to function call */
     andq $-16, %rsp
 

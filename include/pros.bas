@@ -295,6 +295,25 @@ Module ProsApi
     Public Declare Function AllocatePages Lib "libpros" Alias "Pros_Sys_Process_AllocatePages" (ByVal pageCount As UInt64, ByVal targetVaddr As VirtualAddress) As Pointer To UInt32
     Public Declare Function InitrdGetInfo Lib "libpros" Alias "Pros_Sys_Process_InitrdGetInfo" (ByVal outInfo As Pointer To InitrdInfo) As Boolean
     Public Declare Function InitrdMap Lib "libpros" Alias "Pros_Sys_Process_InitrdMap" (ByVal targetVaddr As UInt64) As Boolean
+    Public Declare Function ProcessSpawn Lib "libpros" Alias "Pros_Sys_Process_Spawn" (ByVal path As String, ByVal args As String, Optional ByVal inSyn As SynapseId = 0, Optional ByVal outSyn As SynapseId = 0, Optional ByVal errSyn As SynapseId = 0) As ProcessId
+    Public Declare Function ProcessWaitForExit Lib "libpros" Alias "Pros_Sys_Process_WaitForExit" (ByVal pid As ProcessId, ByRef outExitCode As UInt32) As Boolean
+    Public Declare Function ProcessPollExit Lib "libpros" Alias "Pros_Sys_Process_PollExit" (ByVal pid As ProcessId, ByRef outExitCode As UInt32) As Int32
+
+    Public Const SYS_PROCESS_SPAWN   As UInt64 = 10
+    Public Const SYS_PROCESS_WAIT    As UInt64 = 11
+
+    <Packed>
+    Public Structure NodeStartupContext
+        Public NodeId          As NodeId
+        Public ProcessId       As ProcessId
+        Public ParentPid       As ProcessId
+        Public InboundSynapse  As SynapseId
+        Public OutboundSynapse As SynapseId
+        Public ErrorSynapse    As SynapseId
+        Public Argc            As UInt64
+        Public Argv            As VirtualAddress
+        Public NodeName(31)    As Byte
+    End Structure
 
     <Packed>
     Public Structure InitrdInfo
@@ -377,6 +396,7 @@ Module ProsApi
 
     ' Window Management APIs
     Public Declare Function WmRequestFocus Lib "libpros" Alias "Pros_Gui_WindowManagerClient_RequestFocus" (ByVal winId As UInt32) As Boolean
+    Public Declare Function WmIsFocused Lib "libpros" Alias "Pros_Gui_WindowManagerClient_IsFocused" (ByVal winId As UInt32) As Boolean
     Public Declare Function WmCreateWindow Lib "libpros" Alias "Pros_Gui_WindowManagerClient_CreateWindow" (ByVal w As Int32, ByVal h As Int32, ByVal shmId As Handle, ByVal title As String) As UInt32
     Public Declare Function WmDestroyWindow Lib "libpros" Alias "Pros_Gui_WindowManagerClient_DestroyWindow" (ByVal winId As UInt32) As Boolean
     Public Declare Function WmSignalDirty Lib "libpros" Alias "Pros_Gui_WindowManagerClient_SignalDirty" (ByVal winId As UInt32, ByVal rx As Int32, ByVal ry As Int32, ByVal rw As Int32, ByVal rh As Int32) As Boolean

@@ -19,9 +19,14 @@ Namespace Pros.IO
         Private Const VFS_CMD_READ As UInt32 = 13
         Private Const VFS_RESP_OK  As UInt32 = 100
 
-        Private g_transferShmId As UInt64 = 0
-        Private g_transferVaddr As UInt64 = &H66000000
-        Private g_clientSeq     As UInt64 = 1
+        Private g_transferShmId  As UInt64 = 0
+        Private g_transferVaddr  As UInt64 = &H5C000000
+        Private g_clientSeq      As UInt64 = 1
+        Private g_fsClientNodeId As UInt64 = 0
+        Private g_fsVfsNodeId    As UInt64 = 0
+        Private g_fsSynChan      As UInt64 = 0
+        Private g_fsReqPkt       As Pros.Nodes.AxonPacket
+        Private g_fsRespPkt      As Pros.Nodes.AxonPacket
 
         ''
         ' @brief Ensure 64KB Shared Memory transfer buffer is created for Data Plane.
@@ -37,6 +42,13 @@ Namespace Pros.IO
         ' @brief Establish a Synapse channel from the calling task to srv.vfs.
         ''
         Private Unsafe Function ConnectToVfs(ByRef outClientNodeId As UInt64, ByRef outVfsNodeId As UInt64) As UInt64
+            If g_fsSynChan <> 0 Then
+                outClientNodeId = g_fsClientNodeId
+                outVfsNodeId = g_fsVfsNodeId
+                ConnectToVfs = g_fsSynChan
+                Exit Function
+            End If
+
             outVfsNodeId = Pros.Nodes.NodeRegistry.Lookup("srv.vfs")
             If outVfsNodeId = 0 Then
                 ConnectToVfs = 0
@@ -55,21 +67,23 @@ Namespace Pros.IO
                 outClientNodeId = Pros.Nodes.NodeRegistry.Register(1, @clientName(0), 7)
             End If
 
-            ConnectToVfs = Pros.Nodes.NodeRegistry.Connect(outClientNodeId, outVfsNodeId, 7)
+            g_fsSynChan = Pros.Nodes.NodeRegistry.Connect(outClientNodeId, outVfsNodeId, 7)
+            g_fsClientNodeId = outClientNodeId
+            g_fsVfsNodeId = outVfsNodeId
+            ConnectToVfs = g_fsSynChan
         End Function
 
         ''
         ' @brief Bounded synchronous wait for Synapse response packet with sequence validation.
         ' @param clientNodeId Inbound mailbox node ID.
         ' @param expectedSeq Expected transaction sequence number.
-        ' @param outPkt AxonPacket receiving the response.
         ' @return True if expected response received, False on timeout (500ms).
         ''
-        Private Unsafe Function SynapsePopResponse(ByVal clientNodeId As UInt64, ByVal expectedSeq As UInt64, ByRef outPkt As Pros.Nodes.AxonPacket) As Boolean
+        Private Unsafe Function SynapsePopResponse(ByVal clientNodeId As UInt64, ByVal expectedSeq As UInt64) As Boolean
             Dim retries As UInt32 = 0
             While retries < 100 ' Bounded timeout up to 500ms
-                While Pros.Nodes.NodeRegistry.Pop(clientNodeId, outPkt)
-                    If outPkt.Sequence = expectedSeq Then
+                While Pros.Nodes.NodeRegistry.Pop(clientNodeId, g_fsRespPkt)
+                    If g_fsRespPkt.Sequence = expectedSeq Then
                         SynapsePopResponse = True
                         Exit Function
                     End If
@@ -100,24 +114,22 @@ Namespace Pros.IO
                 Exit Function
             End If
 
-            Dim reqPkt As Pros.Nodes.AxonPacket
-            reqPkt.Sequence = g_clientSeq
+            g_fsReqPkt.Sequence = g_clientSeq
             g_clientSeq = g_clientSeq + 1
-            reqPkt.PacketType = VFS_CMD_STAT
-            reqPkt.SourceNode = clientNodeId
-            reqPkt.TargetNode = vfsNodeId
-            StrCopy @reqPkt.Payload(0), 128, path
-            reqPkt.PayloadLength = UInt32(StrLen(path) + 1)
+            g_fsReqPkt.PacketType = VFS_CMD_STAT
+            g_fsReqPkt.SourceNode = clientNodeId
+            g_fsReqPkt.TargetNode = vfsNodeId
+            StrCopy @g_fsReqPkt.Payload(0), 128, path
+            g_fsReqPkt.PayloadLength = UInt32(StrLen(path) + 1)
 
-            If Not Pros.Nodes.NodeRegistry.Push(synChan, reqPkt) Then
+            If Not Pros.Nodes.NodeRegistry.Push(synChan, g_fsReqPkt) Then
                 FileExists = False
                 Exit Function
             End If
 
-            Dim respPkt As Pros.Nodes.AxonPacket
-            If SynapsePopResponse(clientNodeId, reqPkt.Sequence, respPkt) Then
-                If respPkt.PacketType = VFS_RESP_OK Then
-                    Dim pKind As Pointer To UInt32 = Pointer To UInt32(@respPkt.Payload(0))
+            If SynapsePopResponse(clientNodeId, g_fsReqPkt.Sequence) Then
+                If g_fsRespPkt.PacketType = VFS_RESP_OK Then
+                    Dim pKind As Pointer To UInt32 = Pointer To UInt32(@g_fsRespPkt.Payload(0))
                     FileExists = (pKind(0) = 1) ' 1 = File
                 Else
                     FileExists = False
@@ -146,24 +158,22 @@ Namespace Pros.IO
                 Exit Function
             End If
 
-            Dim reqPkt As Pros.Nodes.AxonPacket
-            reqPkt.Sequence = g_clientSeq
+            g_fsReqPkt.Sequence = g_clientSeq
             g_clientSeq = g_clientSeq + 1
-            reqPkt.PacketType = VFS_CMD_STAT
-            reqPkt.SourceNode = clientNodeId
-            reqPkt.TargetNode = vfsNodeId
-            StrCopy @reqPkt.Payload(0), 128, path
-            reqPkt.PayloadLength = UInt32(StrLen(path) + 1)
+            g_fsReqPkt.PacketType = VFS_CMD_STAT
+            g_fsReqPkt.SourceNode = clientNodeId
+            g_fsReqPkt.TargetNode = vfsNodeId
+            StrCopy @g_fsReqPkt.Payload(0), 128, path
+            g_fsReqPkt.PayloadLength = UInt32(StrLen(path) + 1)
 
-            If Not Pros.Nodes.NodeRegistry.Push(synChan, reqPkt) Then
+            If Not Pros.Nodes.NodeRegistry.Push(synChan, g_fsReqPkt) Then
                 DirectoryExists = False
                 Exit Function
             End If
 
-            Dim respPkt As Pros.Nodes.AxonPacket
-            If SynapsePopResponse(clientNodeId, reqPkt.Sequence, respPkt) Then
-                If respPkt.PacketType = VFS_RESP_OK Then
-                    Dim pKind As Pointer To UInt32 = Pointer To UInt32(@respPkt.Payload(0))
+            If SynapsePopResponse(clientNodeId, g_fsReqPkt.Sequence) Then
+                If g_fsRespPkt.PacketType = VFS_RESP_OK Then
+                    Dim pKind As Pointer To UInt32 = Pointer To UInt32(@g_fsRespPkt.Payload(0))
                     DirectoryExists = (pKind(0) = 2) ' 2 = Directory
                 Else
                     DirectoryExists = False
@@ -205,31 +215,29 @@ Namespace Pros.IO
             Dim isEof As Boolean = False
 
             While Not isEof And totalBytesRead < maxLen
-                Dim reqPkt As Pros.Nodes.AxonPacket
-                reqPkt.Sequence = g_clientSeq
+                g_fsReqPkt.Sequence = g_clientSeq
                 g_clientSeq = g_clientSeq + 1
-                reqPkt.PacketType = VFS_CMD_READ
-                reqPkt.SourceNode = clientNodeId
-                reqPkt.TargetNode = vfsNodeId
+                g_fsReqPkt.PacketType = VFS_CMD_READ
+                g_fsReqPkt.SourceNode = clientNodeId
+                g_fsReqPkt.TargetNode = vfsNodeId
 
                 ' Pack Control Plane Request
-                Dim pShm As Pointer To UInt64 = Pointer To UInt64(@reqPkt.Payload(0))
-                Dim pOff As Pointer To UInt32 = Pointer To UInt32(@reqPkt.Payload(8))
-                Dim pMax As Pointer To UInt32 = Pointer To UInt32(@reqPkt.Payload(12))
+                Dim pShm As Pointer To UInt64 = Pointer To UInt64(@g_fsReqPkt.Payload(0))
+                Dim pOff As Pointer To UInt32 = Pointer To UInt32(@g_fsReqPkt.Payload(8))
+                Dim pMax As Pointer To UInt32 = Pointer To UInt32(@g_fsReqPkt.Payload(12))
                 pShm(0) = shmId
                 pOff(0) = fileOffset
                 pMax(0) = 65536
-                StrCopy @reqPkt.Payload(16), 128, path
-                reqPkt.PayloadLength = 16 + UInt32(StrLen(path) + 1)
+                StrCopy @g_fsReqPkt.Payload(16), 128, path
+                g_fsReqPkt.PayloadLength = 16 + UInt32(StrLen(path) + 1)
 
-                If Not Pros.Nodes.NodeRegistry.Push(synChan, reqPkt) Then Exit While
+                If Not Pros.Nodes.NodeRegistry.Push(synChan, g_fsReqPkt) Then Exit While
 
-                Dim respPkt As Pros.Nodes.AxonPacket
-                If Not SynapsePopResponse(clientNodeId, reqPkt.Sequence, respPkt) Then Exit While
+                If Not SynapsePopResponse(clientNodeId, g_fsReqPkt.Sequence) Then Exit While
 
-                If respPkt.PacketType = VFS_RESP_OK Then
-                    Dim pReadBytes As Pointer To UInt32 = Pointer To UInt32(@respPkt.Payload(0))
-                    Dim pFlags     As Pointer To UInt32 = Pointer To UInt32(@respPkt.Payload(8))
+                If g_fsRespPkt.PacketType = VFS_RESP_OK Then
+                    Dim pReadBytes As Pointer To UInt32 = Pointer To UInt32(@g_fsRespPkt.Payload(0))
+                    Dim pFlags     As Pointer To UInt32 = Pointer To UInt32(@g_fsRespPkt.Payload(8))
                     Dim bytesInChunk As UInt32 = pReadBytes(0)
                     If (pFlags(0) And 1) <> 0 Or bytesInChunk = 0 Then isEof = True
 
@@ -281,36 +289,34 @@ Namespace Pros.IO
                 Exit Function
             End If
 
-            Dim reqPkt As Pros.Nodes.AxonPacket
-            reqPkt.Sequence = g_clientSeq
+            g_fsReqPkt.Sequence = g_clientSeq
             g_clientSeq = g_clientSeq + 1
-            reqPkt.PacketType = VFS_CMD_LIST
-            reqPkt.SourceNode = clientNodeId
-            reqPkt.TargetNode = vfsNodeId
+            g_fsReqPkt.PacketType = VFS_CMD_LIST
+            g_fsReqPkt.SourceNode = clientNodeId
+            g_fsReqPkt.TargetNode = vfsNodeId
 
-            Dim pShm As Pointer To UInt64 = Pointer To UInt64(@reqPkt.Payload(0))
-            Dim pMax As Pointer To UInt32 = Pointer To UInt32(@reqPkt.Payload(8))
+            Dim pShm As Pointer To UInt64 = Pointer To UInt64(@g_fsReqPkt.Payload(0))
+            Dim pMax As Pointer To UInt32 = Pointer To UInt32(@g_fsReqPkt.Payload(8))
             pShm(0) = shmId
             pMax(0) = 65536
 
             If dirPath <> 0 Then
-                StrCopy @reqPkt.Payload(12), 128, dirPath
-                reqPkt.PayloadLength = 12 + UInt32(StrLen(dirPath) + 1)
+                StrCopy @g_fsReqPkt.Payload(12), 128, dirPath
+                g_fsReqPkt.PayloadLength = 12 + UInt32(StrLen(dirPath) + 1)
             Else
-                reqPkt.Payload(12) = 0
-                reqPkt.PayloadLength = 13
+                g_fsReqPkt.Payload(12) = 0
+                g_fsReqPkt.PayloadLength = 13
             End If
 
-            If Not Pros.Nodes.NodeRegistry.Push(synChan, reqPkt) Then
+            If Not Pros.Nodes.NodeRegistry.Push(synChan, g_fsReqPkt) Then
                 DirectoryList = 0
                 Exit Function
             End If
 
-            Dim respPkt As Pros.Nodes.AxonPacket
-            If SynapsePopResponse(clientNodeId, reqPkt.Sequence, respPkt) Then
-                If respPkt.PacketType = VFS_RESP_OK Then
-                    Dim pEntries As Pointer To UInt32 = Pointer To UInt32(@respPkt.Payload(0))
-                    Dim pPayloadBytes As Pointer To UInt32 = Pointer To UInt32(@respPkt.Payload(4))
+            If SynapsePopResponse(clientNodeId, g_fsReqPkt.Sequence) Then
+                If g_fsRespPkt.PacketType = VFS_RESP_OK Then
+                    Dim pEntries As Pointer To UInt32 = Pointer To UInt32(@g_fsRespPkt.Payload(0))
+                    Dim pPayloadBytes As Pointer To UInt32 = Pointer To UInt32(@g_fsRespPkt.Payload(4))
                     Dim count As UInt32 = pEntries(0)
                     Dim bytesInShm As UInt32 = pPayloadBytes(0)
 

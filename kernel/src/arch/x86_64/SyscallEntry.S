@@ -50,13 +50,14 @@ syscall_entry:
     pushq %r15                 /* [0(%rsp)] */
 
     /* 6. Marshal System V ABI Arguments to Sys_Syscall_Dispatch
-     *    Sys_Syscall_Dispatch(sysNum, arg1, arg2, arg3, arg4)
+     *    Sys_Syscall_Dispatch(sysNum, arg1, arg2, arg3, arg4, arg5)
      */
     movq 96(%rsp), %rdi        /* 1st Arg (%rdi) = Syscall Number */
     movq 88(%rsp), %rsi        /* 2nd Arg (%rsi) = User arg1 */
     movq 80(%rsp), %rdx        /* 3rd Arg (%rdx) = User arg2 */
     movq 72(%rsp), %rcx        /* 4th Arg (%rcx) = User arg3 */
     movq 64(%rsp), %r8         /* 5th Arg (%r8)  = User arg4 */
+    movq 56(%rsp), %r9         /* 6th Arg (%r9)  = User arg5 */
 
     cld
     call Sys_Syscall_Dispatch

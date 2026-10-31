@@ -409,6 +409,17 @@ Module WmMain
                         hitTarget.DragOffsetY = (hitTarget.Y + hitTarget.Height) - mouseY
                     End If
                 End If
+            Else
+                ' Clicked outside all windows on root desktop -> clear input focus
+                If focusedWinId <> 0 Then
+                    Dim u As UInt32 = 0
+                    While u < windowCount
+                        windows(u).Focused = False
+                        u = u + 1
+                    Wend
+                    focusedWinId = 0
+                    stateChanged = True
+                End If
             End If
         End If
 
@@ -570,8 +581,39 @@ Module WmMain
                     Dim shmId As UInt64 = pShm(0)
 
                     Dim newId As UInt32 = windowCount + 1
-                    Dim newX As Int32 = 60 + (windowCount * 50)
-                    Dim newY As Int32 = 60 + (windowCount * 40)
+                    Dim newX As Int32 = 20
+                    Dim newY As Int32 = 36
+
+                    If w > 500 Then
+                        ' Large window (Terminal, Editor) -> Bottom Dashboard
+                        newX = 20
+                        newY = 328
+                    Else
+                        ' Compact window (SysMon, NodeViewer) -> Top Left or Top Right
+                        Dim slot0Taken As Boolean = False
+                        Dim slot1Taken As Boolean = False
+                        Dim k As Int32 = 0
+                        While k < windowCount
+                            If windows(k).X = 20 And windows(k).Y = 36 Then
+                                slot0Taken = True
+                            ElseIf windows(k).X = 520 And windows(k).Y = 36 Then
+                                slot1Taken = True
+                            End If
+                            k = k + 1
+                        Wend
+
+                        If Not slot0Taken Then
+                            newX = 20
+                            newY = 36
+                        ElseIf Not slot1Taken Then
+                            newX = 520
+                            newY = 36
+                        Else
+                            newX = 60 + (windowCount * 30)
+                            newY = 60 + (windowCount * 30)
+                        End If
+                    End If
+
                     If (newX + w) > 1024 Then newX = 40
                     If (newY + h) > 768 Then newY = 40
 
@@ -593,7 +635,9 @@ Module WmMain
                     respPkt.PacketType = WM_RESP_OK
                     Dim pResId As Pointer To UInt32 = *UInt32(@respPkt.Payload(0))
                     pResId(0) = newId
-                    respPkt.PayloadLength = 4
+                    Dim pTableShm As Pointer To UInt64 = *UInt64(@respPkt.Payload(8))
+                    pTableShm(0) = shmTableId
+                    respPkt.PayloadLength = 16
 
                     Dim replyChan As UInt64 = SynapseConnect(wmNodeId, reqPkt.SourceNode, 7)
                     If replyChan <> 0 Then

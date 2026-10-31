@@ -49,4 +49,18 @@ Namespace Core.Nodes
         Public Name(31) As Byte
     End Structure
 
+    ' Neural Node Dynamic Process Startup Context (passed on user stack at 0x77FFFF80)
+    <Packed>
+    Public Structure NodeStartupContext
+        Public NodeId          As UInt64
+        Public ProcessId       As UInt64
+        Public ParentPid       As UInt64
+        Public InboundSynapse  As UInt64
+        Public OutboundSynapse As UInt64
+        Public ErrorSynapse    As UInt64
+        Public Argc            As UInt64
+        Public Argv            As UInt64
+        Public NodeName(31)    As Byte
+    End Structure
+
 End Namespace

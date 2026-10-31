@@ -189,6 +189,9 @@ Module Arch.Smp
 
         ' 4. Program IA32_FMASK (0xC0000084)
         Asm "wrmsr" : : "c"(&HC0000084), "a"(&H00004700), "d"(0) : "memory"
+
+        ' 5. Program IA32_PAT (0x277): PA1 = Write-Combining (0x01), PA0 = Write-Back (0x06)
+        Asm "wrmsr" : : "c"(&H00000277), "a"(&H00070106), "d"(&H00070406) : "memory"
     End Sub
 
     ''

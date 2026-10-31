@@ -21,15 +21,18 @@ In alignment with the **Dual-Plane Neural Node Architecture** (*"Everything is a
 
 | Traditional Concept | Windows NT Equivalent | Unix / Linux Equivalent | PROS / PRK-LLB Equivalent | Architecture & Lifecycle Role |
 |:---|:---|:---|:---|:---|
-| **PID 1 (Init)** | `smss.exe` / `wininit` | `/sbin/init`, `systemd` | **`genesis.bax`** (or **`cortex.bax`**) | Root userspace coordinator spawned directly by microkernel. |
-| **Process** | Process (`.exe`) | Process (ELF binary) | **Node Process** (`.bax`) | Hardware-isolated address space (User PML4) running one or more Nodes. |
-| **System Service** | Windows Service | Daemon (`systemd` unit) | **Plexus Service** (`*.bax`) | Long-running background subsystem node (e.g., storage, networking). |
-| **Service Supervisor** | SCM (`services.exe`) | `systemd`, `launchd` | **`plexus_mgr.bax`** | Oversees service lifecycles, health heartbeat synapses, and restarts. |
-| **Device Arbiter** | Plug & Play (`pnp_mgr`)| `udev`, `devd` | **`dev_mgr.bax`** | Probes hardware buses (PCI/ACPI) and matches userland driver BAXs. |
-| **Display Server / Driver** | Basic Display / Graphics Driver | DRM / KMS / Framebuffer Driver | **`disp_srv.bax`** | Hardware display adapter driver; maps VRAM aperture, manages modes/double-buffers, presents Display APIs. |
-| **Display Compositor** | DWM (`dwm.exe`) | Wayland Compositor | **`compositor.bax`** | Window surface composition, cursor plane blitting, multi-backend support (Framebuffer via `disp_srv`, GL, Vulkan). |
-| **Window Manager** | Windows Shell / Explorer | Mutter / KWin / Sway | **`wm.bax`** | Window frames, titlebars, layouts, hit-testing, and focus dispatch. |
-| **Raw Input Driver** | Kernel Input Subsystem | `evdev` / Kernel HID | **`input_srv.bax`** | Reads raw scancodes/mouse bytes from kernel and emits high-level events. |
+| **PID 1 (Init)** | `smss.exe` / `wininit` | `/sbin/init`, `systemd` | **`genesis.bax`** | **The Primary Life Pulse (PID 1):** Root orchestrator; stages boot and spawns core services. |
+| **VFS Mount Arbiter** | `fltmgr` / File System | VFS Subsystem | **`vfs_srv.bax`** | **Storage Host & VFS Arbiter:** In-process TarFS + dynamic RamFS mounting at `/Users`. |
+| **Process Manager** | `csrss.exe` / Process Mgr | Process Subsystem | **`proc_mgr.bax`** | **Process & Node Lifecycle Supervisor:** Manages dynamic `.bax` spawning, PID/Node mappings, exit code reaping, synaptic handle grants. |
+| **Service Supervisor** | SCM (`services.exe`) | `systemd`, `launchd` | **`plexus_mgr.bax`** | **Service Supervisor:** Background daemon manager, health heartbeats, and restarts from `services.cfg`. |
+| **Device Arbiter** | Plug & Play (`pnp_mgr`)| `udev`, `devd` | **`dev_mgr.bax`** | **Device Arbiter:** Hardware bus scanner (PCI/ACPI); signals `plexus_mgr` to summon drivers. |
+| **Display Driver** | Basic Display / Graphics Driver | DRM / KMS / Framebuffer Driver | **`disp_srv.bax`** | **Display Driver Service:** Physical VRAM aperture mapping, hardware mode control, double-buffers. |
+| **Display Compositor** | DWM (`dwm.exe`) | Wayland Compositor | **`compositor.bax`** | **Direct Compositor Engine:** Multi-window dirty rect blitter, 60 FPS hardware cursor overlay, frame pacing. |
+| **Window Manager** | Windows Shell / Explorer | Mutter / KWin / Sway | **`wm.bax`** | **Window Manager:** Window decorations, titlebars, layouts, z-order stacking, focus routing. |
+| **Raw Input Driver** | Kernel Input Subsystem | `evdev` / Kernel HID | **`input_srv.bax`** | **Unified Input Driver:** Reads PS/2 & USB keyboard/mouse, emits high-level Axon input packets. |
+| **Power Manager** | `popmgr.sys` | `systemd-logind` | **`power_mgr.bax`** | **Power & Thermal Manager:** ACPI sleep states (S0–S5), poweroff, system reboot, CPU throttling. |
+| **Network Plexus** | `tcpip.sys` / Winsock | Network Stack | **`net_srv.bax`** | **Network Plexus:** Ethernet driver binding (virtio-net, e1000), ARP/IP/TCP/UDP packet streams. |
+| **Audio Plexus** | Audio Endpoint Srv | PulseAudio / PipeWire | **`audio_srv.bax`** | **Audio Plexus:** Intel HDA / AC97 audio frame DMA, sound buffer mixing across synapses. |
 
 ---
 
@@ -115,36 +118,35 @@ In alignment with the **Dual-Plane Neural Node Architecture** (*"Everything is a
 
 ---
 
-## 3. Bootstrap & Dispatch Sequence
+## 3. Bootstrap & Biological Genesis Boot Sequence
 
 ```
  ┌────────────────────────────────────────────────────────────────────────────────────────┐
- │                            SYSTEM BOOT & LAUNCH STAGES                                 │
+ │                    BIOLOGICAL GENESIS BOOT HIERARCHY & SEQUENCE                        │
  │                                                                                        │
- │   Stage 1: Bootloader Handoff (Multiboot 1 / 2)                                        │
- │   - Loads kernel.elf into memory at 1MB (0x100000).                                    │
- │   - Loads boot ramdisk (initrd.tar) as Multiboot module.                               │
- │                                                                                        │
- │   Stage 2: Microkernel Initialization (PRK-LLB)                                        │
- │   - Enters Long Mode (64-bit), sets up GDT, TSS, IDT, and LAPIC/IO-APIC.               │
+ │   Microkernel Core Bring-up (Ring 0: PRK-LLB)                                          │
+ │   - Loads kernel.elf at 1MB, sets up Long Mode (x86_64), GDT, TSS, IDT, LAPIC/IO-APIC. │
  │   - Initializes PMM, Buddy Allocator, VMM, and Kernel Heap (8MB).                      │
- │   - Relocates initrd.tar to safe physical memory (0x6000000 / 96MB).                   │
- │   - Boots all AP cores sequentially with synchronized logging.                         │
- │   - Enables LSTAR Fast Syscalls, Dual-Plane Node Registry, and TarArchive parser.      │
+ │   - Relocates initrd.tar to physical memory (0x6000000 / 96MB).                        │
+ │   - Boots all AP cores sequentially; enables LSTAR Fast Syscalls & Node Registry.      │
+ │   - Microkernel spawns Genesis (PID 1) with boot payload, transitioning to userspace.  │
  │                                                                                        │
- │   Stage 3: Genesis (PID 1) Dispatch                                                    │
- │   - Microkernel locates 'genesis.bax' inside initrd.tar.                               │
- │   - BaxLoader validates 'NEO/BAX\0' magic, allocates isolated User PML4, maps segments.│
- │   - Memory-maps embedded resource table directly to 0x50000000.                        │
- │   - Scheduler dispatches PID 1 in Ring 3 (CPL=3).                                      │
+ │   Stage 1: Storage & Process Foundation                                                │
+ │   - genesis.bax (PID 1) launches and inspects embedded configuration.                  │
+ │   - Spawns vfs_srv.bax (Storage Arbiter): Mounts TarFS (X:\) and dynamic RamFS.        │
+ │   - Spawns proc_mgr.bax: Process & Node Lifecycle Supervisor for dynamic execution.   │
  │                                                                                        │
- │   Stage 4: Genesis Userspace Subsystem Initialization                                  │
- │   - genesis.bax parses its embedded manifest to determine system boot profile.         │
- │   - Spawns dev_mgr.bax to probe PCI/ACPI buses and attach hardware driver nodes.       │
- │   - Spawns plexus_mgr.bax to oversee background system services.                       │
- │   - Spawns compositor.bax to claim the video framebuffer aperture via SYS_SHMEM_MAP.   │
- │   - Spawns input_srv.bax to subscribe to kernel Node #2 (hw.input.raw).                │
- │   - Spawns wm.bax and launches the interactive desktop or application shell.           │
+ │   Stage 2: Sensory-Motor Hardware Bring-up                                             │
+ │   - genesis.bax signals dev_mgr.bax (Device Arbiter) to scan ACPI & PCI buses.         │
+ │   - dev_mgr.bax coordinates with plexus_mgr.bax (Service Supervisor).                  │
+ │   - Launches disp_srv.bax (Display Driver Service) to claim VRAM aperture.             │
+ │   - Launches input_srv.bax (Unified Input Driver) to bind PS/2 & USB keyboard/mouse.   │
+ │                                                                                        │
+ │   Stage 3: Visual Workstation & Applications                                           │
+ │   - Launches compositor.bax: 60 FPS frame-paced multi-window compositor engine.       │
+ │   - Launches wm.bax: Window Manager for window frames, decorations, hit-testing.       │
+ │   - Launches Desktop Workspace (SysMon, Apps) and terminal.bax (Interactive Shell).   │
+ │   - Userspace processes dynamically spawned via SYS_PROCESS_SPAWN (10) from PATH.      │
  └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -375,7 +377,7 @@ To eliminate this overhead, PROS introduces native dynamic linking via **Basic D
 ### 11.1 Architectural Model & Topology
 The Personal Research Operating System (PRK-OS / PROS) implements a strict **Dual-Plane Architecture** for all file storage, directory resolution, and data transfer:
 - **Control Plane (Synapse IPC):** Lightweight, fixed 256-byte `AxonPacket` messages used solely for command signaling, metadata negotiation (`STAT`), capability verification, and session control (`VFS_CMD_READ`, `VFS_CMD_LIST`).
-- **Data Plane (Zero-Copy Shared Memory):** Bulk file content and complete directory listings stream across 64 KB shared physical frame windows mapped at virtual address `0x66000000` via microkernel `SharedMemoryManager` (`SYS_SHMEM_CREATE` and `SYS_SHMEM_ATTACH`), achieving memory-bandwidth transfer speeds (>10 GB/s) with zero syscall overhead per byte.
+- **Data Plane (Zero-Copy Shared Memory):** Bulk file content and complete directory listings stream across 64 KB shared physical frame windows mapped at virtual address `0x5C000000` via microkernel `SharedMemoryManager` (`SYS_SHMEM_CREATE` and `SYS_SHMEM_ATTACH`), achieving memory-bandwidth transfer speeds (>10 GB/s) with zero syscall overhead per byte.
 
 ```mermaid
 flowchart TD
@@ -389,13 +391,13 @@ flowchart TD
 
     subgraph Layer3_StdLib ["Layer 3: Standard Client Library (libpros.a)"]
         FS_LIB["Standard FileSystem Library (Pros.IO.FileSystem)"]
-        SHM_CLIENT["Client Data Plane Window - Mapped at 0x66000000 (64 KB SHM)"]
+        SHM_CLIENT["Client Data Plane Window - Mapped at 0x5C000000 (64 KB SHM)"]
     end
 
     subgraph Layer2_VFS ["Layer 2: VFS Service (srv.vfs / vfs_srv.bax)"]
         VFS_ROUTER["VFS Mount Arbiter - Longest-Prefix Mount Resolution"]
         MOUNT_TBL["Dynamic Mount Table: Root '/' (TarFS), '/Users' (fs.ramfs)"]
-        SHM_SRV["VFS Data Plane Attach Arena - 0x66000000 + slot * 1MB"]
+        SHM_SRV["VFS Data Plane Attach Arena - 0x5C000000 + slot * 1MB"]
         
         subgraph Internal_Drivers ["Internal Zero-Copy Drivers"]
             TARFS["TarFsDriver.cls - Read-Only Initrd Provider at 0x58000000"]
@@ -424,7 +426,7 @@ flowchart TD
     %% Data Plane Connections (Shared Memory)
     SHM_CLIENT <=====>|"Zero-Copy Physical Page Mapping (SHMID)"| SHM_MGR
     SHM_SRV <=====>|"Zero-Copy Physical Page Mapping (SHMID)"| SHM_MGR
-    TARFS ===>|"Direct Memory Copy (0x58000000 to 0x66000000)"| SHM_SRV
+    TARFS ===>|"Direct Memory Copy (0x58000000 to 0x5C000000)"| SHM_SRV
     RAMFS_PLEXUS ===>|"Direct Memory Copy (0x5A000000 to SHM)"| SHM_SRV
     SHM_CLIENT --->|"Direct Memory Read (No Syscall)"| CAT
     SHM_CLIENT --->|"Direct Memory Read (No Syscall)"| TERM
@@ -436,6 +438,84 @@ To ensure deterministic directory traversal (`cd`, `ls`) across SMP multicore co
 1. **Bounded Synchronous Waiting (`SynapsePopResponse`):** Client IPC exchanges utilize a bounded polling loop with `Process.Sleep 5` up to 500ms, replacing the fragile 10-yield loop and guaranteeing response arrival even under heavy SMP scheduling contention.
 2. **Monotonic Sequence Matching:** Client requests embed an advancing transaction sequence number (`g_clientSeq`). Late or stale packets from aborted transactions are discarded immediately, preventing mailbox poisoning and cascading deserialization failures.
 3. **Plexus Forwarding Channel Isolation:** VFS requests forwarded to external storage plexuses (e.g. `fs.ramfs` for `/Users`) block specifically on the forward synapse channel (`fwdChan >= 5000`) rather than multiplexing on the root `srv.vfs` node listener, eliminating packet interception between concurrent client tasks.
+
+---
+
+## 12. Dynamic Process Lifecycle & Neural Node Execution
+
+### 12.1 Microkernel Dynamic Process Subsystem
+To facilitate dynamic process loading and child execution without monolithic fork semantics, PRK-OS introduces a capability-oriented Dual-Plane process execution model via Syscall 10 (`SYS_PROCESS_SPAWN`) and Syscall 11 (`SYS_PROCESS_WAIT`).
+
+#### Syscall 10: `SYS_PROCESS_SPAWN`
+- **Register Conventions:**
+  - `%rdi` (sysNum): `10`
+  - `%rsi` (arg1): `namePtr` (Pointer to null-terminated ASCII process name, e.g. `"cat"`)
+  - `%rdx` (arg2): `shmId` (Shared memory identifier containing the executable `.bax` binary stream)
+  - `%rcx` (arg3): `argc` (Number of command-line arguments)
+  - `%r8`  (arg4): `argvPtr` (User virtual address pointing to argument string pointers)
+  - `%r9`  (arg5): `priority` (Process scheduling priority, 0 = normal user priority)
+- **Kernel Execution Flow:**
+  1. **User PML4 Allocation:** `VMM.CreateUserPml4()` constructs an isolated 4-level page table hierarchy with kernel space higher-half mirror (`0xFFFF800000000000`) and Ring 3 user space.
+  2. **Binary Materialization:** Resolves physical frames from `SharedMemoryManager` backing `shmId`, loads binary code and data segments via `BaxLoader.LoadBinary` mapped starting at virtual address `0x40000000`.
+  3. **User Stack Allocation:** Allocates and maps 4 contiguous physical pages for user stack up to virtual boundary `0x78000000` (top of `PDPT[1]`).
+  4. **Neural Node Enrollment:** Registers a unique node identifier in `NodeRegistry` formatted as `<basename>.<pid>` (e.g. `cat.12`), ensuring global routing isolation.
+  5. **Startup Context Construction:** Materializes a `NodeStartupContext` structure at the top of the user stack (`0x77FFFF80`), pre-wiring default parent-child Synapse channels.
+  6. **Synthetic Stack & Register State:** Prepares initial execution context with `%rdi = argc`, `%rsi = argvPtr`, `%rdx = Pointer To NodeStartupContext`, and initial `userRsp = 0x77FFFE60` strictly below `NodeStartupContext` and argument buffers, placing entry IP at the loaded `.bax` entrypoint and enqueuing the `TaskControlBlock` in `Scheduler`.
+
+#### Syscall 11: `SYS_PROCESS_WAIT`
+- **Register Conventions:**
+  - `%rdi` (sysNum): `11`
+  - `%rsi` (arg1): `targetPid` (Process ID to await, or `0` for any child)
+  - `%rdx` (arg2): `outExitCodePtr` (User virtual pointer to receive `UInt32` exit status)
+  - `%rcx` (arg3): `flags` (`0` = blocking wait until child exits, `1` = non-blocking poll)
+- **Exit Status Protocol:**
+  - When tasks invoke `ExitCurrentTask(exitCode)`, the scheduler caches `(PID, exitCode)` in an exited process ring buffer.
+  - Blocking wait yields the calling thread (`ProcessYield`) until the child status is collected.
+  - Returns `0` on success, `1` if process is still active (non-blocking poll), or negative error code if PID is invalid.
+
+### 12.2 `NodeStartupContext` Protocol
+Every dynamic process instantiated via `SYS_PROCESS_SPAWN` receives an architectural handover context at the top of its stack page (`0x77FFFF80`), safely segregated above the downward-growing execution stack (`userRsp = 0x77FFFE60`):
+```vb
+<Packed>
+Public Structure NodeStartupContext
+    Public NodeId          As NodeId          ' Global Node ID registered in NodeRegistry
+    Public ProcessId       As ProcessId       ' Child Process ID (PID)
+    Public ParentPid       As ProcessId       ' Parent Process ID (caller PID)
+    Public InboundSynapse  As SynapseId       ' Pre-wired Inbound Synapse channel (e.g. STDIN pipe)
+    Public OutboundSynapse As SynapseId       ' Pre-wired Outbound Synapse channel (e.g. STDOUT TTY channel)
+    Public ErrorSynapse    As SynapseId       ' Pre-wired Error Synapse channel (e.g. STDERR channel)
+    Public Argc            As UInt64          ' Argument count
+    Public Argv            As VirtualAddress  ' Child virtual address of argv pointer array
+    Public NodeName(31)    As Byte            ' Null-terminated unique node identifier
+End Structure
+```
+During runtime entry in `lib/runtime/brt0.S`, register `%rdx` is checked for non-zero (pointing to `NodeStartupContext` at `0x77FFFF80`). If present, `brt0.S` reads `OutboundSynapse` from `32(%rdx)`. If non-zero, the runtime invokes `Pros_IO_Console_SetTtyChannel(OutboundSynapse)`, seamlessly directing standard console output (`ConsoleWriteLine`) to the summoning parent terminal screen via `MSG_TTY_WRITE` Synapse packets.
+
+### 12.3 Hypervisor Frame Pacing & Compositor Scheduling
+To eliminate CPU spinning and APIC timer jitter on hypervisors such as VirtualBox:
+- The compositor event loop enforces an unconditional yield/sleep invariant across all execution paths.
+- When the frame deadline has not yet arrived (`nextFrameTime > nowTime`), the compositor sleeps for the remaining delta or yields.
+- When the frame deadline has already elapsed (`nextFrameTime <= nowTime`), the compositor sets `nextFrameTime = nowTime + 16` and explicitly executes `ProcessYield`, preventing continuous 100% core spin and allowing background processes, input drivers, and terminal shells to obtain execution slices deterministically.
+- Mouse cursor updates are segregated into dirty rect clears and coordinate updates (~11 KB blit) rather than full frame transfers (1.8 MB), sustaining 60 FPS presentation even under heavy CPU virtualization.
+
+### 12.4 Fine-Grained SMP Per-CPU Runqueues & Work-Stealing Protocol
+To eliminate cross-core lock contention and spinlock-holder preemption stalls on hypervisors (VirtualBox, QEMU, bare metal):
+- The microkernel scheduler replaces the monolithic `schedLock` with fine-grained per-CPU runqueue spinlocks (`coreLocks(16)`).
+- **Steal Arbitration Protocol:** Cross-core load balancing uses an isolated `stealLock`. During work-stealing, an idle core acquires `stealLock`, inspects candidate core runqueues, and locks only the victim core's `coreLocks(victimCpu)` before migrating a ready task.
+- **Global State Isolation:** Process termination (`ExitCurrentTask`) and exit code collection (`GetProcessExitStatus`) use a dedicated `schedGlobalLock` to protect the exited task ring buffer, decoupling process lifecycle management from per-core task scheduling.
+
+### 12.5 Hardware Framebuffer Write-Combining (IA32_PAT MSR 0x277)
+To resolve EPT violation storms and memory bus bottlenecks during VRAM rendering:
+- The BSP and all AP cores configure the `IA32_PAT` MSR (0x277) with `PAT_CONFIG = 0x0007040600070106`, programming PAT PA1 as Write-Combining (`0x01`).
+- During physical-to-virtual framebuffer mapping (`SYS_FB_MAP`), PTE flags are set to `0x0F` (Present | Writable | User | Page-level Write-Through `PWT`), routing all VRAM writes directly to processor Write-Combining burst buffers.
+- Eliminates uncacheable (UC) bus locking and allows 1024x768x32 ARGB burst fills to run at wire speed across VirtualBox, WHPX, KVM, and bare metal hardware.
+
+### 12.6 Native Low-Level Basic BAX Packager (`tools/bax_pack`)
+To eliminate external runtime dependencies (such as Python), the BAX packaging toolchain is implemented purely in Low-Level Basic:
+- **Project Structure:** `tools/bax_pack/BaxPack.llbproj` compiling `BaxPackMain.bas` into native ELF `build/bax_pack`.
+- **Packaging Logic:** Directly parses ELF64 headers, extracts `.text`, `.rodata`, `.data`, and `.bss` segments, validates JSON manifests, calculates checksums, and serializes the complete Neural BAX container binary stream natively.
+- Integrated into `tools/pack_initrd.sh` and `tools/rebuild_all.sh` as the primary production packager.
+
 
 
 

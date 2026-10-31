@@ -3,6 +3,46 @@ set -e
 STAGING_DIR="build/initrd_staging"
 rm -rf "${STAGING_DIR}"
 
+# 0. Build native LLB BAX packager if needed
+if [ ! -x "tools/bax_pack/build/bax_pack" ]; then
+    echo "[+] Building Native Low-Level Basic BAX Packager (tools/bax_pack)..."
+    ~/projects/LLB/llbc/build/llbc-stage0 tools/bax_pack/BaxPack.llbproj
+fi
+
+# Packaging ELF binaries into Neural BAX containers via native LLB tool
+pack_bax() {
+    local elf="$1"
+    local bax="$2"
+    local manifest="$3"
+    if [ -f "${elf}" ] && [ -f "${manifest}" ]; then
+        if [ -x "tools/bax_pack/build/bax_pack" ]; then
+            tools/bax_pack/build/bax_pack "${elf}" -o "${bax}" --manifest "${manifest}"
+        else
+            python3 tools/bax_pack.py "${elf}" -o "${bax}" --manifest "${manifest}"
+        fi
+    fi
+}
+
+echo "[+] Packaging ELF binaries into Neural BAX containers..."
+pack_bax services/genesis/build/genesis.elf services/genesis/build/genesis.bax services/genesis/manifest.json
+pack_bax services/disp_srv/build/disp_srv.elf services/disp_srv/build/disp_srv.bax services/disp_srv/manifest.json
+pack_bax services/input_srv/build/input_srv.elf services/input_srv/build/input_srv.bax services/input_srv/manifest.json
+pack_bax services/compositor/build/compositor.elf services/compositor/build/compositor.bax services/compositor/manifest.json
+pack_bax services/dev_mgr/build/dev_mgr.elf services/dev_mgr/build/dev_mgr.bax services/dev_mgr/manifest.json
+pack_bax services/plexus_mgr/build/plexus_mgr.elf services/plexus_mgr/build/plexus_mgr.bax services/plexus_mgr/manifest.json
+pack_bax services/wm/build/wm.elf services/wm/build/wm.bax services/wm/manifest.json
+pack_bax services/vfs_srv/build/vfs_srv.elf services/vfs_srv/build/vfs_srv.bax services/vfs_srv/manifest.json
+pack_bax services/ramfs_srv/build/ramfs_srv.elf services/ramfs_srv/build/ramfs_srv.bax services/ramfs_srv/manifest.json
+pack_bax apps/cli/coreutils/ls/build/ls.elf apps/cli/coreutils/ls/build/ls.bax apps/cli/coreutils/ls/manifest.json
+pack_bax apps/cli/coreutils/cat/build/cat.elf apps/cli/coreutils/cat/build/cat.bax apps/cli/coreutils/cat/manifest.json
+pack_bax apps/cli/coreutils/uptime/build/uptime.elf apps/cli/coreutils/uptime/build/uptime.bax apps/cli/coreutils/uptime/manifest.json
+pack_bax apps/cli/coreutils/ver/build/ver.elf apps/cli/coreutils/ver/build/ver.bax apps/cli/coreutils/ver/manifest.json
+pack_bax apps/cli/coreutils/echo/build/echo.elf apps/cli/coreutils/echo/build/echo.bax apps/cli/coreutils/echo/manifest.json
+pack_bax apps/gui/sys_mon/build/sys_mon.elf apps/gui/sys_mon/build/sys_mon.bax apps/gui/sys_mon/manifest.json
+pack_bax apps/gui/terminal/build/terminal.elf apps/gui/terminal/build/terminal.bax apps/gui/terminal/manifest.json
+pack_bax apps/gui/node_viewer/build/node_viewer.elf apps/gui/node_viewer/build/node_viewer.bax apps/gui/node_viewer/manifest.json
+pack_bax apps/gui/user_app/build/user_app.elf apps/gui/user_app/build/user_app.bax apps/gui/user_app/manifest.json
+
 # 1. Directory Tree Creation
 mkdir -p "${STAGING_DIR}/System/Services/Genesis"
 mkdir -p "${STAGING_DIR}/System/Services/Compositor"

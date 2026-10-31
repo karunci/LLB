@@ -424,7 +424,7 @@ Module VfsMain
 
                                         pRespRead(0) = bytesRead
                                         pRespTotal(0) = rfSize
-                                        If (fileOffset + bytesRead) >= fSize Then
+                                        If (fileOffset + bytesRead) >= rfSize Then
                                             pRespFlags(0) = 1 ' Bit 0: EOF
                                         Else
                                             pRespFlags(0) = 0

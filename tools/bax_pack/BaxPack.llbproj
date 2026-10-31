@@ -1,0 +1,25 @@
+' Project Name: Low-Level Basic / PROS Toolchain
+' Filename: tools/bax_pack/BaxPack.llbproj
+' Summary: Native Low-Level Basic ELF64 to NEO/PE-BAX executable packager.
+
+[Project]
+Name    = "bax_pack"
+Type    = "Executable"
+Version = "0.1.0"
+
+[Target]
+Platform = "hosted"
+
+[Output]
+OutputDirectory = "build"
+BinaryName      = "bax_pack"
+
+[CompilerOptions]
+OptimizationLevel = "O2"
+EmitDebugInfo     = true
+
+[Sources]
+Files = [
+    "BaxPackMain.bas"
+]
+

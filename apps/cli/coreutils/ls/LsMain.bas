@@ -30,7 +30,9 @@ Module LsMain
         Dim i As UInt32
         For i = 0 To count - 1
             Dim namePtr As Pointer To Byte = @buf(idx)
-            ConsoleWriteLine namePtr
+            If namePtr(0) <> 0 Then
+                ConsoleWriteLine namePtr
+            End If
             While buf(idx) <> 0 And idx < 65530
                 idx = idx + 1
             Wend

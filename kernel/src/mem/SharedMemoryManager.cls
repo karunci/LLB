@@ -309,6 +309,44 @@ Namespace Mem
             Sync.SpinlockOps.ReleaseIrqRestore registryLock, regFlags
         End Sub
 
+        ''
+        ' @brief Retrieve the array of physical frames backing an active SHMID.
+        ' @param shmid Target shared memory ID.
+        ' @param outNumPages ByRef variable receiving the page count.
+        ' @param outFramesPtr Pointer to buffer receiving UInt64 physical frame addresses.
+        ' @param maxFrames Maximum number of entries that outFramesPtr can receive.
+        ' @return True if shmid was found and active, False otherwise.
+        ''
+        Public Unsafe Function GetShmemFrames(ByVal shmid As UInt64, ByRef outNumPages As UInt32, ByVal outFramesPtr As Pointer To UInt64, ByVal maxFrames As UInt32) As Boolean
+            If shmid = 0 Or outFramesPtr = 0 Then
+                GetShmemFrames = False
+                Exit Function
+            End If
+
+            Dim regFlags As UInt64 = Sync.SpinlockOps.AcquireIrqSave(registryLock)
+            Dim i As UInt32 = 0
+            While i < ShmemConstants.MAX_SHMEM_OBJECTS
+                If registry(i).Active And registry(i).Id = shmid Then
+                    Dim objFlags As UInt64 = Sync.SpinlockOps.AcquireIrqSave(registry(i).Lock)
+                    outNumPages = registry(i).NumPages
+                    Dim countToCopy As UInt32 = outNumPages
+                    If countToCopy > maxFrames Then countToCopy = maxFrames
+                    Dim k As UInt32 = 0
+                    While k < countToCopy
+                        outFramesPtr(k) = registry(i).PhysFrames(k)
+                        k = k + 1
+                    Wend
+                    Sync.SpinlockOps.ReleaseIrqRestore registry(i).Lock, objFlags
+                    Sync.SpinlockOps.ReleaseIrqRestore registryLock, regFlags
+                    GetShmemFrames = True
+                    Exit Function
+                End If
+                i = i + 1
+            Wend
+            Sync.SpinlockOps.ReleaseIrqRestore registryLock, regFlags
+            GetShmemFrames = False
+        End Function
+
     End Class
 
 End Namespace

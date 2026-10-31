@@ -97,6 +97,49 @@ Namespace Mem
             CreateUserPml4 = newPml4Phys
         End Function
 
+        ''
+        ' @brief Tear down and reclaim all physical frames associated with a User PML4 hierarchy.
+        '        Frees any allocated user page tables and directories in PDPT[1], the user PDPT frame,
+        '        and the root PML4 frame.
+        ' @param pml4Phys Physical address of the user PML4 table to destroy.
+        ''
+        Public Unsafe Sub DestroyUserPml4(ByVal pml4Phys As UInt64)
+            If pml4Phys = 0 Then Exit Sub
+
+            Dim pml4Table As Volatile Pointer To UInt64 = Pointer To UInt64(pml4Phys)
+            If (pml4Table(0) And VmmFlags.PTE_PRESENT) <> 0 Then
+                Dim userPdptPhys As UInt64 = pml4Table(0) And VmmFlags.PTE_FRAME_MASK
+                Dim userPdptTable As Volatile Pointer To UInt64 = Pointer To UInt64(userPdptPhys)
+
+                ' PDPT[1] is the user space 1GB..2GB region (0x40000000 - 0x80000000)
+                If (userPdptTable(1) And VmmFlags.PTE_PRESENT) <> 0 Then
+                    Dim userPdPhys As UInt64 = userPdptTable(1) And VmmFlags.PTE_FRAME_MASK
+                    Dim userPdTable As Volatile Pointer To UInt64 = Pointer To UInt64(userPdPhys)
+
+                    Dim di As UInt32
+                    For di = 0 To 511
+                        If (userPdTable(di) And VmmFlags.PTE_PRESENT) <> 0 And (userPdTable(di) And VmmFlags.PTE_HUGE) = 0 Then
+                            Dim ptPhys As UInt64 = userPdTable(di) And VmmFlags.PTE_FRAME_MASK
+                            Dim ptTable As Volatile Pointer To UInt64 = Pointer To UInt64(ptPhys)
+                            Dim ti As UInt32
+                            For ti = 0 To 511
+                                If (ptTable(ti) And VmmFlags.PTE_PRESENT) <> 0 Then
+                                    Dim pagePhys As UInt64 = ptTable(ti) And VmmFlags.PTE_FRAME_MASK
+                                    Buddy.FreePages pagePhys, 0
+                                End If
+                            Next ti
+                            Buddy.FreePages ptPhys, 0
+                        End If
+                    Next di
+                    Buddy.FreePages userPdPhys, 0
+                End If
+
+                Buddy.FreePages userPdptPhys, 0
+            End If
+
+            Buddy.FreePages pml4Phys, 0
+        End Sub
+
         ' Extract PML4 index (bits 39..47)
         Public Function Pml4Index(ByVal virtAddr As UInt64) As UInt32
             Pml4Index = CType(UInt32, (virtAddr RShift 39) And &H1FF)

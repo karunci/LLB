@@ -132,13 +132,15 @@ Namespace Storage.TarFS
                     Dim isDir As Boolean = (header.TypeFlag = 53) ' '5' = Directory
 
                     Dim entry As Pointer To TarIndexedEntry = @entries(entryCount)
-                    entry.PathLen = Me.NormalizeTarPath(@header.FileName(0), @entry.Path(0), 128)
-                    entry.DataPtr = Pointer To Byte(currentAddr + 512)
-                    entry.SizeBytes = UInt32(fSize)
-                    entry.IsDirectory = isDir
-                    entry.InUse = True
-
-                    entryCount = entryCount + 1
+                    Dim normLen As UInt32 = Me.NormalizeTarPath(@header.FileName(0), @entry.Path(0), 128)
+                    If normLen > 0 Then
+                        entry.PathLen = normLen
+                        entry.DataPtr = Pointer To Byte(currentAddr + 512)
+                        entry.SizeBytes = UInt32(fSize)
+                        entry.IsDirectory = isDir
+                        entry.InUse = True
+                        entryCount = entryCount + 1
+                    End If
 
                     ' Advance to next 512-byte aligned record
                     Dim blocks As UInt64 = (fSize + 511) / 512
@@ -290,7 +292,7 @@ Namespace Storage.TarFS
             Dim i As UInt32
             For i = 0 To entryCount - 1
                 Dim entry As Pointer To TarIndexedEntry = @entries(i)
-                If entry.InUse Then
+                If entry.InUse And entry.PathLen > 0 Then
                     Dim isMatched As Boolean = False
                     Dim childNameStart As UInt32 = 0
 
@@ -325,7 +327,7 @@ Namespace Storage.TarFS
                         End If
                     End If
 
-                    If isMatched Then
+                    If isMatched And entry.Path(childNameStart) <> 0 Then
                         ' Append child name + null terminator to outBuf
                         Dim cIdx As UInt32 = childNameStart
                         While entry.Path(cIdx) <> 0 And wIdx + 2 < maxLen

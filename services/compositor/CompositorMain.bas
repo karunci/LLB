@@ -1,9 +1,9 @@
 ' Project Name: PROS (Personal Research Operating System)
 ' Filename: services/compositor/CompositorMain.bas
 ' Summary: Standalone Ring 3 Display Compositor and Window Engine daemon.
-'          Features pixel-perfect PRK cursor sprite (16x18), responsive zero-lag
-'          mouse hardware tracking, real-time dynamic FPS measurement,
-'          smooth half-speed telemetry pulse, and restored minimalist Nord window.
+'          Features pixel-perfect PRK cursor sprite (16x18), zero-ghost cursor
+'          via strict erase-before-draw ordering, real-time dynamic FPS measurement,
+'          smooth half-speed telemetry pulse, and minimalist Nord window decorations.
 
 Import "../../include/pros.bas"
 Import "CursorTheme.bas"
@@ -12,6 +12,8 @@ Import "../wm/WindowTheme.bas"
 Module CompositorMain
 
     Public Declare Sub fast_blit32 Lib "libc" (ByVal dst As Pointer To UInt32, ByVal src As Pointer To UInt32, ByVal count As UInt64)
+    ' Non-temporal variant: bypasses cache for VRAM MMIO writes; avoids EPT violations in VirtualBox.
+    Public Declare Sub fast_blit32_nt Lib "libc" (ByVal dst As Pointer To UInt32, ByVal src As Pointer To UInt32, ByVal count As UInt64)
 
     ' -------------------------------------------------------------------------
     ' Internal Data & State
@@ -32,6 +34,7 @@ Module CompositorMain
     Private synWm As UInt64 = 0
     Private wmNodeId As UInt64 = 0
     Private desktopDirty As Boolean = False
+    Private clientDirtyOnly As Boolean = False  ' True = only client surface changed, skip full scene clear
 
     Private cursorX As Int32 = 512
     Private cursorY As Int32 = 384
@@ -142,10 +145,11 @@ Module CompositorMain
             Dim pixOff As UInt64 = (UInt64(py) * UInt64(pitchPixels)) + UInt64(x0)
             Dim dstPtr As Pointer To UInt32 = frontSurf.Pixels + pixOff
             Dim srcPtr As Pointer To UInt32 = backSurf.Pixels + pixOff
-            fast_blit32 dstPtr, srcPtr, clipW
+            fast_blit32_nt dstPtr, srcPtr, clipW
             py = py + 1
         Wend
 
+        ' sfence already emitted per-scanline inside fast_blit32_nt; single barrier is redundant but kept for safety
         Asm "sfence" : : : "memory"
     End Sub
 
@@ -279,17 +283,11 @@ Module CompositorMain
 
     ' -------------------------------------------------------------------------
     ' Telemetry Status Badge Renderer (Paced at half-speed with Dynamic FPS)
+    ' NOTE: Cursor erase/redraw is handled ONLY by the main render loop.
+    '       This routine NEVER touches cursor state to prevent ghost artifacts.
     ' -------------------------------------------------------------------------
     Private Unsafe Sub RenderTelemetryBadge(ByVal flushToScreen As Boolean)
         If Not badgeActive Then Exit Sub
-
-        Dim restoreCursor As Boolean = False
-        If flushToScreen Then
-            restoreCursor = (cursorInitialized And CursorIntersects(badgeX, badgeY, 200, 26))
-            If restoreCursor Then
-                RestoreCursorBackground cursorX, cursorY
-            End If
-        End If
 
         ' 1. Cycle status LED color (breathing green -> cyan -> mint -> emerald)
         Dim ledColor As UInt32 = &HFF00C853
@@ -334,7 +332,7 @@ Module CompositorMain
             animDir = 2
         End If
 
-        ' 4. Real-time dynamic FPS counter text measured from system timer (rendered every frame for permanent stability)
+        ' 4. Real-time dynamic FPS counter text
         Dim fpsBuf(16) As Byte
         Dim fIdx As UInt32 = 0
         AppendUInt currentFps, @fpsBuf(0), fIdx
@@ -345,29 +343,25 @@ Module CompositorMain
         DrawText5x7 backSurf, badgeX + 140, badgeY + 10, @fpsBuf(0), &HFF88C0D0
 
         If flushToScreen Then
-            FlushDirtyRegion badgeX, badgeY, 200, 26
-
-            If restoreCursor Then
-                SaveCursorBackground cursorX, cursorY
-                DrawCursorArrow cursorX, cursorY
+            ' Erase cursor from VRAM before flushing badge (if cursor overlaps)
+            If cursorInitialized And CursorIntersects(badgeX, badgeY, 200, 26) Then
                 FlushDirtyRegion cursorX, cursorY, CURSOR_W, CURSOR_H
+            End If
+            FlushDirtyRegion badgeX, badgeY, 200, 26
+            ' Redraw cursor on top of VRAM after flush
+            If cursorInitialized Then
+                CursorTheme.DrawCursor frontSurf, cursorX, cursorY, currentCursor
             End If
         End If
     End Sub
 
     ''
     ' @brief Render live mouse coordinates text on top system menu bar.
+    '        Cursor erase/redraw is handled ONLY by the main render loop.
+    '        This routine NEVER touches cursor state to prevent ghost artifacts.
     ''
     Private Unsafe Sub RenderMouseCoordinates(ByVal flushToScreen As Boolean)
         If frontSurf.Pixels = 0 Then Exit Sub
-
-        Dim restoreCursor As Boolean = False
-        If flushToScreen Then
-            restoreCursor = (cursorInitialized And CursorIntersects(430, 6, 180, 14))
-            If restoreCursor Then
-                RestoreCursorBackground cursorX, cursorY
-            End If
-        End If
 
         Dim coordBuf(32) As Byte
         Dim cIdx As UInt32 = 0
@@ -381,12 +375,14 @@ Module CompositorMain
         DrawText5x7 backSurf, 434, 10, @coordBuf(0), &HFFEBCB8B
 
         If flushToScreen Then
-            FlushDirtyRegion 430, 6, 180, 14
-
-            If restoreCursor Then
-                SaveCursorBackground cursorX, cursorY
-                DrawCursorArrow cursorX, cursorY
+            ' Erase cursor from VRAM before flushing coordinate region (if cursor overlaps)
+            If cursorInitialized And CursorIntersects(430, 6, 180, 14) Then
                 FlushDirtyRegion cursorX, cursorY, CURSOR_W, CURSOR_H
+            End If
+            FlushDirtyRegion 430, 6, 180, 14
+            ' Redraw cursor on top of VRAM after flush
+            If cursorInitialized Then
+                CursorTheme.DrawCursor frontSurf, cursorX, cursorY, currentCursor
             End If
         End If
     End Sub
@@ -550,9 +546,8 @@ Module CompositorMain
         ' Pre-render dynamic elements onto backbuffer before first screen presentation
         RenderMouseCoordinates False
         RenderTelemetryBadge False
-        SaveCursorBackground cursorX, cursorY
-        DrawCursorArrow cursorX, cursorY
         FlushDirtyRegion 0, 0, dispInfo.Width, dispInfo.Height
+        CursorTheme.DrawCursor frontSurf, cursorX, cursorY, currentCursor
         ConsoleWriteLine "[COMPOSITOR] Hardware software cursor plane initialized at screen center."
 
         ' 7. Active Presentation & Event Loop (Strictly Paced 60 FPS)
@@ -598,8 +593,10 @@ Module CompositorMain
                         End If
                     End If
                     desktopDirty = True
+                    clientDirtyOnly = False  ' new table: need full scene rebuild
                 ElseIf inPkt.PacketType = WM_CMD_WINDOW_DIRTY Then
                     desktopDirty = True
+                    clientDirtyOnly = True  ' client surface update: skip full clear, only re-blit windows
                 ElseIf inPkt.PacketType = WM_CMD_SET_CURSOR Then
                     Dim pCurType As Pointer To UInt32 = *UInt32(@inPkt.Payload(0))
                     If pCurType(0) <> currentCursor Then
@@ -704,6 +701,7 @@ Module CompositorMain
             If pWindowTable <> 0 Then
                 If pWindowTable.Revision <> lastRenderedRevision Then
                     desktopDirty = True
+                    clientDirtyOnly = False  ' window geometry changed: need full scene rebuild
                 End If
             End If
 
@@ -712,7 +710,6 @@ Module CompositorMain
                 If desktopDirty Then
                     cursorX = targetMx
                     cursorY = targetMy
-                    RestoreCursorBackground oldCursorX, oldCursorY
 
                     ' 1. Determine Dirty Bounding Box across modified windows and cursor
                     Dim dirtyX0 As Int32 = dispInfo.Width
@@ -771,39 +768,72 @@ Module CompositorMain
                         Wend
                     End If
 
-                    ' If no window moved, but desktopDirty is True (focus change, client redraw, telemetry)
-                    ' flush full screen so 100% of screen updates reach VRAM
-                    If Not anyWindowMoved Then
+                    ' clientDirtyOnly = True  -> only re-blit client surfaces; skip FillRect full clear.
+                    ' clientDirtyOnly = False -> window moved/created; full scene rebuild required.
+                    If clientDirtyOnly And Not anyWindowMoved Then
+                        ' Lightweight path: redraw all desktop windows in proper Z-order (frames + clients)
+                        RenderDesktopWindows
+                        If pWindowTable <> 0 And pWindowTable.Count > 0 Then
+                            Dim cwi As UInt32 = 0
+                            While cwi < pWindowTable.Count
+                                Dim cwdesc As Pointer To WindowDescriptor = AddressOf pWindowTable.Windows(cwi)
+                                If cwdesc.State <> WIN_STATE_MINIMIZED Then
+                                    Dim cDX0 As Int32 = cwdesc.X - 2
+                                    Dim cDY0 As Int32 = cwdesc.Y - 2
+                                    Dim cDX1 As Int32 = cwdesc.X + cwdesc.Width + 8
+                                    Dim cDY1 As Int32 = cwdesc.Y + cwdesc.Height + 8
+                                    If cDX0 < dirtyX0 Then dirtyX0 = cDX0
+                                    If cDY0 < dirtyY0 Then dirtyY0 = cDY0
+                                    If cDX1 > dirtyX1 Then dirtyX1 = cDX1
+                                    If cDY1 > dirtyY1 Then dirtyY1 = cDY1
+                                End If
+                                cwi = cwi + 1
+                            Wend
+                        End If
+                    Else
+                        ' Full scene rebuild (window geometry changed or first frame)
                         dirtyX0 = 0
                         dirtyY0 = 0
                         dirtyX1 = dispInfo.Width
                         dirtyY1 = dispInfo.Height
-                    Else
-                        ' Expand with cursor bounds
-                        If oldCursorX < dirtyX0 Then dirtyX0 = oldCursorX
-                        If oldCursorY < dirtyY0 Then dirtyY0 = oldCursorY
-                        If (oldCursorX + CURSOR_W) > dirtyX1 Then dirtyX1 = oldCursorX + CURSOR_W
-                        If (oldCursorY + CURSOR_H) > dirtyY1 Then dirtyY1 = oldCursorY + CURSOR_H
-
-                        If cursorX < dirtyX0 Then dirtyX0 = cursorX
-                        If cursorY < dirtyY0 Then dirtyY0 = cursorY
-                        If (cursorX + CURSOR_W) > dirtyX1 Then dirtyX1 = cursorX + CURSOR_W
-                        If (cursorY + CURSOR_H) > dirtyY1 Then dirtyY1 = cursorY + CURSOR_H
+                        DrawDesktopScene
                     End If
 
-                    DrawDesktopScene
                     If pWindowTable <> 0 Then
                         lastRenderedRevision = pWindowTable.Revision
                     End If
                     desktopDirty = False
+                    clientDirtyOnly = False
 
+                    ' Render dynamic HUD elements into backSurf before flush
                     RenderMouseCoordinates False
                     RenderTelemetryBadge False
 
-                    SaveCursorBackground cursorX, cursorY
-                    DrawCursorArrow cursorX, cursorY
+                    ' Always include HUD regions and cursor erase area in dirty rect
+                    ' Mouse coords bar: x=430,y=6,w=180,h=14
+                    If 430 < dirtyX0 Then dirtyX0 = 430
+                    If 6 < dirtyY0 Then dirtyY0 = 6
+                    If 610 > dirtyX1 Then dirtyX1 = 610
+                    If 20 > dirtyY1 Then dirtyY1 = 20
+                    ' Badge
+                    If badgeActive Then
+                        If badgeX < dirtyX0 Then dirtyX0 = badgeX
+                        If badgeY < dirtyY0 Then dirtyY0 = badgeY
+                        If (badgeX + 200) > dirtyX1 Then dirtyX1 = badgeX + 200
+                        If (badgeY + 26) > dirtyY1 Then dirtyY1 = badgeY + 26
+                    End If
+                    ' Old cursor erase region
+                    If oldCursorX < dirtyX0 Then dirtyX0 = oldCursorX
+                    If oldCursorY < dirtyY0 Then dirtyY0 = oldCursorY
+                    If (oldCursorX + CURSOR_W) > dirtyX1 Then dirtyX1 = oldCursorX + CURSOR_W
+                    If (oldCursorY + CURSOR_H) > dirtyY1 Then dirtyY1 = oldCursorY + CURSOR_H
+                    ' New cursor region
+                    If cursorX < dirtyX0 Then dirtyX0 = cursorX
+                    If cursorY < dirtyY0 Then dirtyY0 = cursorY
+                    If (cursorX + CURSOR_W) > dirtyX1 Then dirtyX1 = cursorX + CURSOR_W
+                    If (cursorY + CURSOR_H) > dirtyY1 Then dirtyY1 = cursorY + CURSOR_H
 
-                    ' 2. Flush ONLY the calculated dirty bounding box to VRAM
+                    ' Flush single merged dirty rect (includes HUD + cursor erase zone)
                     If dirtyX0 < 0 Then dirtyX0 = 0
                     If dirtyY0 < 0 Then dirtyY0 = 0
                     If dirtyX1 > dispInfo.Width Then dirtyX1 = dispInfo.Width
@@ -812,11 +842,10 @@ Module CompositorMain
                     Dim dirtyH As Int32 = dirtyY1 - dirtyY0
                     If dirtyW > 0 And dirtyH > 0 Then
                         FlushDirtyRegion dirtyX0, dirtyY0, dirtyW, dirtyH
-                        FlushDirtyRegion 430, 6, 180, 14
-                        If badgeActive Then
-                            FlushDirtyRegion badgeX, badgeY, 200, 26
-                        End If
                     End If
+
+                    ' Draw active cursor directly onto frontSurf (VRAM) AFTER flush
+                    CursorTheme.DrawCursor frontSurf, cursorX, cursorY, currentCursor
 
                     oldCursorX = cursorX
                     oldCursorY = cursorY
@@ -824,17 +853,49 @@ Module CompositorMain
                 ElseIf mouseDirty Then
                     cursorX = targetMx
                     cursorY = targetMy
-                    RestoreCursorBackground oldCursorX, oldCursorY
-                    FlushDirtyRegion oldCursorX, oldCursorY, CURSOR_W, CURSOR_H
-                    SaveCursorBackground cursorX, cursorY
-                    DrawCursorArrow cursorX, cursorY
-                    FlushDirtyRegion cursorX, cursorY, CURSOR_W, CURSOR_H
+
+                    ' Strict order: erase old cursor -> render HUD -> flush HUD+erase -> draw new cursor
+                    ' Step 1: Update HUD in backSurf (coords text, badge animation)
+                    RenderMouseCoordinates False
+                    RenderTelemetryBadge False
+
+                    ' Step 2: Determine unified flush rect (old cursor + new cursor + HUD regions)
+                    Dim mDX0 As Int32 = oldCursorX
+                    Dim mDY0 As Int32 = oldCursorY
+                    Dim mDX1 As Int32 = oldCursorX + CURSOR_W
+                    Dim mDY1 As Int32 = oldCursorY + CURSOR_H
+                    If cursorX < mDX0 Then mDX0 = cursorX
+                    If cursorY < mDY0 Then mDY0 = cursorY
+                    If (cursorX + CURSOR_W) > mDX1 Then mDX1 = cursorX + CURSOR_W
+                    If (cursorY + CURSOR_H) > mDY1 Then mDY1 = cursorY + CURSOR_H
+                    ' Include mouse coord bar
+                    If 430 < mDX0 Then mDX0 = 430
+                    If 6 < mDY0 Then mDY0 = 6
+                    If 610 > mDX1 Then mDX1 = 610
+                    If 20 > mDY1 Then mDY1 = 20
+                    ' Include badge
+                    If badgeActive Then
+                        If badgeX < mDX0 Then mDX0 = badgeX
+                        If badgeY < mDY0 Then mDY0 = badgeY
+                        If (badgeX + 200) > mDX1 Then mDX1 = badgeX + 200
+                        If (badgeY + 26) > mDY1 Then mDY1 = badgeY + 26
+                    End If
+                    If mDX0 < 0 Then mDX0 = 0
+                    If mDY0 < 0 Then mDY0 = 0
+                    If mDX1 > dispInfo.Width Then mDX1 = dispInfo.Width
+                    If mDY1 > dispInfo.Height Then mDY1 = dispInfo.Height
+
+                    ' Step 3: Single flush — clears old cursor ghost + updates HUD in one pass
+                    FlushDirtyRegion mDX0, mDY0, mDX1 - mDX0, mDY1 - mDY0
+
+                    ' Step 4: Draw new cursor on frontSurf AFTER flush (guaranteed no ghost)
+                    CursorTheme.DrawCursor frontSurf, cursorX, cursorY, currentCursor
+
                     oldCursorX = cursorX
                     oldCursorY = cursorY
                     mouseDirty = False
-                    RenderMouseCoordinates True
-                    RenderTelemetryBadge True
                 Else
+                    ' Idle frame: only animate badge (no window/mouse changes)
                     RenderTelemetryBadge True
                 End If
 
@@ -860,8 +921,8 @@ Module CompositorMain
             nowTime = GetUptime()
             If nextFrameTime > nowTime Then
                 Dim waitRemaining As UInt64 = nextFrameTime - nowTime
-                If waitRemaining >= 10 Then
-                    ProcessSleep 10
+                If waitRemaining > 1 Then
+                    ProcessSleep (waitRemaining - 1)
                 Else
                     ProcessYield
                 End If

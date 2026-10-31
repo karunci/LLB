@@ -75,6 +75,9 @@ Module NodeViewerMain
         DrawText5x7 clientSurf, 10, 126, "#1010   srv.plexus_mgr  SUPERVISOR    ACTIVE", &HFFA3BE8C
         DrawText5x7 clientSurf, 10, 140, "#1011   srv.vfs         STORAGE_NODE  ACTIVE", &HFF88C0D0
 
+        ' Signal initial full node topology surface to Window Manager / Compositor
+        WmSignalDirty winId, 0, 0, CANVAS_W, CANVAS_H
+
         ' 4. Dynamic Synapse Packet Throughput Loop
         Dim pktCount As UInt64 = 120
         Do

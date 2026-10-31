@@ -81,6 +81,9 @@ Module SysMonMain
         DrawText5x7 clientSurf, 22, 180, "PRESENTATION: 60 FPS PACED (16 MS)", &HFF88C0D0
         DrawText5x7 clientSurf, 22, 194, "VRAM APERTURE: 1024x768x32 ARGB BURST", &HFFD8DEE9
 
+        ' Signal initial full card surface to Window Manager / Compositor
+        WmSignalDirty winId, 0, 0, CANVAS_W, CANVAS_H
+
         ' 4. Active Telemetry Update Loop (Updates every 500ms)
         Do
             Dim nowTime As UInt64 = GetUptime()

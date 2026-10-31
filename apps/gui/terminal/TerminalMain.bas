@@ -1069,6 +1069,7 @@ Module TerminalMain
         PutChar 10, COLOR_TEXT
         PrintPrompt
         DrawCursor True
+        WmSignalDirty g_winId, 0, 0, CANVAS_W, CANVAS_H
 
         ' 5. Event and Keystroke Polling Loop
         Dim blinkCounter As UInt32 = 0

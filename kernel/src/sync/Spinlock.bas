@@ -36,6 +36,18 @@ Module Sync.SpinlockOps
         Asm "" : : : "memory"
     End Sub
 
+    ' Non-blocking atomic spinlock claim (returns True if claimed, False if contested)
+    Public Unsafe Function TryAcquire(ByRef lock As Spinlock) As Boolean
+        If lock.Locked <> 0 Then
+            TryAcquire = False
+            Exit Function
+        End If
+        Dim lockPtr As Pointer To UInt32 = CPtr(Pointer To UInt32, AddressOf lock)
+        Dim prevVal As UInt32 = 0
+        Asm "movl $1, %0\n\txchgl %0, (%1)" : "=&r"(prevVal) : "r"(lockPtr) : "memory"
+        TryAcquire = (prevVal = 0)
+    End Function
+
     ' IRQ-safe spinlock acquire saving RFLAGS
     Public Unsafe Function AcquireIrqSave(ByRef lock As Spinlock) As UInt64
         Dim lockPtr As Pointer To UInt32 = CPtr(Pointer To UInt32, AddressOf lock)

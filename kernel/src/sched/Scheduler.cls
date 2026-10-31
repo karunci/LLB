@@ -742,87 +742,71 @@ Public Class Scheduler
         Dim otherCore As UInt32 = 0
         While otherCore < numCores
             If otherCore <> thisCpu Then
-                Dim cFlags As UInt64 = Sync.SpinlockOps.AcquireIrqSave(coreLocks(otherCore))
+                ' Non-blocking try-acquire: if peer core is busy scheduling, skip without stalling
+                If Sync.SpinlockOps.TryAcquire(coreLocks(otherCore)) Then
 
-                ' 1. Check peer RTOS queue first
-                Dim rHeadAddr As UInt64 = rtosQueueHeads(otherCore)
-                If rHeadAddr <> 0 Then
-                    Dim rIterAddr As UInt64 = rHeadAddr
-                    Do
-                        Dim rIter As Pointer To TaskControlBlock = CPtr(Pointer To TaskControlBlock, rIterAddr)
-                        If rIter.State = Sched.ThreadState.STATE_READY And rIterAddr <> currentTaskAddrs(otherCore) Then
-                            If rIter.NextTask <> rIterAddr Then
-                                Dim predAddr As UInt64 = rIterAddr
-                                While CPtr(Pointer To TaskControlBlock, predAddr).NextTask <> rIterAddr
-                                    predAddr = CPtr(Pointer To TaskControlBlock, predAddr).NextTask
-                                Wend
-                                CPtr(Pointer To TaskControlBlock, predAddr).NextTask = rIter.NextTask
-                                If rtosQueueHeads(otherCore) = rIterAddr Then
-                                    rtosQueueHeads(otherCore) = rIter.NextTask
+                    ' 1. Check peer RTOS queue first
+                    Dim rHeadAddr As UInt64 = rtosQueueHeads(otherCore)
+                    If rHeadAddr <> 0 Then
+                        Dim rIterAddr As UInt64 = rHeadAddr
+                        Do
+                            Dim rIter As Pointer To TaskControlBlock = CPtr(Pointer To TaskControlBlock, rIterAddr)
+                            If rIter.State = Sched.ThreadState.STATE_READY And rIterAddr <> currentTaskAddrs(otherCore) Then
+                                If rIter.NextTask <> rIterAddr Then
+                                    Dim predAddr As UInt64 = rIterAddr
+                                    While CPtr(Pointer To TaskControlBlock, predAddr).NextTask <> rIterAddr
+                                        predAddr = CPtr(Pointer To TaskControlBlock, predAddr).NextTask
+                                    Wend
+                                    CPtr(Pointer To TaskControlBlock, predAddr).NextTask = rIter.NextTask
+                                    If rtosQueueHeads(otherCore) = rIterAddr Then
+                                        rtosQueueHeads(otherCore) = rIter.NextTask
+                                    End If
+                                Else
+                                    rtosQueueHeads(otherCore) = 0
                                 End If
-                            Else
-                                rtosQueueHeads(otherCore) = 0
-                            End If
 
-                            Sync.SpinlockOps.ReleaseIrqRestore coreLocks(otherCore), cFlags
-
-                            If rtosQueueHeads(thisCpu) = 0 Then
-                                rtosQueueHeads(thisCpu) = rIterAddr
+                                Sync.SpinlockOps.Release coreLocks(otherCore)
+                                Sync.SpinlockOps.ReleaseIrqRestore stealLock, sFlags
                                 rIter.NextTask = rIterAddr
-                            Else
-                                Dim thisHead As Pointer To TaskControlBlock = CPtr(Pointer To TaskControlBlock, rtosQueueHeads(thisCpu))
-                                rIter.NextTask = thisHead.NextTask
-                                thisHead.NextTask = rIterAddr
+                                StealTask = rIterAddr
+                                Exit Function
                             End If
+                            rIterAddr = rIter.NextTask
+                        Loop While rIterAddr <> rHeadAddr
+                    End If
 
-                            Sync.SpinlockOps.ReleaseIrqRestore stealLock, sFlags
-                            StealTask = rIterAddr
-                            Exit Function
-                        End If
-                        rIterAddr = rIter.NextTask
-                    Loop While rIterAddr <> rHeadAddr
-                End If
-
-                ' 2. Check peer GPOS queue
-                Dim headAddr As UInt64 = gposQueueHeads(otherCore)
-                If headAddr <> 0 Then
-                    Dim iterAddr As UInt64 = headAddr
-                    Do
-                        Dim iter As Pointer To TaskControlBlock = CPtr(Pointer To TaskControlBlock, iterAddr)
-                        If iter.State = Sched.ThreadState.STATE_READY And iterAddr <> currentTaskAddrs(otherCore) Then
-                            If iter.NextTask <> iterAddr Then
-                                Dim gPredAddr As UInt64 = iterAddr
-                                While CPtr(Pointer To TaskControlBlock, gPredAddr).NextTask <> iterAddr
-                                    gPredAddr = CPtr(Pointer To TaskControlBlock, gPredAddr).NextTask
-                                Wend
-                                CPtr(Pointer To TaskControlBlock, gPredAddr).NextTask = iter.NextTask
-                                If gposQueueHeads(otherCore) = iterAddr Then
-                                    gposQueueHeads(otherCore) = iter.NextTask
+                    ' 2. Check peer GPOS queue
+                    Dim headAddr As UInt64 = gposQueueHeads(otherCore)
+                    If headAddr <> 0 Then
+                        Dim iterAddr As UInt64 = headAddr
+                        Do
+                            Dim iter As Pointer To TaskControlBlock = CPtr(Pointer To TaskControlBlock, iterAddr)
+                            If iter.State = Sched.ThreadState.STATE_READY And iterAddr <> currentTaskAddrs(otherCore) Then
+                                If iter.NextTask <> iterAddr Then
+                                    Dim gPredAddr As UInt64 = iterAddr
+                                    While CPtr(Pointer To TaskControlBlock, gPredAddr).NextTask <> iterAddr
+                                        gPredAddr = CPtr(Pointer To TaskControlBlock, gPredAddr).NextTask
+                                    Wend
+                                    CPtr(Pointer To TaskControlBlock, gPredAddr).NextTask = iter.NextTask
+                                    If gposQueueHeads(otherCore) = iterAddr Then
+                                        gposQueueHeads(otherCore) = iter.NextTask
+                                    End If
+                                Else
+                                    gposQueueHeads(otherCore) = 0
                                 End If
-                            Else
-                                gposQueueHeads(otherCore) = 0
-                            End If
 
-                            Sync.SpinlockOps.ReleaseIrqRestore coreLocks(otherCore), cFlags
-
-                            If gposQueueHeads(thisCpu) = 0 Then
-                                gposQueueHeads(thisCpu) = iterAddr
+                                Sync.SpinlockOps.Release coreLocks(otherCore)
+                                Sync.SpinlockOps.ReleaseIrqRestore stealLock, sFlags
                                 iter.NextTask = iterAddr
-                            Else
-                                Dim gThisHead As Pointer To TaskControlBlock = CPtr(Pointer To TaskControlBlock, gposQueueHeads(thisCpu))
-                                iter.NextTask = gThisHead.NextTask
-                                gThisHead.NextTask = iterAddr
+                                StealTask = iterAddr
+                                Exit Function
                             End If
+                            iterAddr = iter.NextTask
+                        Loop While iterAddr <> headAddr
+                    End If
 
-                            Sync.SpinlockOps.ReleaseIrqRestore stealLock, sFlags
-                            StealTask = iterAddr
-                            Exit Function
-                        End If
-                        iterAddr = iter.NextTask
-                    Loop While iterAddr <> headAddr
+                    Sync.SpinlockOps.Release coreLocks(otherCore)
                 End If
-
-                Sync.SpinlockOps.ReleaseIrqRestore coreLocks(otherCore), cFlags
             End If
             otherCore = otherCore + 1
         Wend
@@ -859,7 +843,37 @@ Public Class Scheduler
 
         ' If local queues have no ready tasks, attempt work-stealing from peer cores
         If nextAddr = 0 Then
-            nextAddr = StealTask(coreId)
+            ' CRITICAL LOCK HIERARCHY FIX: Release local coreLock BEFORE work-stealing
+            ' to prevent cross-core ABBA deadlock when multiple idle cores steal concurrently!
+            Sync.SpinlockOps.ReleaseIrqRestore coreLocks(coreId), flags
+
+            Dim stolenTask As UInt64 = StealTask(coreId)
+
+            flags = Sync.SpinlockOps.AcquireIrqSave(coreLocks(coreId))
+
+            If stolenTask <> 0 Then
+                Dim sTaskPtr As Pointer To TaskControlBlock = CPtr(Pointer To TaskControlBlock, stolenTask)
+                If sTaskPtr.TaskType = Sched.ThreadType.TYPE_RTOS Then
+                    If rtosQueueHeads(coreId) = 0 Then
+                        rtosQueueHeads(coreId) = stolenTask
+                        sTaskPtr.NextTask = stolenTask
+                    Else
+                        Dim rThisHead As Pointer To TaskControlBlock = CPtr(Pointer To TaskControlBlock, rtosQueueHeads(coreId))
+                        sTaskPtr.NextTask = rThisHead.NextTask
+                        rThisHead.NextTask = stolenTask
+                    End If
+                Else
+                    If gposQueueHeads(coreId) = 0 Then
+                        gposQueueHeads(coreId) = stolenTask
+                        sTaskPtr.NextTask = stolenTask
+                    Else
+                        Dim gThisHead As Pointer To TaskControlBlock = CPtr(Pointer To TaskControlBlock, gposQueueHeads(coreId))
+                        sTaskPtr.NextTask = gThisHead.NextTask
+                        gThisHead.NextTask = stolenTask
+                    End If
+                End If
+                nextAddr = stolenTask
+            End If
         End If
 
         ' Fallback to dedicated Idle task for this core
@@ -951,9 +965,11 @@ Public Class Scheduler
             curr.CpuTicks = curr.CpuTicks + 1
         End If
 
-        ' If running idle task and local queues have no tasks, don't thrash schedLock every tick
+        ' If running idle task and local queues have no tasks, only yield every 10ms for load-balancing
         If currAddr = idleTaskAddrs(coreId) And rtosQueueHeads(coreId) = 0 And gposQueueHeads(coreId) = 0 Then
-            Exit Sub
+            If (systemUptimeMs Mod 10) <> 0 Then
+                Exit Sub
+            End If
         End If
 
         Yield

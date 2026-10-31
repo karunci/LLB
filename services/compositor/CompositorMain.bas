@@ -538,7 +538,14 @@ Module CompositorMain
             backSurf = frontSurf
         End If
 
-        ' 5. Transition from Boot Splash to Graphical Desktop Canvas
+        ' 5. Initialize Live Telemetry Status Badge Container
+        If dispInfo.Width > 220 And dispInfo.Height > 60 Then
+            badgeX = dispInfo.Width - 210
+            badgeY = dispInfo.Height - 34
+            badgeActive = True
+        End If
+
+        ' Transition from Boot Splash to Graphical Desktop Canvas
         ConsoleWriteLine "[COMPOSITOR] Boot splash completed. Transitioning to PROS Desktop..."
         DrawDesktopScene
 

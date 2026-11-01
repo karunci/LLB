@@ -280,6 +280,50 @@ Module ProsApi
         Public PhysAddr As PhysicalAddress
     End Structure
 
+    ' Display Driver IPC Protocol Message Types (Synapse Control Plane)
+    Public Const DRV_DISP_INIT          As UInt32 = &H0701
+    Public Const DRV_DISP_GET_CAPS      As UInt32 = &H0702
+    Public Const DRV_DISP_FLUSH_RECT    As UInt32 = &H0703
+    Public Const DRV_DISP_SET_CURSOR    As UInt32 = &H0704
+    Public Const DRV_DISP_SET_MODE      As UInt32 = &H0705
+
+    Public Const DRV_DISP_RESP_OK       As UInt32 = 700
+    Public Const DRV_DISP_RESP_ERROR    As UInt32 = 701
+
+    ' Display Driver Hardware Capability Flags
+    Public Const DISP_CAP_DIRECT_LFB       As UInt32 = &H0001 ' Memory-mapped framebuffer
+    Public Const DISP_CAP_HARDWARE_FIFO    As UInt32 = &H0002 ' Command FIFO queue available
+    Public Const DISP_CAP_HARDWARE_CURSOR  As UInt32 = &H0004 ' Independent cursor hardware plane
+    Public Const DISP_CAP_ACCEL_BLIT       As UInt32 = &H0008 ' GPU 2D hardware blit / fill
+
+    <Packed>
+    Public Structure DriverDispCaps
+        Public CapsFlags      As UInt32
+        Public MaxWidth       As UInt32
+        Public MaxHeight      As UInt32
+        Public PreferredBpp   As UInt32
+        Public DriverName(32) As Byte
+    End Structure
+
+    <Packed>
+    Public Structure DriverDispFlushReq
+        Public X       As Int32
+        Public Y       As Int32
+        Public Width   As Int32
+        Public Height  As Int32
+        Public ShmId   As Handle
+        Public Offset  As UInt64
+    End Structure
+
+    <Packed>
+    Public Structure DriverDispCursorReq
+        Public Visible   As Boolean
+        Public Reserved  As Byte
+        Public X         As Int16
+        Public Y         As Int16
+        Public SpriteShm As Handle
+    End Structure
+
     ' =========================================================================
     ' 3. Library Declarations (Declare with Alias)
     ' =========================================================================
@@ -382,6 +426,10 @@ Module ProsApi
     ' Hardware Display Driver APIs
     Public Declare Function GetDisplayInfo Lib "libpros" Alias "Pros_Driver_Display_GetInfo" (ByRef info As DisplayInfo) As Boolean
     Public Declare Function MapFramebuffer Lib "libpros" Alias "Pros_Driver_Display_Map" (ByVal targetVaddr As VirtualAddress) As Pointer To UInt32
+    Public Declare Function DispConnect Lib "libpros" Alias "Pros_Driver_DisplayClient_Connect" () As Boolean
+    Public Declare Function DispGetCaps Lib "libpros" Alias "Pros_Driver_DisplayClient_GetCaps" (ByRef caps As DriverDispCaps) As Boolean
+    Public Declare Function DispPresentRect Lib "libpros" Alias "Pros_Driver_DisplayClient_PresentRect" (ByVal rx As Int32, ByVal ry As Int32, ByVal rw As Int32, ByVal rh As Int32, ByVal shmId As Handle) As Boolean
+    Public Declare Function DispSetCursor Lib "libpros" Alias "Pros_Driver_DisplayClient_SetCursor" (ByVal visible As Boolean, ByVal x As Int32, ByVal y As Int32, ByVal spriteShm As Handle) As Boolean
 
     ' Hardware Input APIs
     Public Declare Function GetMouseState Lib "libpros" Alias "Pros_Inputs_DeviceInput_GetMouseState" (ByRef state As MouseState) As Boolean

@@ -1,0 +1,19 @@
+{
+  "app_id": "sys.driver.display.lfb",
+  "name": "Linear Framebuffer Display Driver",
+  "version": "1.0.0",
+  "vendor": "PROS Architecture Group",
+  "subsystem": "Driver",
+  "permissions": [
+    "synapse.connect",
+    "synapse.register",
+    "shmem.attach",
+    "display.map"
+  ],
+  "node": {
+    "name": "drv.disp.lfb",
+    "kind": "device",
+    "capabilities": 7
+  }
+}
+

@@ -1,0 +1,31 @@
+' Project Name: Personal Research Operating System / Low-Level Basic
+' Filename: drivers/disp/svga/SvgaDriver.llbproj
+' Summary: VMware SVGA-II hardware display driver daemon.
+
+[Project]
+Name    = "SvgaDriver"
+Type    = "Executable"
+Version = "1.0.0"
+
+[Target]
+Arch = "x86_64-unknown-none-elf"
+
+[Output]
+OutDir  = "build"
+OutFile = "svga_drv.elf"
+
+[Entry]
+EntryPoint = "_start"
+
+[Linker]
+LinkerScript = "user_linker.ld"
+Libraries    = [
+    "../../../lib/pros/build/libpros.a"
+]
+
+[Sources]
+Assembly = "../../../lib/runtime/brt0.S"
+Assembly = "../../../lib/runtime/mem.S"
+Assembly = "../../../lib/runtime/fast_blit32.S"
+Module   = "SvgaDriverMain.bas"
+

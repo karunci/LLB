@@ -9,20 +9,18 @@ Import "../../include/pros.bas"
 Import "DamageTracker.bas"
 Import "CursorTheme.bas"
 Import "../wm/WindowTheme.bas"
-Import "SvgaDriver.bas"
 
 Module CompositorMain
 
     Public Declare Sub fast_blit32 Lib "libc" (ByVal dst As Pointer To UInt32, ByVal src As Pointer To UInt32, ByVal count As UInt64)
-    ' Non-temporal variant: bypasses cache for VRAM MMIO writes; avoids EPT violations in VirtualBox.
-    Public Declare Sub fast_blit32_nt Lib "libc" (ByVal dst As Pointer To UInt32, ByVal src As Pointer To UInt32, ByVal count As UInt64)
 
     ' -------------------------------------------------------------------------
     ' Internal Data & State
     ' -------------------------------------------------------------------------
     Private dispInfo As DisplayInfo
-    Private frontSurf As Surface
     Private backSurf As Surface
+    Private backSurfShmId As UInt64 = 0
+    Private hasHwCursor As Boolean = False
     Private hasDisplay As Boolean = False
 
     ' PRK 16x18 Decoupled Cursor State
@@ -203,15 +201,15 @@ Module CompositorMain
     End Sub
 
     ' -------------------------------------------------------------------------
-    ' Zero-Copy Hardware Presentation Engine (RAM Backbuffer -> VRAM Burst Blit)
+    ' Zero-Copy Hardware Presentation Engine (RAM Backbuffer -> Display Service)
     ' -------------------------------------------------------------------------
     ''
-    ' @brief Burst-blit a dirty bounding box from RAM backbuffer to physical VRAM aperture.
-    '        Uses 32-bit DWORD aligned non-temporal streaming writes (`fast_blit32_nt`)
-    '        to bypass CPU cache, avoid hypervisor EPT violations, and maximize PCIe throughput.
+    ' @brief Forward damaged rectangular bounding box to Display Port Server (srv.display).
+    '        Eliminates direct MMIO mapping in Compositor; hardware driver daemon blits
+    '        directly from shared memory to VRAM aperture.
     ''
     Private Unsafe Sub FlushDirtyRegion(ByVal rx As Int32, ByVal ry As Int32, ByVal rw As Int32, ByVal rh As Int32)
-        If frontSurf.Pixels = 0 Or backSurf.Pixels = 0 Then Exit Sub
+        If backSurf.Pixels = 0 Or backSurfShmId = 0 Then Exit Sub
         If rw <= 0 Or rh <= 0 Then Exit Sub
 
         ' Bounds clipping
@@ -230,20 +228,8 @@ Module CompositorMain
         Dim clipW As Int32 = x1 - x0
         Dim clipH As Int32 = y1 - y0
 
-        Dim pitchPixels As UInt32 = dispInfo.Pitch / 4
-        Dim py As Int32 = y0
-        While py < y1
-            Dim pixOff As UInt64 = (UInt64(py) * UInt64(pitchPixels)) + UInt64(x0)
-            Dim dstPtr As Pointer To UInt32 = frontSurf.Pixels + pixOff
-            Dim srcPtr As Pointer To UInt32 = backSurf.Pixels + pixOff
-            fast_blit32_nt dstPtr, srcPtr, clipW
-            py = py + 1
-        Wend
-
-        ' Hypervisor hardware acceleration sync (VMware SVGA-II / VirtualBox)
-        If Pros.Compositor.Gpu.SvgaDriver.IsActive() Then
-            Pros.Compositor.Gpu.SvgaDriver.UpdateRect x0, y0, clipW, clipH
-        End If
+        ' Forward presentation flush request to Display Port Server (srv.display)
+        DispPresentRect x0, y0, clipW, clipH, backSurfShmId
     End Sub
 
     ' -------------------------------------------------------------------------
@@ -449,10 +435,10 @@ Module CompositorMain
 
     ''
     ' @brief Render live mouse coordinates text on top system menu bar.
-    '        Rendered exclusively to backSurf; flushed to frontSurf.
+    '        Rendered exclusively to backSurf; flushed to display service.
     ''
     Private Unsafe Sub RenderMouseCoordinates(ByVal flushToScreen As Boolean)
-        If frontSurf.Pixels = 0 Then Exit Sub
+        If backSurf.Pixels = 0 Then Exit Sub
 
         Dim coordBuf(32) As Byte
         Dim cIdx As UInt32 = 0
@@ -530,7 +516,7 @@ Module CompositorMain
     '        directly to physical Linear Framebuffer aperture via `fast_blit32_nt`.
     ''
     Private Unsafe Sub CompositeDamageRect(ByVal rx As Int32, ByVal ry As Int32, ByVal rw As Int32, ByVal rh As Int32)
-        If backSurf.Pixels = 0 Or frontSurf.Pixels = 0 Then Exit Sub
+        If backSurf.Pixels = 0 Then Exit Sub
         If rw <= 0 Or rh <= 0 Then Exit Sub
 
         ' 1. Restore background on backbuffer from PRK Dedicated Background Buffer (bgSurf)
@@ -651,9 +637,9 @@ Module CompositorMain
             End If
         End If
 
-        ' 5. In-RAM Software Cursor Composition
+        ' 5. In-RAM Software Cursor Composition (Fallback when hardware cursor is inactive)
         Dim cursorDrawn As Boolean = False
-        If cursorInitialized Then
+        If cursorInitialized And (Not hasHwCursor) Then
             If RectIntersects(cursorX, cursorY, CURSOR_W, CURSOR_H, rx, ry, rw, rh) Then
                 SaveCursorBackground cursorX, cursorY
                 DrawCursorArrow cursorX, cursorY
@@ -661,7 +647,7 @@ Module CompositorMain
             End If
         End If
 
-        ' 6. Hardware Presentation: Non-temporal burst copy to physical VRAM aperture
+        ' 6. Hardware Presentation: Forward damage bounding box to Display Port Server
         FlushDirtyRegion rx, ry, rw, rh
 
         ' 7. Pristine Backbuffer Invariant: Restore cursor background on backbuffer
@@ -708,39 +694,42 @@ Module CompositorMain
             ConsoleWriteLine "[COMPOSITOR] WARN: Could not query display information"
         End If
 
-        ' 4. Map Linear Framebuffer Aperture to User Space at 0x78000000
-        Dim fbPtr As Pointer To UInt32 = MapFramebuffer(&H78000000)
-        If fbPtr <> 0 Then
-            ConsoleWriteLine "[COMPOSITOR] Linear Framebuffer Aperture mapped at 0x78000000"
-            frontSurf.Width = dispInfo.Width
-            frontSurf.Height = dispInfo.Height
-            frontSurf.Pitch = dispInfo.Pitch
-            frontSurf.Bpp = dispInfo.Bpp
-            frontSurf.Pixels = fbPtr
-            hasDisplay = True
-        Else
-            ConsoleWriteLine "[COMPOSITOR] ERR: Failed to map linear framebuffer aperture!"
-            user_main = 1
-            Exit Function
+        ' 4. Connect to Display Port Server (srv.display)
+        ConsoleWriteLine "[COMPOSITOR] Connecting to Display Port Server (srv.display)..."
+        While Not DispConnect()
+            ProcessSleep 20
+        Wend
+        ConsoleWriteLine "[COMPOSITOR] Connected to Display Port Server successfully."
+
+        ' Query Driver Capabilities
+        Dim dispCaps As DriverDispCaps
+        If DispGetCaps(dispCaps) Then
+            ConsolePrintWithUInt "[COMPOSITOR] Active Driver Caps: 0x", UInt64(dispCaps.CapsFlags), "\r\n"
+            If (dispCaps.CapsFlags And DISP_CAP_HARDWARE_CURSOR) <> 0 Then
+                hasHwCursor = True
+                ConsoleWriteLine "[COMPOSITOR] Hardware Cursor Plane Active (Offloaded)."
+            End If
         End If
 
-        ' 4b. Allocate Private In-RAM Backbuffer at 0x54000000 (PDPT[1] isolated user space)
+        ' 4b. Allocate Zero-Copy Shared Memory Backbuffer at 0x54000000
         Dim bufferBytes As UInt64 = UInt64(dispInfo.Height) * UInt64(dispInfo.Pitch)
-        Dim pagesNeeded As UInt64 = ((bufferBytes + 4095) / 4096) + 1 ' +1 safety guard page
-        Dim backPtr As Pointer To UInt32 = AllocatePages(pagesNeeded, &H54000000)
-        If backPtr <> 0 Then
-            ConsoleWriteLine "[COMPOSITOR] Private RAM Backbuffer allocated at 0x54000000"
+        backSurfShmId = ShmemCreate(bufferBytes, &H54000000)
+        If backSurfShmId <> 0 Then
+            ConsolePrintWithUInt "[COMPOSITOR] Zero-Copy Shared Backbuffer allocated -> ShmID #", backSurfShmId, " at 0x54000000\r\n"
             backSurf.Width = dispInfo.Width
             backSurf.Height = dispInfo.Height
             backSurf.Pitch = dispInfo.Pitch
             backSurf.Bpp = dispInfo.Bpp
-            backSurf.Pixels = backPtr
+            backSurf.Pixels = CPtr(Pointer To UInt32, &H54000000)
+            hasDisplay = True
         Else
-            ConsoleWriteLine "[COMPOSITOR] WARN: Fallback to direct VRAM (AllocatePages returned null)"
-            backSurf = frontSurf
+            ConsoleWriteLine "[COMPOSITOR] ERR: Failed to allocate Shared Memory Backbuffer!"
+            user_main = 1
+            Exit Function
         End If
 
         ' 4c. Allocate Dedicated In-RAM Background Buffer (PRK Architecture) at 0x55000000
+        Dim pagesNeeded As UInt64 = ((bufferBytes + 4095) / 4096) + 1
         Dim bgPtr As Pointer To UInt32 = AllocatePages(pagesNeeded, &H55000000)
         If bgPtr <> 0 Then
             ConsoleWriteLine "[COMPOSITOR] Dedicated RAM Background Buffer allocated at 0x55000000"
@@ -754,10 +743,6 @@ Module CompositorMain
             ConsoleWriteLine "[COMPOSITOR] WARN: Could not allocate background buffer; fallback to solid fill"
             bgSurf.Pixels = 0
         End If
-
-        ' 4d. Probe and initialize VMware SVGA-II / VirtualBox hardware accelerator
-        ConsoleWriteLine "[COMPOSITOR] Probing for Hardware GPU Accelerators..."
-        Pros.Compositor.Gpu.SvgaDriver.Initialize
 
         ' 5. Initialize Live Telemetry Status Badge Container
         If dispInfo.Width > 220 And dispInfo.Height > 60 Then
@@ -780,10 +765,16 @@ Module CompositorMain
         ' Pre-render dynamic elements onto backbuffer before first screen presentation
         RenderMouseCoordinates False
         RenderTelemetryBadge False
-        SaveCursorBackground cursorX, cursorY
-        DrawCursorArrow cursorX, cursorY
+        If Not hasHwCursor Then
+            SaveCursorBackground cursorX, cursorY
+            DrawCursorArrow cursorX, cursorY
+        Else
+            DispSetCursor True, cursorX, cursorY, 0
+        End If
         FlushDirtyRegion 0, 0, dispInfo.Width, dispInfo.Height
-        RestoreCursorBackground cursorX, cursorY
+        If Not hasHwCursor Then
+            RestoreCursorBackground cursorX, cursorY
+        End If
         ConsoleWriteLine "[COMPOSITOR] In-RAM software cursor plane initialized at screen center."
 
         ' 7. Active Presentation & Event Loop (Strictly Paced 60 FPS)
@@ -972,19 +963,21 @@ Module CompositorMain
                         currentCursor = nextCursor
                     End If
 
-                    ' In-RAM zero-flicker cursor update using DamageTracker:
+                    ' In-RAM zero-flicker cursor update using DamageTracker / Hardware Cursor:
                     If cursorInitialized Then
-                        DamageAdd damage, oldCursorX, oldCursorY, CURSOR_W, CURSOR_H, dispInfo.Width, dispInfo.Height
                         cursorX = targetMx
                         cursorY = targetMy
-                        DamageAdd damage, cursorX, cursorY, CURSOR_W, CURSOR_H, dispInfo.Width, dispInfo.Height
-                        DamageAdd damage, 430, 6, 180, 14, dispInfo.Width, dispInfo.Height
-                        oldCursorX = cursorX
-                        oldCursorY = cursorY
                         mouseMoved = True
 
-                        If Pros.Compositor.Gpu.SvgaDriver.IsActive() Then
-                            Pros.Compositor.Gpu.SvgaDriver.SetCursorPosition cursorX, cursorY, True
+                        If hasHwCursor Then
+                            DispSetCursor True, cursorX, cursorY, 0
+                            DamageAdd damage, 430, 6, 180, 14, dispInfo.Width, dispInfo.Height
+                        Else
+                            DamageAdd damage, oldCursorX, oldCursorY, CURSOR_W, CURSOR_H, dispInfo.Width, dispInfo.Height
+                            DamageAdd damage, cursorX, cursorY, CURSOR_W, CURSOR_H, dispInfo.Width, dispInfo.Height
+                            DamageAdd damage, 430, 6, 180, 14, dispInfo.Width, dispInfo.Height
+                            oldCursorX = cursorX
+                            oldCursorY = cursorY
                         End If
                     End If
                 End If

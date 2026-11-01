@@ -207,6 +207,10 @@ Module PlexusMgrMain
 
         ' Stage 3: Hardware Drivers (Display & Input)
         ConsoleWriteLine "[PLEXUS_MGR] Staging Stage 3: Display & Input Drivers..."
+        SpawnService ramdiskBase, "drv.disp.svga", "svga_drv.bax"
+        ProcessSleep 40
+        SpawnService ramdiskBase, "drv.disp.lfb", "lfb_drv.bax"
+        ProcessSleep 40
         SpawnService ramdiskBase, "srv.display", "disp_srv.bax"
         ProcessSleep 50
         SpawnService ramdiskBase, "srv.input", "input_srv.bax"

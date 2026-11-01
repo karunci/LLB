@@ -8,7 +8,9 @@ echo "=== 1. Building Libraries ==="
 (cd lib/metal && "${LLBC}" Metal.llbproj)
 (cd lib/pros && "${LLBC}" Pros.llbproj)
 
-echo "=== 2. Building Services ==="
+echo "=== 2. Building Drivers & Services ==="
+(cd drivers/disp/lfb && "${LLBC}" LfbDriver.llbproj)
+(cd drivers/disp/svga && "${LLBC}" SvgaDriver.llbproj)
 (cd services/genesis && "${LLBC}" Genesis.llbproj)
 (cd services/disp_srv && "${LLBC}" DispService.llbproj)
 (cd services/input_srv && "${LLBC}" InputService.llbproj)

@@ -102,9 +102,11 @@ graph TD
   - Stripped all secondary service spawns from `KernelMain.bas`; kernel strictly initializes hardware and spawns `sys.genesis` (PID 1).
   - Minimal Genesis PID 1: Adopts orphaned/zombie processes, listens for shutdown/reboot signals, and spawns `srv.plexus_mgr` (PID 2).
   - Decoupled Plexus Manager PID 2: Reads boot initrd, summons Plexuses (`srv.vfs`, `srv.dev_mgr`, `srv.display`, `srv.input`, `srv.compositor`, `srv.wm`, and GUI apps) in staged dependency order, monitors heartbeats, and handles automatic service restarts. Verified live in `re40`.
-- [ ] **CS.2:** Modular Compositor Display Backends (`PROS-ARCH-COMP-02`):
-  - Decouple display presentation behind `IDisplayBackend` interface (`LfbBackend`, `SvgaBackend`, `VirtioGpuBackend`).
-  - Wire VMware SVGA II FIFO commands and hardware cursor plane (`SVGA_CMD_DEFINE_CURSOR` + `SVGA_CMD_MOVE_CURSOR`).
+- [ ] **CS.2:** Decoupled Multi-Process Display Driver Architecture (`PROS-ARCH-COMP-02`):
+  - Refactor `srv.display` into a lightweight Display Port Server (dxgkrnl equivalent) that dynamically discovers and binds the active driver daemon node (`drv.disp.active`).
+  - Implement isolated userspace driver daemons (`drivers/disp/*/`): `svga_drv.bax` (VMware SVGA-II FIFO & hardware cursor), `virtio_drv.bax` (VirtIO-GPU 2D), and `lfb_drv.bax` (generic LFB fallback).
+  - Define `IDisplayDriverProtocol` over Synapse IPC (`DRV_DISP_INIT`, `DRV_DISP_FLUSH_RECT`, `DRV_DISP_SET_CURSOR`, `DRV_DISP_SET_MODE`).
+  - Decouple `srv.compositor`: compositor presents exclusively through `srv.display`, completely isolated from hardware MMIO and GPU registers.
 - [ ] **CS.3:** Software Graphics & Rasterization Tier (`IRenderBackend`):
   - Implement freestanding 2D blitter and software OpenGL 1.x pipeline (`TinyGL / SoftGL`) in `lib/pros` for zero-dependency window canvas 3D rendering.
 - [ ] **CS.4:** Window Manager Interactivity Polish:

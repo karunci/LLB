@@ -25,6 +25,8 @@ echo "[+] Building and packaging Userland Services and Applications..."
 cd "${PROJECT_ROOT}"
 if [ -n "${LLBC}" ] && [ -f "${LLBC}" ]; then
     "${LLBC}" lib/pros/Pros.llbproj
+    "${LLBC}" drivers/disp/lfb/LfbDriver.llbproj
+    "${LLBC}" drivers/disp/svga/SvgaDriver.llbproj
     "${LLBC}" services/genesis/Genesis.llbproj
     "${LLBC}" services/disp_srv/DispService.llbproj
     "${LLBC}" services/input_srv/InputService.llbproj
@@ -52,6 +54,8 @@ if [ ! -x "${BAX_CMD}" ]; then
     BAX_CMD="python3 tools/bax_pack.py"
 fi
 
+${BAX_CMD} drivers/disp/lfb/build/lfb_drv.elf -o drivers/disp/lfb/build/lfb_drv.bax --manifest drivers/disp/lfb/manifest.json
+${BAX_CMD} drivers/disp/svga/build/svga_drv.elf -o drivers/disp/svga/build/svga_drv.bax --manifest drivers/disp/svga/manifest.json
 ${BAX_CMD} services/genesis/build/genesis.elf -o services/genesis/build/genesis.bax --manifest services/genesis/manifest.json
 ${BAX_CMD} services/disp_srv/build/disp_srv.elf -o services/disp_srv/build/disp_srv.bax --manifest services/disp_srv/manifest.json
 ${BAX_CMD} services/input_srv/build/input_srv.elf -o services/input_srv/build/input_srv.bax --manifest services/input_srv/manifest.json

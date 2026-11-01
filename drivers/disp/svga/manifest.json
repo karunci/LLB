@@ -1,0 +1,22 @@
+{
+  "app_id": "sys.driver.display.svga",
+  "name": "VMware SVGA-II Hardware Display Driver",
+  "version": "1.0.0",
+  "vendor": "PROS Architecture Group",
+  "subsystem": "Driver",
+  "permissions": [
+    "synapse.connect",
+    "synapse.register",
+    "shmem.attach",
+    "display.map",
+    "pci.read",
+    "pci.map",
+    "port.io"
+  ],
+  "node": {
+    "name": "drv.disp.svga",
+    "kind": "device",
+    "capabilities": 7
+  }
+}
+

@@ -9,8 +9,7 @@
     "synapse.register",
     "shmem.create",
     "shmem.attach",
-    "node.lookup",
-    "display.map"
+    "node.lookup"
   ],
   "node": {
     "name": "srv.compositor",

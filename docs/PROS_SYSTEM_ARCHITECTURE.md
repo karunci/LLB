@@ -26,7 +26,8 @@ In alignment with the **Dual-Plane Neural Node Architecture** (*"Everything is a
 | **Process Manager** | `csrss.exe` / Process Mgr | Process Subsystem | **`proc_mgr.bax`** | **Process & Node Lifecycle Supervisor:** Manages dynamic `.bax` spawning, PID/Node mappings, exit code reaping, synaptic handle grants. |
 | **Service Supervisor** | SCM (`services.exe`) | `systemd`, `launchd` | **`plexus_mgr.bax`** | **Service Supervisor:** Background daemon manager, health heartbeats, and restarts from `services.cfg`. |
 | **Device Arbiter** | Plug & Play (`pnp_mgr`)| `udev`, `devd` | **`dev_mgr.bax`** | **Device Arbiter:** Hardware bus scanner (PCI/ACPI); signals `plexus_mgr` to summon drivers. |
-| **Display Driver** | Basic Display / Graphics Driver | DRM / KMS / Framebuffer Driver | **`disp_srv.bax`** | **Display Driver Service:** Physical VRAM aperture mapping, hardware mode control, double-buffers. |
+| **Display Port Server**| Graphics Port (`dxgkrnl.sys`) | DRM Core / KMS Subsystem | **`disp_srv.bax`** | **Display Port Service:** System-wide display multiplexer; dynamically binds active driver daemon node and exposes clean presentation/cursor API. |
+| **Display Driver Daemons** | Display Miniport (`nvlddmkm`, `igdkmd`) | DRM Drivers (`i915`, `amdgpu`, `bochs`) | **`drv.disp.*.bax`** | **Isolated Driver Daemons:** Independent Ring 3 processes (`svga_drv.bax`, `virtio_drv.bax`, `lfb_drv.bax`) executing GPU MMIO and hardware cursors. |
 | **Display Compositor** | DWM (`dwm.exe`) | Wayland Compositor | **`compositor.bax`** | **Direct Compositor Engine:** Multi-window dirty rect blitter, 60 FPS hardware cursor overlay, frame pacing. |
 | **Window Manager** | Windows Shell / Explorer | Mutter / KWin / Sway | **`wm.bax`** | **Window Manager:** Window decorations, titlebars, layouts, z-order stacking, focus routing. |
 | **Raw Input Driver** | Kernel Input Subsystem | `evdev` / Kernel HID | **`input_srv.bax`** | **Unified Input Driver:** Reads PS/2 & USB keyboard/mouse, emits high-level Axon input packets. |
@@ -82,16 +83,23 @@ In alignment with the **Dual-Plane Neural Node Architecture** (*"Everything is a
  │  │ - Renders Hardware Cursor     │  (Zero-Copy)     │ - Draws UI widgets            │  │
  │  │ - Sends frame to disp_srv     │                  │ - Exchanges Synapse packets   │  │
  │  └───────────────┬───────────────┘                  └───────────────────────────────┘  │
- │                  │ Display Server API / Framebuffer Blit                               │
+ │                  │ Display Port API (PresentRect / SetCursor)                          │
  │                  ▼                                                                     │
  │  ┌───────────────────────────────┐                                                     │
  │  │         disp_srv.bax          │                                                     │
- │  │   (Display Driver Service)    │                                                     │
- │  │ - Manages Display Adapters    │                                                     │
- │  │   (BGA, Intel HD/UHD, GPU)    │                                                     │
- │  │ - Maps Physical Framebuffer   │                                                     │
- │  │ - Controls Video Modes & VRAM │                                                     │
+ │  │     (Display Port Server)     │                                                     │
+ │  │ - System-wide display mux     │                                                     │
+ │  │ - Binds to active driver node │                                                     │
  │  └───────────────┬───────────────┘                                                     │
+ │                  │ Standard Driver Protocol (IDisplayDriver)                           │
+ │                  ▼                                                                     │
+ │  ┌────────────────────────────────────────────────────────┐                            │
+ │  │        Isolated Userspace Display Driver Daemons       │                            │
+ │  │  • svga_drv.bax   (VMware SVGA-II Hardware FIFO)       │                            │
+ │  │  • virtio_drv.bax (VirtIO-GPU Paravirtualized 2D)      │                            │
+ │  │  • lfb_drv.bax    (Generic Linear Framebuffer)         │                            │
+ │  │  • i915_drv.bax   (Intel HD/UHD Graphics Driver)       │                            │
+ │  └───────────────┬────────────────────────────────────────┘                            │
  └──────────────────┼─────────────────────────────────────────────────────────────────────┘
 ════════════════════╪══════════════════════════════════════════════════════════════════════
                     │ System Calls: SYS_SHMEM_* / SYS_SYNAPSE_* / SYS_NODE_*               

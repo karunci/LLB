@@ -113,7 +113,7 @@ llvm::Type* LlvmEmitter::getLlvmType(const TypeSpec& typeSpec) {
     }
 
     llvm::Type* baseType = nullptr;
-    if (typeName == "byte" || typeName == "ubyte") {
+    if (typeName == "byte" || typeName == "ubyte" || typeName == "uint8" || typeName == "int8" || typeName == "sbyte") {
         baseType = llvm::Type::getInt8Ty(*m_context);
     } else if (typeName == "int16" || typeName == "integer" || typeName == "short") {
         baseType = llvm::Type::getInt16Ty(*m_context);

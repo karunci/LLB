@@ -509,19 +509,6 @@ Namespace Sys
                     Dispatch = 0
 
                 Case SYS_GET_MOUSE
-                    ' Hypervisor failsafe: drain pending PS/2 keyboard/mouse data
-                    Dim ps2Limit As UInt32 = 16
-                    While ps2Limit > 0
-                        Dim ps2Status As Byte = Arch.X86_64.PortIO.InB(&H64)
-                        If (ps2Status And &H01) = 0 Then Exit While
-                        If (ps2Status And &H20) <> 0 Then
-                            MouseDriver.HandleInterrupt
-                        Else
-                            Kbd.HandleInterrupt
-                        End If
-                        ps2Limit = ps2Limit - 1
-                    Wend
-
                     ' arg1 = userPtr (Pointer To MouseState, 12 bytes)
                     If ValidateUserBuffer(arg1, SizeOf(MouseState)) Then
                         Dim mPtr As Pointer To MouseState = Pointer To MouseState(arg1)
@@ -538,18 +525,6 @@ Namespace Sys
                     End If
 
                 Case SYS_GET_KEY
-                    ' Hypervisor failsafe: drain pending PS/2 keyboard/mouse data
-                    Dim ps2LimitKbd As UInt32 = 16
-                    While ps2LimitKbd > 0
-                        Dim ps2StatusKbd As Byte = Arch.X86_64.PortIO.InB(&H64)
-                        If (ps2StatusKbd And &H01) = 0 Then Exit While
-                        If (ps2StatusKbd And &H20) <> 0 Then
-                            MouseDriver.HandleInterrupt
-                        Else
-                            Kbd.HandleInterrupt
-                        End If
-                        ps2LimitKbd = ps2LimitKbd - 1
-                    Wend
                     Dispatch = UInt64(Kbd.GetChar())
 
                 Case SYS_MEM_ALLOC_PAGES
@@ -764,7 +739,7 @@ Namespace Sys
                         Dim pageCount As UInt64 = (lfbSize + 4095) / 4096
                         Dim pIdx As UInt64
                         For pIdx = 0 To pageCount - 1
-                            VmmEngine.MapPage callerCr3, arg1 + (pIdx * 4096), lfbPhys + (pIdx * 4096), &H0F ' Present | Writable | User | PWT (PAT PA1 = Write-Combining)
+                            VmmEngine.MapPage callerCr3, arg1 + (pIdx * 4096), lfbPhys + (pIdx * 4096), &H07 ' Present | Writable | User
                         Next pIdx
                         Dispatch = 1
                     Else

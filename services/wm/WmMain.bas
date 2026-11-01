@@ -585,29 +585,29 @@ Module WmMain
                     Dim newY As Int32 = 36
 
                     If w > 500 Then
-                        ' Large window (Terminal, Editor) -> Bottom Dashboard
-                        newX = 20
-                        newY = 328
+                        ' Large window (Terminal Console) -> Left Workstation Column
+                        newX = 16
+                        newY = 36
                     Else
-                        ' Compact window (SysMon, NodeViewer) -> Top Left or Top Right
+                        ' Compact window (SysMon, NodeViewer) -> Right Telemetry Column
                         Dim slot0Taken As Boolean = False
                         Dim slot1Taken As Boolean = False
                         Dim k As Int32 = 0
                         While k < windowCount
-                            If windows(k).X = 20 And windows(k).Y = 36 Then
+                            If windows(k).X = 664 And windows(k).Y = 36 Then
                                 slot0Taken = True
-                            ElseIf windows(k).X = 520 And windows(k).Y = 36 Then
+                            ElseIf windows(k).X = 664 And windows(k).Y = 266 Then
                                 slot1Taken = True
                             End If
                             k = k + 1
                         Wend
 
                         If Not slot0Taken Then
-                            newX = 20
+                            newX = 664
                             newY = 36
                         ElseIf Not slot1Taken Then
-                            newX = 520
-                            newY = 36
+                            newX = 664
+                            newY = 266
                         Else
                             newX = 60 + (windowCount * 30)
                             newY = 60 + (windowCount * 30)

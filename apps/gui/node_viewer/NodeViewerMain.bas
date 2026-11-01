@@ -8,7 +8,7 @@ Import "../../../include/pros.bas"
 
 Module NodeViewerMain
 
-    Private Const CANVAS_W As Int32 = 396
+    Private Const CANVAS_W As Int32 = 346
     Private Const CANVAS_H As Int32 = 190
 
     Private clientSurf As Surface
@@ -39,7 +39,7 @@ Module NodeViewerMain
         Dim winId As UInt32 = 0
         Dim regTries As UInt32 = 0
         While regTries < 60 And winId = 0
-            winId = WmCreateWindow(400, 220, shmId, "PROS Neural Node Viewer")
+            winId = WmCreateWindow(350, 220, shmId, "PROS Neural Node Viewer")
             If winId = 0 Then
                 ProcessSleep 50
                 regTries = regTries + 1

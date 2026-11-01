@@ -145,11 +145,10 @@ Module CompositorMain
             Dim pixOff As UInt64 = (UInt64(py) * UInt64(pitchPixels)) + UInt64(x0)
             Dim dstPtr As Pointer To UInt32 = frontSurf.Pixels + pixOff
             Dim srcPtr As Pointer To UInt32 = backSurf.Pixels + pixOff
-            fast_blit32_nt dstPtr, srcPtr, clipW
+            fast_blit32 dstPtr, srcPtr, clipW
             py = py + 1
         Wend
 
-        ' sfence already emitted per-scanline inside fast_blit32_nt; single barrier is redundant but kept for safety
         Asm "sfence" : : : "memory"
     End Sub
 
@@ -343,22 +342,13 @@ Module CompositorMain
         DrawText5x7 backSurf, badgeX + 140, badgeY + 10, @fpsBuf(0), &HFF88C0D0
 
         If flushToScreen Then
-            ' Erase cursor from VRAM before flushing badge (if cursor overlaps)
-            If cursorInitialized And CursorIntersects(badgeX, badgeY, 200, 26) Then
-                FlushDirtyRegion cursorX, cursorY, CURSOR_W, CURSOR_H
-            End If
             FlushDirtyRegion badgeX, badgeY, 200, 26
-            ' Redraw cursor on top of VRAM after flush
-            If cursorInitialized Then
-                CursorTheme.DrawCursor frontSurf, cursorX, cursorY, currentCursor
-            End If
         End If
     End Sub
 
     ''
     ' @brief Render live mouse coordinates text on top system menu bar.
-    '        Cursor erase/redraw is handled ONLY by the main render loop.
-    '        This routine NEVER touches cursor state to prevent ghost artifacts.
+    '        Rendered exclusively to backSurf; flushed to frontSurf.
     ''
     Private Unsafe Sub RenderMouseCoordinates(ByVal flushToScreen As Boolean)
         If frontSurf.Pixels = 0 Then Exit Sub
@@ -375,15 +365,7 @@ Module CompositorMain
         DrawText5x7 backSurf, 434, 10, @coordBuf(0), &HFFEBCB8B
 
         If flushToScreen Then
-            ' Erase cursor from VRAM before flushing coordinate region (if cursor overlaps)
-            If cursorInitialized And CursorIntersects(430, 6, 180, 14) Then
-                FlushDirtyRegion cursorX, cursorY, CURSOR_W, CURSOR_H
-            End If
             FlushDirtyRegion 430, 6, 180, 14
-            ' Redraw cursor on top of VRAM after flush
-            If cursorInitialized Then
-                CursorTheme.DrawCursor frontSurf, cursorX, cursorY, currentCursor
-            End If
         End If
     End Sub
 
@@ -559,9 +541,10 @@ Module CompositorMain
         ' Pre-render dynamic elements onto backbuffer before first screen presentation
         RenderMouseCoordinates False
         RenderTelemetryBadge False
+        SaveCursorBackground cursorX, cursorY
+        DrawCursorArrow cursorX, cursorY
         FlushDirtyRegion 0, 0, dispInfo.Width, dispInfo.Height
-        CursorTheme.DrawCursor frontSurf, cursorX, cursorY, currentCursor
-        ConsoleWriteLine "[COMPOSITOR] Hardware software cursor plane initialized at screen center."
+        ConsoleWriteLine "[COMPOSITOR] In-RAM software cursor plane initialized at screen center."
 
         ' 7. Active Presentation & Event Loop (Strictly Paced 60 FPS)
         ConsoleWriteLine "[COMPOSITOR] Compositor online. Entering presentation loop..."
@@ -586,12 +569,12 @@ Module CompositorMain
         Dim targetMx As Int32 = cursorX
         Dim targetMy As Int32 = cursorY
         Dim lastButtons As Byte = 0
-        Dim mouseDirty As Boolean = False
         Dim inPkt As AxonPacket
         Dim nextFrameTime As UInt64 = GetUptime()
         lastFpsTime = nextFrameTime
 
         Do
+            Dim mouseMoved As Boolean = False
             Dim nowTime As UInt64 = GetUptime()
 
             ' 0. Service incoming Synapse control packets on srv.compositor node
@@ -614,7 +597,12 @@ Module CompositorMain
                     Dim pCurType As Pointer To UInt32 = *UInt32(@inPkt.Payload(0))
                     If pCurType(0) <> currentCursor Then
                         currentCursor = pCurType(0)
-                        mouseDirty = True
+                        If cursorInitialized Then
+                            RestoreCursorBackground cursorX, cursorY
+                            SaveCursorBackground cursorX, cursorY
+                            DrawCursorArrow cursorX, cursorY
+                            FlushDirtyRegion cursorX, cursorY, CURSOR_W, CURSOR_H
+                        End If
                     End If
                 End If
             Wend
@@ -628,17 +616,17 @@ Module CompositorMain
                     End If
                 End If
                 If synWm <> 0 Then
-                    Dim reqPkt2 As AxonPacket
-                    reqPkt2.Sequence = frameCount
-                    reqPkt2.PacketType = WM_CMD_REGISTER_TABLE
-                    reqPkt2.SourceNode = srvNodeId
-                    reqPkt2.TargetNode = wmNodeId
-                    reqPkt2.PayloadLength = 0
-                    SynapsePush synWm, reqPkt2
+                    Dim reqTablePkt2 As AxonPacket
+                    reqTablePkt2.Sequence = frameCount
+                    reqTablePkt2.PacketType = WM_CMD_REGISTER_TABLE
+                    reqTablePkt2.SourceNode = srvNodeId
+                    reqTablePkt2.TargetNode = wmNodeId
+                    reqTablePkt2.PayloadLength = 0
+                    SynapsePush synWm, reqTablePkt2
                 End If
             End If
 
-            ' A. Poll live hardware PS/2 mouse state (pure state update, zero VRAM blitting)
+            ' A. Read live hardware PS/2 mouse state and update cursor position with zero lag
             If GetMouseState(mState) Then
                 Dim newMx As Int32 = mState.X
                 Dim newMy As Int32 = mState.Y
@@ -653,7 +641,6 @@ Module CompositorMain
                     targetMx = newMx
                     targetMy = newMy
                     lastButtons = mState.Buttons
-                    mouseDirty = True
 
                     ' Forward mouse event to Window Manager
                     If synWm <> 0 Then
@@ -690,9 +677,9 @@ Module CompositorMain
                                     ElseIf hit = HIT_CLIENT Then
                                         ' If window title contains 'T' (Terminal), switch to IBeam
                                         If wdesc.Title(0) = 80 And (wdesc.Title(5) = 84 Or wdesc.Title(14) = 67) Then
-                                            nextCursor = CURSOR_IBEAM
+                                             nextCursor = CURSOR_IBEAM
                                         Else
-                                            nextCursor = CURSOR_ARROW
+                                             nextCursor = CURSOR_ARROW
                                         End If
                                     Else
                                         nextCursor = CURSOR_ARROW
@@ -705,7 +692,32 @@ Module CompositorMain
                     End If
                     If nextCursor <> currentCursor Then
                         currentCursor = nextCursor
-                        mouseDirty = True
+                    End If
+
+                    ' In-RAM zero-flicker cursor update:
+                    If cursorInitialized Then
+                        ' 1. Restore background on backSurf to erase old cursor
+                        RestoreCursorBackground oldCursorX, oldCursorY
+
+                        ' 2. Flush old cursor region from clean backSurf to VRAM
+                        FlushDirtyRegion oldCursorX, oldCursorY, CURSOR_W, CURSOR_H
+
+                        cursorX = targetMx
+                        cursorY = targetMy
+
+                        ' 3. Save new background on backSurf and draw new cursor
+                        SaveCursorBackground cursorX, cursorY
+                        DrawCursorArrow cursorX, cursorY
+
+                        ' 4. Flush new cursor region with composed cursor to VRAM
+                        FlushDirtyRegion cursorX, cursorY, CURSOR_W, CURSOR_H
+
+                        ' 5. Update mouse coordinates box on top bar
+                        RenderMouseCoordinates True
+
+                        oldCursorX = cursorX
+                        oldCursorY = cursorY
+                        mouseMoved = True
                     End If
                 End If
             End If
@@ -723,6 +735,11 @@ Module CompositorMain
                 If desktopDirty Then
                     cursorX = targetMx
                     cursorY = targetMy
+
+                    ' Erase cursor on backSurf so window rendering writes over clean surface
+                    If cursorInitialized Then
+                        RestoreCursorBackground oldCursorX, oldCursorY
+                    End If
 
                     ' 1. Determine Dirty Bounding Box across modified windows and cursor
                     Dim dirtyX0 As Int32 = dispInfo.Width
@@ -832,9 +849,10 @@ Module CompositorMain
                     RenderMouseCoordinates False
                     RenderTelemetryBadge False
 
-                    ' Erase old cursor on frontSurf from clean backSurf (16x18 = 288 pixels)
-                    If oldCursorX <> cursorX Or oldCursorY <> cursorY Then
-                        FlushDirtyRegion oldCursorX, oldCursorY, CURSOR_W, CURSOR_H
+                    ' Re-save background and draw cursor on backSurf so flushed region contains cursor
+                    If cursorInitialized Then
+                        SaveCursorBackground cursorX, cursorY
+                        DrawCursorArrow cursorX, cursorY
                     End If
 
                     ' Flush ONLY the calculated window dirty bounding box to VRAM
@@ -854,29 +872,8 @@ Module CompositorMain
                         FlushDirtyRegion badgeX, badgeY, 200, 26
                     End If
 
-                    ' Draw active cursor directly onto frontSurf (VRAM) AFTER flush
-                    CursorTheme.DrawCursor frontSurf, cursorX, cursorY, currentCursor
-
                     oldCursorX = cursorX
                     oldCursorY = cursorY
-                    mouseDirty = False
-                ElseIf mouseDirty Then
-                    cursorX = targetMx
-                    cursorY = targetMy
-
-                    ' Zero-lag decoupled mouse update:
-                    ' 1. Erase old cursor from clean backSurf (16x18 box = 288 pixels)
-                    FlushDirtyRegion oldCursorX, oldCursorY, CURSOR_W, CURSOR_H
-
-                    ' 2. Update mouse coordinates box on top bar (180x14 box = 2520 pixels)
-                    RenderMouseCoordinates True
-
-                    ' 3. Draw new cursor directly on frontSurf (VRAM)
-                    CursorTheme.DrawCursor frontSurf, cursorX, cursorY, currentCursor
-
-                    oldCursorX = cursorX
-                    oldCursorY = cursorY
-                    mouseDirty = False
                 Else
                     ' Idle frame: only animate badge
                     RenderTelemetryBadge True
@@ -900,13 +897,20 @@ Module CompositorMain
                 lastFpsTime = nowTime
             End If
 
-            ' E. Pacing: Sleep until the next 16ms presentation deadline (0% idle CPU)
+            ' E. Pacing: Adaptive Event-Driven Presentation Pacing (Zero 100% CPU lockup)
             nowTime = GetUptime()
-            If nextFrameTime > nowTime Then
-                Dim waitRemaining As UInt64 = nextFrameTime - nowTime
-                If waitRemaining > 1 Then
-                    ProcessSleep (waitRemaining - 1)
+            If mouseMoved Then
+                ProcessYield
+            Else
+                If nextFrameTime > nowTime Then
+                    Dim waitRemaining As UInt64 = nextFrameTime - nowTime
+                    If waitRemaining >= 2 Then
+                        ProcessSleep (waitRemaining - 1)
+                    Else
+                        ProcessYield
+                    End If
                 Else
+                    nextFrameTime = nowTime + 16
                     ProcessYield
                 End If
             End If

@@ -41,6 +41,7 @@ pack_bax apps/cli/coreutils/echo/build/echo.elf apps/cli/coreutils/echo/build/ec
 pack_bax apps/gui/sys_mon/build/sys_mon.elf apps/gui/sys_mon/build/sys_mon.bax apps/gui/sys_mon/manifest.json
 pack_bax apps/gui/terminal/build/terminal.elf apps/gui/terminal/build/terminal.bax apps/gui/terminal/manifest.json
 pack_bax apps/gui/node_viewer/build/node_viewer.elf apps/gui/node_viewer/build/node_viewer.bax apps/gui/node_viewer/manifest.json
+pack_bax apps/gui/resource_mon/build/res_mon.elf apps/gui/resource_mon/build/res_mon.bax apps/gui/resource_mon/manifest.json
 pack_bax apps/gui/user_app/build/user_app.elf apps/gui/user_app/build/user_app.bax apps/gui/user_app/manifest.json
 
 # 1. Directory Tree Creation
@@ -59,6 +60,7 @@ mkdir -p "${STAGING_DIR}/System/Drivers/Input"
 mkdir -p "${STAGING_DIR}/System/Apps/CoreUtils"
 mkdir -p "${STAGING_DIR}/System/Apps/SysMon"
 mkdir -p "${STAGING_DIR}/System/Apps/NodeViewer"
+mkdir -p "${STAGING_DIR}/System/Apps/ResMon"
 
 mkdir -p "${STAGING_DIR}/System/Libraries"
 mkdir -p "${STAGING_DIR}/System/Configurations/Drives"
@@ -91,6 +93,7 @@ cp services/input_srv/build/input_srv.bax "${STAGING_DIR}/System/Drivers/Input/"
 # 5. Stage System Applications & CoreUtils
 cp apps/gui/sys_mon/build/sys_mon.bax "${STAGING_DIR}/System/Apps/SysMon/"
 cp apps/gui/node_viewer/build/node_viewer.bax "${STAGING_DIR}/System/Apps/NodeViewer/"
+[ -f "apps/gui/resource_mon/build/res_mon.bax" ] && cp apps/gui/resource_mon/build/res_mon.bax "${STAGING_DIR}/System/Apps/ResMon/"
 [ -f "apps/cli/coreutils/ls/build/ls.bax" ] && cp apps/cli/coreutils/ls/build/ls.bax "${STAGING_DIR}/System/Apps/CoreUtils/"
 [ -f "apps/cli/coreutils/cat/build/cat.bax" ] && cp apps/cli/coreutils/cat/build/cat.bax "${STAGING_DIR}/System/Apps/CoreUtils/"
 [ -f "apps/cli/coreutils/uptime/build/uptime.bax" ] && cp apps/cli/coreutils/uptime/build/uptime.bax "${STAGING_DIR}/System/Apps/CoreUtils/"

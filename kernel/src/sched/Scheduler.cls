@@ -841,38 +841,22 @@ Public Class Scheduler
             nextAddr = PickNextReady(prevAddr, gposQueueHeads(coreId))
         End If
 
-        ' If local queues have no ready tasks, attempt work-stealing from peer cores
+        ' If no local tasks are ready, attempt to steal a ready task from a peer core
         If nextAddr = 0 Then
-            ' CRITICAL LOCK HIERARCHY FIX: Release local coreLock BEFORE work-stealing
-            ' to prevent cross-core ABBA deadlock when multiple idle cores steal concurrently!
-            Sync.SpinlockOps.ReleaseIrqRestore coreLocks(coreId), flags
-
-            Dim stolenTask As UInt64 = StealTask(coreId)
-
-            flags = Sync.SpinlockOps.AcquireIrqSave(coreLocks(coreId))
-
-            If stolenTask <> 0 Then
-                Dim sTaskPtr As Pointer To TaskControlBlock = CPtr(Pointer To TaskControlBlock, stolenTask)
-                If sTaskPtr.TaskType = Sched.ThreadType.TYPE_RTOS Then
-                    If rtosQueueHeads(coreId) = 0 Then
-                        rtosQueueHeads(coreId) = stolenTask
-                        sTaskPtr.NextTask = stolenTask
-                    Else
-                        Dim rThisHead As Pointer To TaskControlBlock = CPtr(Pointer To TaskControlBlock, rtosQueueHeads(coreId))
-                        sTaskPtr.NextTask = rThisHead.NextTask
-                        rThisHead.NextTask = stolenTask
-                    End If
+            Dim stolenAddr As UInt64 = StealTask(coreId)
+            If stolenAddr <> 0 Then
+                ' Enqueue stolen task into this core's local GPOS queue
+                Dim sHead As UInt64 = gposQueueHeads(coreId)
+                Dim sTask As Pointer To TaskControlBlock = CPtr(Pointer To TaskControlBlock, stolenAddr)
+                If sHead = 0 Then
+                    gposQueueHeads(coreId) = stolenAddr
+                    sTask.NextTask = stolenAddr
                 Else
-                    If gposQueueHeads(coreId) = 0 Then
-                        gposQueueHeads(coreId) = stolenTask
-                        sTaskPtr.NextTask = stolenTask
-                    Else
-                        Dim gThisHead As Pointer To TaskControlBlock = CPtr(Pointer To TaskControlBlock, gposQueueHeads(coreId))
-                        sTaskPtr.NextTask = gThisHead.NextTask
-                        gThisHead.NextTask = stolenTask
-                    End If
+                    Dim sHeadTask As Pointer To TaskControlBlock = CPtr(Pointer To TaskControlBlock, sHead)
+                    sTask.NextTask = sHeadTask.NextTask
+                    sHeadTask.NextTask = stolenAddr
                 End If
-                nextAddr = stolenTask
+                nextAddr = stolenAddr
             End If
         End If
 
@@ -965,11 +949,9 @@ Public Class Scheduler
             curr.CpuTicks = curr.CpuTicks + 1
         End If
 
-        ' If running idle task and local queues have no tasks, only yield every 10ms for load-balancing
+        ' If running idle task and local queues have no tasks, stay asleep in hlt
         If currAddr = idleTaskAddrs(coreId) And rtosQueueHeads(coreId) = 0 And gposQueueHeads(coreId) = 0 Then
-            If (systemUptimeMs Mod 10) <> 0 Then
-                Exit Sub
-            End If
+            Exit Sub
         End If
 
         Yield

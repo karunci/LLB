@@ -55,22 +55,19 @@ try:
         s.recv(1024)
 
     send_cmd('ver')
-    time.sleep(2)
+    time.sleep(3)
 
     send_cmd('dir')
-    time.sleep(3)
-
-    send_cmd('ls')
-    time.sleep(3)
+    time.sleep(5)
 
     send_cmd('cd System\\Configurations')
-    time.sleep(2)
+    time.sleep(4)
 
     send_cmd('ls')
-    time.sleep(2)
+    time.sleep(4)
 
     send_cmd('cat environment.cfg')
-    time.sleep(3)
+    time.sleep(4)
 
     print('[*] Capturing screendump...')
     s.sendall(b'screendump shell_test.ppm\n')

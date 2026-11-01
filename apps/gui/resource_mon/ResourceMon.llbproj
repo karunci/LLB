@@ -1,0 +1,30 @@
+' Project Name: Personal Research Operating System (PROS) / Low-Level Basic
+' Filename: apps/gui/resource_mon/ResourceMon.llbproj
+' Summary: Standalone Ring 3 Hardware Resource & Telemetry Monitor (CPUs, RAM, VRAM, GPU)
+
+[Project]
+Name    = "ResourceMon"
+Type    = "Executable"
+Version = "1.0.0"
+
+[Target]
+Arch = "x86_64-unknown-none-elf"
+
+[Output]
+OutDir  = "build"
+OutFile = "res_mon.elf"
+
+[Entry]
+EntryPoint = "_start"
+
+[Linker]
+LinkerScript = "user_linker.ld"
+Libraries    = [
+    "../../../lib/pros/build/libpros.a"
+]
+
+[Sources]
+Assembly = "../../../lib/runtime/brt0.S"
+Assembly = "../../../lib/runtime/mem.S"
+Module   = "ResourceMonMain.bas"
+

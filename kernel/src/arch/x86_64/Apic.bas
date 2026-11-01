@@ -256,23 +256,23 @@ Module Arch.X86_64.Apic
         LapicWrite LAPIC_TIMER_INIT, 0
 
         If timeout > 0 And elapsed > 1000 And elapsed < &H20000000 Then
-            Dim ticksPer1ms As UInt32 = elapsed / 10
-            If ticksPer1ms < 100 Then ticksPer1ms = 100
-            Serial.PrintF "[APIC] Calibrated LAPIC Timer via PIT: %u ticks per 1ms (1000 Hz, %u/10ms)\r\n", ticksPer1ms, elapsed
-            calibratedTickCount = ticksPer1ms
-            CalibrateTimer = ticksPer1ms
+            Dim ticksPer10ms As UInt32 = elapsed
+            If ticksPer10ms < 1000 Then ticksPer10ms = 1000
+            Serial.PrintF "[APIC] Calibrated LAPIC Timer via PIT: %u ticks per 10ms (100 Hz)\r\n", ticksPer10ms
+            calibratedTickCount = ticksPer10ms
+            CalibrateTimer = ticksPer10ms
         Else
-            Serial.PrintF "[APIC] PIT calibration fallback: count = 0x19999 (1000 Hz)\r\n"
-            calibratedTickCount = &H19999
-            CalibrateTimer = &H19999
+            Serial.PrintF "[APIC] PIT calibration fallback: count = 0x100000 (100 Hz)\r\n"
+            calibratedTickCount = &H100000
+            CalibrateTimer = &H100000
         End If
     End Function
 
     ''
-    ' @brief Get the cached calibrated tick count for 1ms (1000 Hz).
+    ' @brief Get the cached calibrated tick count for 10ms (100 Hz).
     ''
     Public Function GetCalibratedTicks() As UInt32
-        If calibratedTickCount = 0 Then calibratedTickCount = &H19999
+        If calibratedTickCount = 0 Then calibratedTickCount = &H100000
         GetCalibratedTicks = calibratedTickCount
     End Function
 

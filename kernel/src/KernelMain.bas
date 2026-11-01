@@ -66,10 +66,8 @@ Module KernelMain
     Public Unsafe Sub OnTimerInterrupt(ByVal frame As Pointer To Arch.Idt.InterruptFrame)
         Dim coreId As UInt32 = Arch.X86_64.Gdt.GetCpuId()
         If coreId = 0 Then
-            ' Hypervisor failsafe: drain pending PS/2 keyboard/mouse data on BSP
-            DispatchPs2
             MouseDriver.TickIdle
-            SchedEngine.OnTimerTick 1
+            SchedEngine.OnTimerTick 10
         Else
             SchedEngine.OnTimerTick 0
         End If

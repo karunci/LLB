@@ -787,7 +787,12 @@ Module TerminalMain
                         eIdx = eIdx + 1
                     Wend
                     If eIdx >= 65530 Then Exit For
-                    PutLine @termLsBuf(eIdx), COLOR_TEXT
+                    ' Only print non-empty, non-dot directory entries
+                    If termLsBuf(eIdx) <> 0 Then
+                        If Not (termLsBuf(eIdx) = 46 And (termLsBuf(eIdx + 1) = 0 Or (termLsBuf(eIdx + 1) = 46 And termLsBuf(eIdx + 2) = 0))) Then
+                            PutLine @termLsBuf(eIdx), COLOR_TEXT
+                        End If
+                    End If
                     While termLsBuf(eIdx) <> 0 And eIdx < 65530
                         eIdx = eIdx + 1
                     Wend
@@ -1079,8 +1084,11 @@ Module TerminalMain
         Do
             Dim isFocused As Boolean = WmIsFocused(g_winId)
 
-            ' If window just gained focus from unfocused state, discard any stale keys accumulated in microkernel buffer
-            If isFocused And Not lastFocusedState Then
+            ' Discard all keystrokes when unfocused or transitioning to focus to prevent input leakage
+            If Not isFocused Then
+                While GetKey() <> 0
+                Wend
+            ElseIf Not lastFocusedState Then
                 While GetKey() <> 0
                 Wend
             End If

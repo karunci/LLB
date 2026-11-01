@@ -1,0 +1,9 @@
+{
+  "name": "res_mon",
+  "version": "1.0.0",
+  "type": "application",
+  "entry": "res_mon.elf",
+  "priority": 2,
+  "description": "PROS Ring 3 Hardware Resource & Telemetry Monitor (CPUs, RAM, VRAM, GPU)"
+}
+

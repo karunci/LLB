@@ -8,7 +8,7 @@ Import "../../../include/pros.bas"
 
 Module SysMonMain
 
-    Private Const CANVAS_W As Int32 = 476
+    Private Const CANVAS_W As Int32 = 346
     Private Const CANVAS_H As Int32 = 250
 
     Private clientSurf As Surface
@@ -39,7 +39,7 @@ Module SysMonMain
         Dim winId As UInt32 = 0
         Dim regTries As UInt32 = 0
         While regTries < 60 And winId = 0
-            winId = WmCreateWindow(480, 280, shmId, "PROS System Monitor")
+            winId = WmCreateWindow(350, 280, shmId, "PROS System Monitor")
             If winId = 0 Then
                 ProcessSleep 50
                 regTries = regTries + 1

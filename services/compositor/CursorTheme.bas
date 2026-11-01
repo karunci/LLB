@@ -125,19 +125,19 @@ Module CursorTheme
     Public Unsafe Function GetCursorActiveMask(ByVal cursorType As UInt32) As Pointer To UInt16
         Select Case cursorType
             Case CURSOR_ARROW
-                GetCursorActiveMask = *UInt16(AddressOf ArrowActive)
+                GetCursorActiveMask = Pointer To UInt16(AddressOf ArrowActive)
             Case CURSOR_IBEAM
-                GetCursorActiveMask = *UInt16(AddressOf IBeamActive)
+                GetCursorActiveMask = Pointer To UInt16(AddressOf IBeamActive)
             Case CURSOR_RESIZE_EW
-                GetCursorActiveMask = *UInt16(AddressOf ResizeEWActive)
+                GetCursorActiveMask = Pointer To UInt16(AddressOf ResizeEWActive)
             Case CURSOR_RESIZE_NS
-                GetCursorActiveMask = *UInt16(AddressOf ResizeNSActive)
+                GetCursorActiveMask = Pointer To UInt16(AddressOf ResizeNSActive)
             Case CURSOR_RESIZE_NWSE
-                GetCursorActiveMask = *UInt16(AddressOf ResizeNWSEActive)
+                GetCursorActiveMask = Pointer To UInt16(AddressOf ResizeNWSEActive)
             Case CURSOR_RESIZE_NESW
-                GetCursorActiveMask = *UInt16(AddressOf ResizeNESWActive)
+                GetCursorActiveMask = Pointer To UInt16(AddressOf ResizeNESWActive)
             Case Else
-                GetCursorActiveMask = *UInt16(AddressOf ArrowActive)
+                GetCursorActiveMask = Pointer To UInt16(AddressOf ArrowActive)
         End Select
     End Function
 
@@ -147,19 +147,19 @@ Module CursorTheme
     Public Unsafe Function GetCursorColorMask(ByVal cursorType As UInt32) As Pointer To UInt16
         Select Case cursorType
             Case CURSOR_ARROW
-                GetCursorColorMask = *UInt16(AddressOf ArrowColor)
+                GetCursorColorMask = Pointer To UInt16(AddressOf ArrowColor)
             Case CURSOR_IBEAM
-                GetCursorColorMask = *UInt16(AddressOf IBeamColor)
+                GetCursorColorMask = Pointer To UInt16(AddressOf IBeamColor)
             Case CURSOR_RESIZE_EW
-                GetCursorColorMask = *UInt16(AddressOf ResizeEWColor)
+                GetCursorColorMask = Pointer To UInt16(AddressOf ResizeEWColor)
             Case CURSOR_RESIZE_NS
-                GetCursorColorMask = *UInt16(AddressOf ResizeNSColor)
+                GetCursorColorMask = Pointer To UInt16(AddressOf ResizeNSColor)
             Case CURSOR_RESIZE_NWSE
-                GetCursorColorMask = *UInt16(AddressOf ResizeNWSEColor)
+                GetCursorColorMask = Pointer To UInt16(AddressOf ResizeNWSEColor)
             Case CURSOR_RESIZE_NESW
-                GetCursorColorMask = *UInt16(AddressOf ResizeNESWColor)
+                GetCursorColorMask = Pointer To UInt16(AddressOf ResizeNESWColor)
             Case Else
-                GetCursorColorMask = *UInt16(AddressOf ArrowColor)
+                GetCursorColorMask = Pointer To UInt16(AddressOf ArrowColor)
         End Select
     End Function
 

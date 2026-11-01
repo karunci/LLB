@@ -20,7 +20,6 @@ Module CompositorMain
     Private dispInfo As DisplayInfo
     Private backSurf As Surface
     Private backSurfShmId As UInt64 = 0
-    Private hasHwCursor As Boolean = False
     Private hasDisplay As Boolean = False
 
     ' PRK 16x18 Decoupled Cursor State
@@ -49,8 +48,11 @@ Module CompositorMain
     Private cursorY As Int32 = 384
     Private oldCursorX As Int32 = 512
     Private oldCursorY As Int32 = 384
+    Private cursorSavedX As Int32 = 512
+    Private cursorSavedY As Int32 = 384
     Private cursorSavedBg(320) As UInt32 ' 16 x 18 = 288 pixels background backup
     Private cursorInitialized As Boolean = False
+    Private cursorOnBackSurf As Boolean = False
 
     ' Telemetry Badge State
     Private badgeX As Int32 = 0
@@ -335,6 +337,29 @@ Module CompositorMain
 
     Private Unsafe Sub DrawCursorArrow(ByVal x As Int32, ByVal y As Int32)
         CursorTheme.DrawCursor backSurf, x, y, currentCursor
+    End Sub
+
+    ''
+    ' @brief Restore pristine background under active cursor on backbuffer.
+    ''
+    Private Unsafe Sub EraseCursor()
+        If cursorOnBackSurf And backSurf.Pixels <> 0 Then
+            RestoreCursorBackground cursorSavedX, cursorSavedY
+            cursorOnBackSurf = False
+        End If
+    End Sub
+
+    ''
+    ' @brief Save background and paint cursor sprite onto backbuffer.
+    ''
+    Private Unsafe Sub PaintCursor()
+        If cursorInitialized And backSurf.Pixels <> 0 Then
+            SaveCursorBackground cursorX, cursorY
+            cursorSavedX = cursorX
+            cursorSavedY = cursorY
+            DrawCursorArrow cursorX, cursorY
+            cursorOnBackSurf = True
+        End If
     End Sub
 
     ''
@@ -636,28 +661,13 @@ Module CompositorMain
                 RenderTelemetryBadge False
             End If
         End If
-
-        ' 5. In-RAM Software Cursor Composition (Fallback when hardware cursor is inactive)
-        Dim cursorDrawn As Boolean = False
-        If cursorInitialized And (Not hasHwCursor) Then
-            If RectIntersects(cursorX, cursorY, CURSOR_W, CURSOR_H, rx, ry, rw, rh) Then
-                SaveCursorBackground cursorX, cursorY
-                DrawCursorArrow cursorX, cursorY
-                cursorDrawn = True
-            End If
-        End If
-
-        ' 6. Hardware Presentation: Forward damage bounding box to Display Port Server
-        FlushDirtyRegion rx, ry, rw, rh
-
-        ' 7. Pristine Backbuffer Invariant: Restore cursor background on backbuffer
-        If cursorDrawn Then
-            RestoreCursorBackground cursorX, cursorY
-        End If
     End Sub
 
     Private Unsafe Sub DrawDesktopScene()
+        EraseCursor
         CompositeDamageRect 0, 0, dispInfo.Width, dispInfo.Height
+        PaintCursor
+        FlushDirtyRegion 0, 0, dispInfo.Width, dispInfo.Height
     End Sub
 
     ' -------------------------------------------------------------------------
@@ -705,10 +715,6 @@ Module CompositorMain
         Dim dispCaps As DriverDispCaps
         If DispGetCaps(dispCaps) Then
             ConsolePrintWithUInt "[COMPOSITOR] Active Driver Caps: 0x", UInt64(dispCaps.CapsFlags), "\r\n"
-            If (dispCaps.CapsFlags And DISP_CAP_HARDWARE_CURSOR) <> 0 Then
-                hasHwCursor = True
-                ConsoleWriteLine "[COMPOSITOR] Hardware Cursor Plane Active (Offloaded)."
-            End If
         End If
 
         ' 4b. Allocate Zero-Copy Shared Memory Backbuffer at 0x54000000
@@ -751,10 +757,6 @@ Module CompositorMain
             badgeActive = True
         End If
 
-        ' Transition from Boot Splash to Graphical Desktop Canvas
-        ConsoleWriteLine "[COMPOSITOR] Boot splash completed. Transitioning to PROS Desktop..."
-        DrawDesktopScene
-
         ' 6. Initial cursor placement at screen center
         cursorX = dispInfo.Width / 2
         cursorY = dispInfo.Height / 2
@@ -762,19 +764,11 @@ Module CompositorMain
         oldCursorY = cursorY
         cursorInitialized = True
 
-        ' Pre-render dynamic elements onto backbuffer before first screen presentation
+        ' Transition from Boot Splash to Graphical Desktop Canvas
+        ConsoleWriteLine "[COMPOSITOR] Boot splash completed. Transitioning to PROS Desktop..."
         RenderMouseCoordinates False
         RenderTelemetryBadge False
-        If Not hasHwCursor Then
-            SaveCursorBackground cursorX, cursorY
-            DrawCursorArrow cursorX, cursorY
-        Else
-            DispSetCursor True, cursorX, cursorY, 0
-        End If
-        FlushDirtyRegion 0, 0, dispInfo.Width, dispInfo.Height
-        If Not hasHwCursor Then
-            RestoreCursorBackground cursorX, cursorY
-        End If
+        DrawDesktopScene
         ConsoleWriteLine "[COMPOSITOR] In-RAM software cursor plane initialized at screen center."
 
         ' 7. Active Presentation & Event Loop (Strictly Paced 60 FPS)
@@ -969,16 +963,11 @@ Module CompositorMain
                         cursorY = targetMy
                         mouseMoved = True
 
-                        If hasHwCursor Then
-                            DispSetCursor True, cursorX, cursorY, 0
-                            DamageAdd damage, 430, 6, 180, 14, dispInfo.Width, dispInfo.Height
-                        Else
-                            DamageAdd damage, oldCursorX, oldCursorY, CURSOR_W, CURSOR_H, dispInfo.Width, dispInfo.Height
-                            DamageAdd damage, cursorX, cursorY, CURSOR_W, CURSOR_H, dispInfo.Width, dispInfo.Height
-                            DamageAdd damage, 430, 6, 180, 14, dispInfo.Width, dispInfo.Height
-                            oldCursorX = cursorX
-                            oldCursorY = cursorY
-                        End If
+                        DamageAdd damage, oldCursorX, oldCursorY, CURSOR_W, CURSOR_H, dispInfo.Width, dispInfo.Height
+                        DamageAdd damage, cursorX, cursorY, CURSOR_W, CURSOR_H, dispInfo.Width, dispInfo.Height
+                        DamageAdd damage, 430, 6, 180, 14, dispInfo.Width, dispInfo.Height
+                        oldCursorX = cursorX
+                        oldCursorY = cursorY
                     End If
                 End If
             End If
@@ -1045,13 +1034,48 @@ Module CompositorMain
 
                 ' Composite and present all accumulated discrete damaged rectangles
                 If damage.Count > 0 Then
+                    Dim flushX0 As Int32 = dispInfo.Width
+                    Dim flushY0 As Int32 = dispInfo.Height
+                    Dim flushX1 As Int32 = 0
+                    Dim flushY1 As Int32 = 0
+
+                    ' 1. Erase cursor from backbuffer before modifying dirty scanlines
+                    EraseCursor
+
+                    ' 2. Composite all damaged rects onto backbuffer
                     Dim dIdx As UInt32 = 0
                     While dIdx < damage.Count
                         Dim dr As Pointer To DamageRect = AddressOf damage.Rects(dIdx)
+                        If dr.X < flushX0 Then flushX0 = dr.X
+                        If dr.Y < flushY0 Then flushY0 = dr.Y
+                        If (dr.X + dr.Width) > flushX1 Then flushX1 = dr.X + dr.Width
+                        If (dr.Y + dr.Height) > flushY1 Then flushY1 = dr.Y + dr.Height
+
                         CompositeDamageRect dr.X, dr.Y, dr.Width, dr.Height
                         dIdx = dIdx + 1
                     Wend
                     DamageReset damage
+
+                    ' 3. Paint cursor onto backbuffer and compute consolidated presentation bounds
+                    If cursorInitialized Then
+                        If cursorX < flushX0 Then flushX0 = cursorX
+                        If cursorY < flushY0 Then flushY0 = cursorY
+                        If (cursorX + CURSOR_W) > flushX1 Then flushX1 = cursorX + CURSOR_W
+                        If (cursorY + CURSOR_H) > flushY1 Then flushY1 = cursorY + CURSOR_H
+
+                        PaintCursor
+                    End If
+
+                    ' 4. Bounds clipping against display limits
+                    If flushX0 < 0 Then flushX0 = 0
+                    If flushY0 < 0 Then flushY0 = 0
+                    If flushX1 > dispInfo.Width Then flushX1 = dispInfo.Width
+                    If flushY1 > dispInfo.Height Then flushY1 = dispInfo.Height
+
+                    ' 5. ATOMIC PRESENTATION: Single VRAM burst blit per frame!
+                    If flushX1 > flushX0 And flushY1 > flushY0 Then
+                        FlushDirtyRegion flushX0, flushY0, flushX1 - flushX0, flushY1 - flushY0
+                    End If
                 End If
 
                 If (nowTime - nextFrameTime) > 32 Then

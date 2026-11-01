@@ -26,8 +26,24 @@ PROS employs a **microkernel architecture** where major operating system service
 │             Display Compositor Service                 │
 │                  (srv.compositor)                      │
 ├────────────────────────────────────────────────────────┤
-│        Hardware MMIO Framebuffer (PCIe Uncacheable)    │
-└────────────────────────────────────────────────────────┘
+│  RAM Backbuffer (backSurf) + Damage Tracker (Dirty)    │
+└──────────────────────────┬─────────────────────────────┘
+                           │ DispPresentRect (Synapse)
+                           ▼
+┌────────────────────────────────────────────────────────┐
+│             Display Port Service                       │
+│                  (srv.display)                         │
+├────────────────────────────────────────────────────────┤
+│  Multiplexer & Port Driver (dxgkrnl equivalent)        │
+└──────────────┬──────────────────────────┬──────────────┘
+               │                          │
+               ▼                          ▼
+┌──────────────────────────────┐ ┌───────────────────────┐
+│ VMware SVGA-II Driver Daemon │ │  Generic LFB Driver   │
+│      (drv.disp.svga)         │ │    (drv.disp.lfb)     │
+├──────────────────────────────┤ ├───────────────────────┤
+│ PCIe MMIO & VRAM Burst Blit  │ │ Direct Framebuffer    │
+└──────────────────────────────┘ └───────────────────────┘
 ```
 
 ---
@@ -102,11 +118,12 @@ graph TD
   - Stripped all secondary service spawns from `KernelMain.bas`; kernel strictly initializes hardware and spawns `sys.genesis` (PID 1).
   - Minimal Genesis PID 1: Adopts orphaned/zombie processes, listens for shutdown/reboot signals, and spawns `srv.plexus_mgr` (PID 2).
   - Decoupled Plexus Manager PID 2: Reads boot initrd, summons Plexuses (`srv.vfs`, `srv.dev_mgr`, `srv.display`, `srv.input`, `srv.compositor`, `srv.wm`, and GUI apps) in staged dependency order, monitors heartbeats, and handles automatic service restarts. Verified live in `re40`.
-- [ ] **CS.2:** Decoupled Multi-Process Display Driver Architecture (`PROS-ARCH-COMP-02`):
-  - Refactor `srv.display` into a lightweight Display Port Server (dxgkrnl equivalent) that dynamically discovers and binds the active driver daemon node (`drv.disp.active`).
-  - Implement isolated userspace driver daemons (`drivers/disp/*/`): `svga_drv.bax` (VMware SVGA-II FIFO & hardware cursor), `virtio_drv.bax` (VirtIO-GPU 2D), and `lfb_drv.bax` (generic LFB fallback).
-  - Define `IDisplayDriverProtocol` over Synapse IPC (`DRV_DISP_INIT`, `DRV_DISP_FLUSH_RECT`, `DRV_DISP_SET_CURSOR`, `DRV_DISP_SET_MODE`).
-  - Decouple `srv.compositor`: compositor presents exclusively through `srv.display`, completely isolated from hardware MMIO and GPU registers.
+- [x] **CS.2:** Decoupled Multi-Process Display Driver Architecture (`PROS-ARCH-COMP-02`):
+  - Refactored `srv.display` into a lightweight Display Port Server (dxgkrnl equivalent) that dynamically discovers and binds the active driver daemon node (`drv.disp.active`).
+  - Implemented isolated userspace driver daemons (`drivers/disp/*/`): `svga_drv.bax` (VMware SVGA-II FIFO blitting) and `lfb_drv.bax` (generic LFB fallback).
+  - Defined `IDisplayDriverProtocol` over Synapse IPC (`DRV_DISP_INIT`, `DRV_DISP_GET_CAPS`, `DRV_DISP_FLUSH_RECT`, `DRV_DISP_SET_CURSOR`, `DRV_DISP_SET_MODE`).
+  - Decoupled `srv.compositor`: compositor manages in-RAM dirty rect compositing and presents exclusively through `srv.display`, completely isolated from hardware MMIO and GPU registers.
+  - Verified atomic single-flush presentation and persistent in-RAM arrow cursor under QEMU WHPX and VirtualBox (`re41`).
 - [ ] **CS.3:** Software Graphics & Rasterization Tier (`IRenderBackend`):
   - Implement freestanding 2D blitter and software OpenGL 1.x pipeline (`TinyGL / SoftGL`) in `lib/pros` for zero-dependency window canvas 3D rendering.
 - [ ] **CS.4:** Window Manager Interactivity Polish:

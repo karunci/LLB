@@ -246,7 +246,7 @@ Module SvgaDriverMain
             If SynapsePop(drvNodeId, inPkt) Then
                 If inPkt.PacketType = DRV_DISP_GET_CAPS Then
                     Dim caps As DriverDispCaps
-                    caps.CapsFlags = DISP_CAP_DIRECT_LFB Or DISP_CAP_HARDWARE_FIFO Or DISP_CAP_HARDWARE_CURSOR Or DISP_CAP_ACCEL_BLIT
+                    caps.CapsFlags = DISP_CAP_DIRECT_LFB Or DISP_CAP_HARDWARE_FIFO Or DISP_CAP_ACCEL_BLIT
                     caps.MaxWidth = UInt32(dispInfo.Width)
                     caps.MaxHeight = UInt32(dispInfo.Height)
                     caps.PreferredBpp = dispInfo.Bpp

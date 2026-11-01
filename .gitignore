@@ -29,3 +29,5 @@ Thumbs.db
 *.bmp
 *.ppm
 *.png
+__pycache__/
+*.pyc

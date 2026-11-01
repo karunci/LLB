@@ -1,8 +1,9 @@
-' Project Name: Personal Research Operating System (PROS) / Low-Level Basic
+' Project Name: Personal Research Operating System / Low-Level Basic
 ' Filename: apps/gui/resource_mon/ResourceMonMain.bas
 ' Summary: Standalone Ring 3 Hardware Resource & Telemetry Monitor (CPUs, RAM, VRAM, GPU)
 '          Allocates dedicated zero-copy shared memory surface, registers window
-'          with srv.wm, and renders real-time CPU, RAM, VRAM, and GPU cards.
+'          with srv.wm, and renders real-time CPU, RAM, VRAM, and GPU telemetry
+'          queried directly from active kernel state via SYS_GET_SYSTEM_METRICS.
 
 Import "../../../include/pros.bas"
 
@@ -70,7 +71,7 @@ Module ResourceMonMain
         Dim winId As UInt32 = 0
         Dim regTries As UInt32 = 0
         While regTries < 60 And winId = 0
-            winId = WmCreateWindow(360, 300, shmId, "PROS Resource Monitor")
+            winId = WmCreateWindow(CANVAS_W + 4, CANVAS_H + 28, shmId, "PROS Resource Monitor")
             If winId = 0 Then
                 ProcessSleep 50
                 regTries = regTries + 1
@@ -84,75 +85,154 @@ Module ResourceMonMain
         End If
         ConsolePrintWithUInt "[RES_MON] Registered window with WindowManager -> ID #", winId, "\r\n"
 
-        ' 3. Render Static Background & Section Cards
-        FillRect clientSurf, 0, 0, CANVAS_W, CANVAS_H, &HFF232731
-
-        ' Card 1: CPU SMP Multi-Core Telemetry (Top Left / Full Top)
-        FillRect clientSurf, 8, 8, CANVAS_W - 16, 62, &HFF2E3440
-        FillRect clientSurf, 8, 8, 4, 62, &HFF88C0D0
-        DrawText5x7 clientSurf, 18, 12, "CPU SMP LOAD & TOPOLOGY [4 CORES ONLINE]", &HFFECEFF4
-        DrawText5x7 clientSurf, 18, 26, "CORE 0 (BSP):", &HFFD8DEE9
-        DrawText5x7 clientSurf, 18, 38, "CORE 1 (AP) :", &HFFD8DEE9
-        DrawText5x7 clientSurf, 180, 26, "CORE 2 (AP):", &HFFD8DEE9
-        DrawText5x7 clientSurf, 180, 38, "CORE 3 (AP):", &HFFD8DEE9
-        DrawText5x7 clientSurf, 18, 52, "SCHED: PER-CPU RUNQUEUES (100 HZ LAPIC PACED)", &HFF81A1C1
-
-        ' Card 2: System Physical Memory (RAM) Telemetry
-        FillRect clientSurf, 8, 74, CANVAS_W - 16, 60, &HFF2E3440
-        FillRect clientSurf, 8, 74, 4, 60, &HFFA3BE8C
-        DrawText5x7 clientSurf, 18, 78, "SYSTEM PHYSICAL MEMORY (RAM)", &HFFECEFF4
-        DrawText5x7 clientSurf, 18, 92, "TOTAL: 1024 MB  |  USED: ~142 MB  |  FREE: ~882 MB", &HFF88C0D0
-        DrawText5x7 clientSurf, 18, 104, "BUDDY: 64 MB POOL (0x04000000 - 0x08000000)", &HFFD8DEE9
-        DrawText5x7 clientSurf, 18, 116, "KHEAP: 8 MB DYNAMIC ALIGNED (0x81000000)", &HFFEBCB8B
-
-        ' Card 3: Video RAM (VRAM) & Aperture Telemetry
-        FillRect clientSurf, 8, 138, CANVAS_W - 16, 60, &HFF2E3440
-        FillRect clientSurf, 8, 138, 4, 60, &HFFEBCB8B
-        DrawText5x7 clientSurf, 18, 142, "VIDEO MEMORY & APERTURE (VRAM)", &HFFECEFF4
-        DrawText5x7 clientSurf, 18, 156, "LFB APERTURE: 1024x768x32 ARGB (3.14 MB)", &HFF88C0D0
-        DrawText5x7 clientSurf, 18, 168, "BACKBUFFER  : 3.14 MB ZERO-COPY RAM BLIT", &HFFD8DEE9
-        DrawText5x7 clientSurf, 18, 180, "WINDOW SHM  : 4 ACTIVE SURFACES (~2.12 MB)", &HFFA3BE8C
-
-        ' Card 4: GPU & Presentation Pipeline Telemetry
-        FillRect clientSurf, 8, 202, CANVAS_W - 16, 60, &HFF2E3440
-        FillRect clientSurf, 8, 202, 4, 60, &HFFB48EAD
-        DrawText5x7 clientSurf, 18, 206, "GPU & DISPLAY PRESENTATION PIPELINE", &HFFECEFF4
-        DrawText5x7 clientSurf, 18, 220, "CONTROLLER  : UEFI GOP / PCI LFB (PITCH: 4096)", &HFF88C0D0
-        DrawText5x7 clientSurf, 18, 232, "BUS ACCEL   : FAST_BLIT32_NT (DWORD BURST)", &HFFD8DEE9
-        DrawText5x7 clientSurf, 18, 244, "REFRESH     : 60 FPS PACED (16 MS FRAME DEADLINE)", &HFFA3BE8C
-
-        ' Signal initial full surface to Window Manager / Compositor
+        ' Signal initial full surface
         WmSignalDirty winId, 0, 0, CANVAS_W, CANVAS_H
 
-        ' 4. Active Dynamic Telemetry Loop (Updates every 500ms)
-        Dim cycle As UInt32 = 0
+        ' 3. Active Real Telemetry Update Loop (Updates every 500ms via SYS_GET_SYSTEM_METRICS)
+        Dim metrics As SystemMetrics
         Do
-            Dim nowTime As UInt64 = GetUptime()
+            If GetSystemMetrics(metrics) Then
+                ' Render Background
+                FillRect clientSurf, 0, 0, CANVAS_W, CANVAS_H, &HFF232731
 
-            ' Dynamic CPU Core Bars (Simulated representative core load)
-            Dim loadC0 As UInt32 = 6 + ((cycle * 3) Mod 18)
-            Dim loadC1 As UInt32 = 2 + ((cycle * 5) Mod 12)
-            Dim loadC2 As UInt32 = 4 + ((cycle * 2) Mod 15)
-            Dim loadC3 As UInt32 = 5 + ((cycle * 4) Mod 20)
+                ' Card 1: CPU SMP Multi-Core Telemetry
+                FillRect clientSurf, 8, 8, CANVAS_W - 16, 62, &HFF2E3440
+                FillRect clientSurf, 8, 8, 4, 62, &HFF88C0D0
 
-            DrawResourceBar clientSurf, 95, 26, 75, 8, loadC0, &HFF88C0D0
-            DrawResourceBar clientSurf, 95, 38, 75, 8, loadC1, &HFF88C0D0
-            DrawResourceBar clientSurf, 260, 26, 75, 8, loadC2, &HFF88C0D0
-            DrawResourceBar clientSurf, 260, 38, 75, 8, loadC3, &HFF88C0D0
+                Dim cpuHeaderBuf(64) As Byte
+                Dim chIdx As UInt32 = 0
+                AppendStr "CPU SMP LOAD & TOPOLOGY [", @cpuHeaderBuf(0), chIdx
+                AppendUInt UInt64(metrics.CpuCount), @cpuHeaderBuf(0), chIdx
+                AppendStr " CORES ONLINE]", @cpuHeaderBuf(0), chIdx
+                cpuHeaderBuf(chIdx) = 0
+                DrawText5x7 clientSurf, 18, 12, @cpuHeaderBuf(0), &HFFECEFF4
 
-            ' RAM Usage Bar (142 / 1024 MB = ~14%)
-            DrawResourceBar clientSurf, 260, 78, 75, 8, 14, &HFFA3BE8C
+                DrawText5x7 clientSurf, 18, 26, "CORE 0 (BSP):", &HFFD8DEE9
+                DrawResourceBar clientSurf, 95, 26, 75, 8, metrics.Cores(0).LoadPercent, &HFF88C0D0
 
-            ' VRAM Usage Bar (5.26 / 32 MB = ~16%)
-            DrawResourceBar clientSurf, 260, 142, 75, 8, 16, &HFFEBCB8B
+                DrawText5x7 clientSurf, 18, 38, "CORE 1 (AP) :", &HFFD8DEE9
+                DrawResourceBar clientSurf, 95, 38, 75, 8, metrics.Cores(1).LoadPercent, &HFF88C0D0
 
-            ' Signal updated dirty regions for bars
-            WmSignalDirty winId, 95, 26, 75, 22
-            WmSignalDirty winId, 260, 26, 75, 22
-            WmSignalDirty winId, 260, 78, 75, 8
-            WmSignalDirty winId, 260, 142, 75, 8
+                DrawText5x7 clientSurf, 180, 26, "CORE 2 (AP):", &HFFD8DEE9
+                DrawResourceBar clientSurf, 260, 26, 75, 8, metrics.Cores(2).LoadPercent, &HFF88C0D0
 
-            cycle = cycle + 1
+                DrawText5x7 clientSurf, 180, 38, "CORE 3 (AP):", &HFFD8DEE9
+                DrawResourceBar clientSurf, 260, 38, 75, 8, metrics.Cores(3).LoadPercent, &HFF88C0D0
+
+                DrawText5x7 clientSurf, 18, 52, "SCHED: PER-CPU RUNQUEUES (100 HZ LAPIC PACED)", &HFF81A1C1
+
+                ' Card 2: System Physical Memory (RAM) Telemetry (Direct from Kernel PMM)
+                FillRect clientSurf, 8, 74, CANVAS_W - 16, 60, &HFF2E3440
+                FillRect clientSurf, 8, 74, 4, 60, &HFFA3BE8C
+                DrawText5x7 clientSurf, 18, 78, "SYSTEM PHYSICAL MEMORY (RAM)", &HFFECEFF4
+
+                Dim totRamMB As UInt64 = metrics.TotalRamBytes / 1048576
+                Dim usedRamMB As UInt64 = metrics.UsedRamBytes / 1048576
+                Dim freeRamMB As UInt64 = metrics.FreeRamBytes / 1048576
+                Dim ramPct As UInt32 = 0
+                If totRamMB > 0 Then ramPct = UInt32((usedRamMB * 100) / totRamMB)
+
+                Dim ramBuf(64) As Byte
+                Dim rbIdx As UInt32 = 0
+                AppendStr "TOTAL: ", @ramBuf(0), rbIdx
+                AppendUInt totRamMB, @ramBuf(0), rbIdx
+                AppendStr " MB | USED: ", @ramBuf(0), rbIdx
+                AppendUInt usedRamMB, @ramBuf(0), rbIdx
+                AppendStr " MB | FREE: ", @ramBuf(0), rbIdx
+                AppendUInt freeRamMB, @ramBuf(0), rbIdx
+                AppendStr " MB", @ramBuf(0), rbIdx
+                ramBuf(rbIdx) = 0
+                DrawText5x7 clientSurf, 18, 92, @ramBuf(0), &HFF88C0D0
+                DrawResourceBar clientSurf, 260, 78, 75, 8, ramPct, &HFFA3BE8C
+
+                Dim buddyBuf(64) As Byte
+                Dim bbIdx As UInt32 = 0
+                AppendStr "BUDDY: ", @buddyBuf(0), bbIdx
+                AppendUInt metrics.BuddyPoolBytes / 1048576, @buddyBuf(0), bbIdx
+                AppendStr " MB POOL (0x04000000 - 0x08000000)", @buddyBuf(0), bbIdx
+                buddyBuf(bbIdx) = 0
+                DrawText5x7 clientSurf, 18, 104, @buddyBuf(0), &HFFD8DEE9
+
+                Dim heapBuf(64) As Byte
+                Dim hbIdx As UInt32 = 0
+                AppendStr "KHEAP: ", @heapBuf(0), hbIdx
+                AppendUInt metrics.HeapAllocBytes / 1048576, @heapBuf(0), hbIdx
+                AppendStr " MB DYNAMIC ALIGNED (0x81000000)", @heapBuf(0), hbIdx
+                heapBuf(hbIdx) = 0
+                DrawText5x7 clientSurf, 18, 116, @heapBuf(0), &HFFEBCB8B
+
+                ' Card 3: Video RAM (VRAM) & Aperture Telemetry
+                FillRect clientSurf, 8, 138, CANVAS_W - 16, 60, &HFF2E3440
+                FillRect clientSurf, 8, 138, 4, 60, &HFFEBCB8B
+                DrawText5x7 clientSurf, 18, 142, "VIDEO MEMORY & APERTURE (VRAM)", &HFFECEFF4
+
+                Dim vramTotMB As UInt64 = metrics.VramTotalBytes / 1048576
+                If vramTotMB = 0 Then vramTotMB = (metrics.VramTotalBytes + 1048575) / 1048576
+                Dim vramUsedMB As UInt64 = (metrics.VramUsedBytes + 1048575) / 1048576
+                Dim vramPct As UInt32 = 0
+                If metrics.VramTotalBytes > 0 Then
+                    vramPct = UInt32((metrics.VramUsedBytes * 100) / metrics.VramTotalBytes)
+                End If
+
+                Dim vramBuf(64) As Byte
+                Dim vbIdx As UInt32 = 0
+                AppendStr "LFB APERTURE: ", @vramBuf(0), vbIdx
+                AppendUInt UInt64(metrics.DisplayWidth), @vramBuf(0), vbIdx
+                AppendStr "x", @vramBuf(0), vbIdx
+                AppendUInt UInt64(metrics.DisplayHeight), @vramBuf(0), vbIdx
+                AppendStr "x", @vramBuf(0), vbIdx
+                AppendUInt UInt64(metrics.DisplayBpp), @vramBuf(0), vbIdx
+                AppendStr " ARGB (", @vramBuf(0), vbIdx
+                AppendUInt vramUsedMB, @vramBuf(0), vbIdx
+                AppendStr " MB)", @vramBuf(0), vbIdx
+                vramBuf(vbIdx) = 0
+                DrawText5x7 clientSurf, 18, 156, @vramBuf(0), &HFF88C0D0
+                DrawResourceBar clientSurf, 260, 142, 75, 8, vramPct, &HFFEBCB8B
+
+                Dim vramCapBuf(64) As Byte
+                Dim vcbIdx As UInt32 = 0
+                AppendStr "TOTAL VRAM  : ", @vramCapBuf(0), vcbIdx
+                AppendUInt vramTotMB, @vramCapBuf(0), vcbIdx
+                AppendStr " MB PHYSICAL BAR APERTURE", @vramCapBuf(0), vcbIdx
+                vramCapBuf(vcbIdx) = 0
+                DrawText5x7 clientSurf, 18, 168, @vramCapBuf(0), &HFFD8DEE9
+                DrawText5x7 clientSurf, 18, 180, "BACKBUFFER  : ZERO-COPY DOUBLE-BUFFERED RAM", &HFFA3BE8C
+
+                ' Card 4: GPU & Presentation Pipeline Telemetry (PCI Discovery)
+                FillRect clientSurf, 8, 202, CANVAS_W - 16, 60, &HFF2E3440
+                FillRect clientSurf, 8, 202, 4, 60, &HFFB48EAD
+                DrawText5x7 clientSurf, 18, 206, "GPU & DISPLAY CONTROLLER PIPELINE", &HFFECEFF4
+
+                Dim gpuBuf(64) As Byte
+                Dim gbIdx As UInt32 = 0
+                If metrics.GpuDriverType = 1 Then
+                    AppendStr "CONTROLLER  : VMware SVGA-II (0x15AD:0x0405)", @gpuBuf(0), gbIdx
+                    gpuBuf(gbIdx) = 0
+                    DrawText5x7 clientSurf, 18, 220, @gpuBuf(0), &HFF88C0D0
+
+                    Dim fifoBuf(64) As Byte
+                    Dim fb2Idx As UInt32 = 0
+                    AppendStr "ACCEL BUS   : HARDWARE FIFO QUEUE (I/O 0x", @fifoBuf(0), fb2Idx
+                    AppendHex UInt64(metrics.GpuBar0IoPort), @fifoBuf(0), fb2Idx
+                    AppendStr ")", @fifoBuf(0), fb2Idx
+                    fifoBuf(fb2Idx) = 0
+                    DrawText5x7 clientSurf, 18, 232, @fifoBuf(0), &HFFD8DEE9
+                Else
+                    AppendStr "CONTROLLER  : PCI Display (0x", @gpuBuf(0), gbIdx
+                    AppendHex UInt64(metrics.GpuVendorId), @gpuBuf(0), gbIdx
+                    AppendStr ":0x", @gpuBuf(0), gbIdx
+                    AppendHex UInt64(metrics.GpuDeviceId), @gpuBuf(0), gbIdx
+                    AppendStr ")", @gpuBuf(0), gbIdx
+                    gpuBuf(gbIdx) = 0
+                    DrawText5x7 clientSurf, 18, 220, @gpuBuf(0), &HFF88C0D0
+                    DrawText5x7 clientSurf, 18, 232, "ACCEL BUS   : FAST_BLIT32_NT STREAMING BURST", &HFFD8DEE9
+                End If
+                DrawText5x7 clientSurf, 18, 244, "PRESENTATION: 60 FPS PACED (16 MS DEADLINE)", &HFFA3BE8C
+
+                ' Signal full surface update to Window Manager
+                WmSignalDirty winId, 0, 0, CANVAS_W, CANVAS_H
+            End If
+
             ProcessSleep 500
         Loop
 
@@ -160,4 +240,3 @@ Module ResourceMonMain
     End Function
 
 End Module
-

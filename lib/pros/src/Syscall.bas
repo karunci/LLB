@@ -30,6 +30,13 @@ Namespace Pros.Sys
     Public Const SYS_FB_GET_INFO     As UInt64 = 70
     Public Const SYS_FB_MAP          As UInt64 = 71
 
+    Public Const SYS_PCI_GET_DEVICE_COUNT As UInt64 = 72
+    Public Const SYS_PCI_GET_DEVICE       As UInt64 = 73
+    Public Const SYS_PCI_MAP_BAR          As UInt64 = 74
+    Public Const SYS_PORT_IN              As UInt64 = 75
+    Public Const SYS_PORT_OUT             As UInt64 = 76
+    Public Const SYS_GET_SYSTEM_METRICS   As UInt64 = 77
+
     Public Const SYS_INITRD_GET_INFO As UInt64 = 80
     Public Const SYS_INITRD_MAP      As UInt64 = 81
 
@@ -37,6 +44,47 @@ Namespace Pros.Sys
     Public Structure InitrdInfo
         Public PhysAddr  As UInt64
         Public SizeBytes As UInt64
+    End Structure
+
+    <Packed>
+    Public Structure CpuCoreMetric
+        Public ActiveTicks As UInt64
+        Public IdleTicks   As UInt64
+        Public TotalTicks  As UInt64
+        Public LoadPercent As UInt32
+        Public Reserved    As UInt32
+    End Structure
+
+    <Packed>
+    Public Structure SystemMetrics
+        Public CpuCount        As UInt32
+        Public Reserved0       As UInt32
+        Public SchedUptimeMs   As UInt64
+        Public Cores(15)       As CpuCoreMetric
+
+        ' RAM
+        Public TotalRamBytes   As UInt64
+        Public FreeRamBytes    As UInt64
+        Public UsedRamBytes    As UInt64
+        Public BuddyPoolBytes  As UInt64
+        Public HeapAllocBytes  As UInt64
+
+        ' VRAM & Display
+        Public DisplayWidth    As UInt32
+        Public DisplayHeight   As UInt32
+        Public DisplayPitch    As UInt32
+        Public DisplayBpp      As UInt32
+        Public VramTotalBytes  As UInt64
+        Public VramUsedBytes   As UInt64
+
+        ' GPU
+        Public GpuVendorId     As UInt16
+        Public GpuDeviceId     As UInt16
+        Public GpuSubsystemId  As UInt16
+        Public GpuBar0IoPort   As UInt16
+        Public GpuBar1FbPhys   As UInt64
+        Public GpuBar2FifoPhys As UInt64
+        Public GpuDriverType   As UInt32 ' 0 = GOP/VESA LFB, 1 = VMware SVGA-II, 2 = VirtIO-GPU
     End Structure
 
     Public Module RawSyscall

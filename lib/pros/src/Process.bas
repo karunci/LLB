@@ -2,6 +2,7 @@
 ' Filename: lib/pros/src/Process.bas
 ' Summary: High-level Process management procedures for PROS applications.
 
+Import "Syscall.bas"
 Import Pros.Sys.RawSyscall
 Import Pros.Memory.Shmem
 Import Pros.IO.FileSystem
@@ -173,6 +174,15 @@ Namespace Pros.Sys
         ''
         Public Unsafe Function PollExit(ByVal pid As UInt64, ByRef outExitCode As UInt32) As Int32
             PollExit = Int32(Pros.Sys.RawSyscall.Call3(SYS_PROCESS_WAIT, pid, UInt64(@outExitCode), 1))
+        End Function
+
+        ''
+        ' @brief Query comprehensive live system hardware and scheduling metrics.
+        ' @param outMetrics ByRef variable receiving the live SystemMetrics data.
+        ' @return True on success, False on error.
+        ''
+        Public Unsafe Function GetSystemMetrics(ByRef outMetrics As SystemMetrics) As Boolean
+            GetSystemMetrics = (Pros.Sys.RawSyscall.Call1(SYS_GET_SYSTEM_METRICS, UInt64(AddressOf outMetrics)) <> 0)
         End Function
 
     End Module

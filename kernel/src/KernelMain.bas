@@ -15,6 +15,7 @@ Module KernelMain
     Import Arch.Smp
     Import Core.Nodes
     Import Core.Nodes.SynapseCaps
+    Import Drivers.Pci
     Import Sys.Syscall
     Import Sys.Version
 
@@ -36,6 +37,7 @@ Module KernelMain
     Use Fs.TarArchive As Tar
     Use Mem.SharedMemoryManager As Shmem
     Use Drivers.Mouse As MouseDriver
+    Use Drivers.Pci.PciBus As Pci
 
     ' LibLLB_Metal Static Library Declarations
     Public Declare Function ToHex Lib "libllb_metal" (ByVal value As UInt64, ByVal outBuf As Pointer To Byte, ByVal prefix As Boolean) As UInt32
@@ -247,6 +249,10 @@ Module KernelMain
         Dim acpiIoapic As UInt32 = Arch.Acpi.GetIoapicBase()
         Dim pm1aPort As UInt32 = Arch.Acpi.GetPm1aControlBlock()
         Serial.PrintF "[ACPI] System topology verified: %d Core(s), LAPIC @ 0x%x, IO-APIC @ 0x%x, PM1a @ 0x%x\r\n", acpiCpus, acpiLapic, acpiIoapic, pm1aPort
+
+        ' Initialize and scan PCI bus devices (Phase 1)
+        Serial.PrintF "[PRK] Scanning PCI Bus Subsystem...\r\n"
+        Pci.ScanBus
 
         ' Dump CPU topology and feature flags via CPUID
         Serial.PrintF "[PRK] Querying CPU Hardware Info...\r\n"
@@ -504,6 +510,8 @@ Module KernelMain
         Dim termBaxAddr As UInt64 = 0
         Dim nodeViewBaxSize As UInt64 = 0
         Dim nodeViewBaxAddr As UInt64 = 0
+        Dim resMonBaxSize As UInt64 = 0
+        Dim resMonBaxAddr As UInt64 = 0
 
         If initrdStart <> 0 And initrdEnd > initrdStart Then
             Serial.PrintF "[PRK] Scanning Initrd USTAR Ramdisk at 0x%lx (%u bytes)...\r\n", _
@@ -601,6 +609,13 @@ Module KernelMain
             Else
                 Serial.PrintF "[PRK] Warning: 'user_app.bax' not found in initrd ramdisk!\r\n"
             End If
+
+            ' 12. Probe for Resource Monitor GUI ('res_mon.bax')
+            resMonBaxAddr = Tar.FindFile(initrdStart, "res_mon.bax", resMonBaxSize)
+            If resMonBaxAddr <> 0 Then
+                Serial.PrintF "[PRK] Located 'res_mon.bax' in ramdisk (%u bytes at 0x%lx)\r\n", _
+                              CType(UInt32, resMonBaxSize), resMonBaxAddr
+            End If
         Else
             Serial.PrintF "[PRK] Warning: No Multiboot initrd module provided.\r\n"
         End If
@@ -696,6 +711,13 @@ Module KernelMain
             Serial.PrintF "[PRK] Spawned Terminal Console GUI Process (PID: %u)\r\n", CType(UInt32, termPid)
         End If
 
+        ' Spawn Autonomous Ring 3 Hardware Resource Monitor GUI Process
+        Dim resMonPid As UInt64 = 0
+        If resMonBaxAddr <> 0 Then
+            resMonPid = SchedEngine.CreateBaxProcess("apps.res_mon", resMonBaxAddr, resMonBaxSize, 2)
+            Serial.PrintF "[PRK] Spawned Hardware Resource Monitor GUI Process (PID: %u)\r\n", CType(UInt32, resMonPid)
+        End If
+
         Serial.PrintF "[PRK] Kernel boot and userland dispatch completed successfully.\r\n"
 
         ' Release AP barrier so all cores can start dispatching tasks simultaneously
@@ -708,9 +730,9 @@ Module KernelMain
         ' Preemptively yield to let User Thread execute in Ring 3
         SchedEngine.Yield
 
+        ' Kernel boot initialization completed. Enter supervisor sleep to allow idle task and user apps to run cleanly.
         Do
-            SchedEngine.Yield
-            Asm "sti\n\tnop\n\thlt" : : : "memory"
+            SchedEngine.Sleep 60000
         Loop
     End Sub
 

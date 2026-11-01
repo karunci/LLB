@@ -43,6 +43,14 @@ Public Class Scheduler
     Private gposQueueHeads(16)   As UInt64
     Private idleTaskAddrs(16)    As UInt64
 
+    ' Per-CPU Real Hardware Telemetry Accounting
+    Private coreActiveTicks(16) As UInt64
+    Private coreIdleTicks(16)   As UInt64
+    Private coreTotalTicks(16)  As UInt64
+    Private coreSampleActive(16) As UInt64
+    Private coreSampleTotal(16) As UInt64
+    Private coreLoadPct(16)     As UInt32
+
     ' Exited process record tracking (for SYS_PROCESS_WAIT exit code reaping)
     Private exitedPids(64) As UInt64
     Private exitedCodes(64) As UInt32
@@ -181,7 +189,7 @@ Public Class Scheduler
         ' IRET Frame for Ring 3 user transition:
         stack = stack - 1 : stack(0) = &H1B       ' SS = 0x1B (User Data)
         stack = stack - 1 : stack(0) = userRsp   ' User RSP
-        stack = stack - 1 : stack(0) = &H202     ' RFLAGS (IF=1)
+        stack = stack - 1 : stack(0) = &H3202     ' RFLAGS (IF=1, IOPL=3 - direct driver I/O enabled)
         stack = stack - 1 : stack(0) = &H23      ' CS = 0x23 (User Code)
         stack = stack - 1 : stack(0) = entryPoint' User RIP
 
@@ -273,6 +281,12 @@ Public Class Scheduler
             rtosQueueHeads(c) = 0
             gposQueueHeads(c) = 0
             idleTaskAddrs(c) = 0
+            coreActiveTicks(c) = 0
+            coreIdleTicks(c) = 0
+            coreTotalTicks(c) = 0
+            coreSampleActive(c) = 0
+            coreSampleTotal(c) = 0
+            coreLoadPct(c) = 0
         Next c
 
         exitedCount = 0
@@ -734,84 +748,10 @@ Public Class Scheduler
     ' @param thisCpu Logical ID of the calling CPU core looking for work.
     ' @return Address of stolen ready TCB, or 0 if all cores are idle.
     ''
+    ''
+    ' @brief Work-stealing is disabled in favor of strict partitioned SMP queues.
+    ''
     Private Unsafe Function StealTask(ByVal thisCpu As UInt32) As UInt64
-        Dim numCores As UInt32 = Arch.Smp.GetOnlineCoreCount()
-        If numCores > MAX_SCHED_CPUS Or numCores = 0 Then numCores = MAX_SCHED_CPUS
-
-        Dim sFlags As UInt64 = Sync.SpinlockOps.AcquireIrqSave(stealLock)
-        Dim otherCore As UInt32 = 0
-        While otherCore < numCores
-            If otherCore <> thisCpu Then
-                ' Non-blocking try-acquire: if peer core is busy scheduling, skip without stalling
-                If Sync.SpinlockOps.TryAcquire(coreLocks(otherCore)) Then
-
-                    ' 1. Check peer RTOS queue first
-                    Dim rHeadAddr As UInt64 = rtosQueueHeads(otherCore)
-                    If rHeadAddr <> 0 Then
-                        Dim rIterAddr As UInt64 = rHeadAddr
-                        Do
-                            Dim rIter As Pointer To TaskControlBlock = CPtr(Pointer To TaskControlBlock, rIterAddr)
-                            If rIter.State = Sched.ThreadState.STATE_READY And rIterAddr <> currentTaskAddrs(otherCore) Then
-                                If rIter.NextTask <> rIterAddr Then
-                                    Dim predAddr As UInt64 = rIterAddr
-                                    While CPtr(Pointer To TaskControlBlock, predAddr).NextTask <> rIterAddr
-                                        predAddr = CPtr(Pointer To TaskControlBlock, predAddr).NextTask
-                                    Wend
-                                    CPtr(Pointer To TaskControlBlock, predAddr).NextTask = rIter.NextTask
-                                    If rtosQueueHeads(otherCore) = rIterAddr Then
-                                        rtosQueueHeads(otherCore) = rIter.NextTask
-                                    End If
-                                Else
-                                    rtosQueueHeads(otherCore) = 0
-                                End If
-
-                                Sync.SpinlockOps.Release coreLocks(otherCore)
-                                Sync.SpinlockOps.ReleaseIrqRestore stealLock, sFlags
-                                rIter.NextTask = rIterAddr
-                                StealTask = rIterAddr
-                                Exit Function
-                            End If
-                            rIterAddr = rIter.NextTask
-                        Loop While rIterAddr <> rHeadAddr
-                    End If
-
-                    ' 2. Check peer GPOS queue
-                    Dim headAddr As UInt64 = gposQueueHeads(otherCore)
-                    If headAddr <> 0 Then
-                        Dim iterAddr As UInt64 = headAddr
-                        Do
-                            Dim iter As Pointer To TaskControlBlock = CPtr(Pointer To TaskControlBlock, iterAddr)
-                            If iter.State = Sched.ThreadState.STATE_READY And iterAddr <> currentTaskAddrs(otherCore) Then
-                                If iter.NextTask <> iterAddr Then
-                                    Dim gPredAddr As UInt64 = iterAddr
-                                    While CPtr(Pointer To TaskControlBlock, gPredAddr).NextTask <> iterAddr
-                                        gPredAddr = CPtr(Pointer To TaskControlBlock, gPredAddr).NextTask
-                                    Wend
-                                    CPtr(Pointer To TaskControlBlock, gPredAddr).NextTask = iter.NextTask
-                                    If gposQueueHeads(otherCore) = iterAddr Then
-                                        gposQueueHeads(otherCore) = iter.NextTask
-                                    End If
-                                Else
-                                    gposQueueHeads(otherCore) = 0
-                                End If
-
-                                Sync.SpinlockOps.Release coreLocks(otherCore)
-                                Sync.SpinlockOps.ReleaseIrqRestore stealLock, sFlags
-                                iter.NextTask = iterAddr
-                                StealTask = iterAddr
-                                Exit Function
-                            End If
-                            iterAddr = iter.NextTask
-                        Loop While iterAddr <> headAddr
-                    End If
-
-                    Sync.SpinlockOps.Release coreLocks(otherCore)
-                End If
-            End If
-            otherCore = otherCore + 1
-        Wend
-
-        Sync.SpinlockOps.ReleaseIrqRestore stealLock, sFlags
         StealTask = 0
     End Function
 
@@ -839,25 +779,6 @@ Public Class Scheduler
         Dim nextAddr As UInt64 = PickNextReady(prevAddr, rtosQueueHeads(coreId))
         If nextAddr = 0 Then
             nextAddr = PickNextReady(prevAddr, gposQueueHeads(coreId))
-        End If
-
-        ' If no local tasks are ready, attempt to steal a ready task from a peer core
-        If nextAddr = 0 Then
-            Dim stolenAddr As UInt64 = StealTask(coreId)
-            If stolenAddr <> 0 Then
-                ' Enqueue stolen task into this core's local GPOS queue
-                Dim sHead As UInt64 = gposQueueHeads(coreId)
-                Dim sTask As Pointer To TaskControlBlock = CPtr(Pointer To TaskControlBlock, stolenAddr)
-                If sHead = 0 Then
-                    gposQueueHeads(coreId) = stolenAddr
-                    sTask.NextTask = stolenAddr
-                Else
-                    Dim sHeadTask As Pointer To TaskControlBlock = CPtr(Pointer To TaskControlBlock, sHead)
-                    sTask.NextTask = sHeadTask.NextTask
-                    sHeadTask.NextTask = stolenAddr
-                End If
-                nextAddr = stolenAddr
-            End If
         End If
 
         ' Fallback to dedicated Idle task for this core
@@ -949,13 +870,111 @@ Public Class Scheduler
             curr.CpuTicks = curr.CpuTicks + 1
         End If
 
-        ' If running idle task and local queues have no tasks, stay asleep in hlt
-        If currAddr = idleTaskAddrs(coreId) And rtosQueueHeads(coreId) = 0 And gposQueueHeads(coreId) = 0 Then
-            Exit Sub
+        ' Real hardware tick accounting for CPU usage derivation
+        coreTotalTicks(coreId) = coreTotalTicks(coreId) + 1
+        If currAddr = idleTaskAddrs(coreId) Then
+            coreIdleTicks(coreId) = coreIdleTicks(coreId) + 1
+        Else
+            coreActiveTicks(coreId) = coreActiveTicks(coreId) + 1
+        End If
+
+        ' Compute live windowed load percentage every 10 ticks (100 ms)
+        Dim dTot As UInt64 = coreTotalTicks(coreId) - coreSampleTotal(coreId)
+        If dTot >= 10 Then
+            Dim dAct As UInt64 = coreActiveTicks(coreId) - coreSampleActive(coreId)
+            coreLoadPct(coreId) = UInt32((dAct * 100) / dTot)
+            coreSampleTotal(coreId) = coreTotalTicks(coreId)
+            coreSampleActive(coreId) = coreActiveTicks(coreId)
+        End If
+
+        ' If running idle task, check if any task in local runqueues is ready or expiring
+        If currAddr = idleTaskAddrs(coreId) Then
+            Dim hasWork As Boolean = False
+            Dim qh As UInt64 = rtosQueueHeads(coreId)
+            If qh <> 0 Then
+                Dim rIt As UInt64 = qh
+                Do
+                    Dim rT As Pointer To TaskControlBlock = CPtr(Pointer To TaskControlBlock, rIt)
+                    If rT.State = Sched.ThreadState.STATE_READY Then
+                        hasWork = True
+                        Exit Do
+                    End If
+                    If rT.State = Sched.ThreadState.STATE_BLOCKED And rT.WakeUptime > 0 And systemUptimeMs >= rT.WakeUptime Then
+                        hasWork = True
+                        Exit Do
+                    End If
+                    rIt = rT.NextTask
+                Loop While rIt <> qh
+            End If
+            If Not hasWork Then
+                qh = gposQueueHeads(coreId)
+                If qh <> 0 Then
+                    Dim gIt As UInt64 = qh
+                    Do
+                        Dim gT As Pointer To TaskControlBlock = CPtr(Pointer To TaskControlBlock, gIt)
+                        If gT.State = Sched.ThreadState.STATE_READY Then
+                            hasWork = True
+                            Exit Do
+                        End If
+                        If gT.State = Sched.ThreadState.STATE_BLOCKED And gT.WakeUptime > 0 And systemUptimeMs >= gT.WakeUptime Then
+                            hasWork = True
+                            Exit Do
+                        End If
+                        gIt = gT.NextTask
+                    Loop While gIt <> qh
+                End If
+            End If
+            If Not hasWork Then
+                Exit Sub
+            End If
         End If
 
         Yield
     End Sub
+
+    ''
+    ' @brief Query real live load percentage for target CPU core.
+    ''
+    Public Function GetCoreLoad(ByVal cpuId As UInt32) As UInt32
+        If cpuId >= MAX_SCHED_CPUS Then
+            GetCoreLoad = 0
+        Else
+            GetCoreLoad = coreLoadPct(cpuId)
+        End If
+    End Function
+
+    ''
+    ' @brief Query real cumulative active ticks for target CPU core.
+    ''
+    Public Function GetCoreActiveTicks(ByVal cpuId As UInt32) As UInt64
+        If cpuId >= MAX_SCHED_CPUS Then
+            GetCoreActiveTicks = 0
+        Else
+            GetCoreActiveTicks = coreActiveTicks(cpuId)
+        End If
+    End Function
+
+    ''
+    ' @brief Query real cumulative idle ticks for target CPU core.
+    ''
+    Public Function GetCoreIdleTicks(ByVal cpuId As UInt32) As UInt64
+        If cpuId >= MAX_SCHED_CPUS Then
+            GetCoreIdleTicks = 0
+        Else
+            GetCoreIdleTicks = coreIdleTicks(cpuId)
+        End If
+    End Function
+
+    ''
+    ' @brief Query real cumulative total ticks for target CPU core.
+    ''
+    Public Function GetCoreTotalTicks(ByVal cpuId As UInt32) As UInt64
+        If cpuId >= MAX_SCHED_CPUS Then
+            GetCoreTotalTicks = 0
+        Else
+            GetCoreTotalTicks = coreTotalTicks(cpuId)
+        End If
+    End Function
 
     ''
     ' @brief Get the currently active task ID (PID) on the calling core.

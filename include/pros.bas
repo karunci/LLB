@@ -412,8 +412,97 @@ Module ProsApi
     End Structure
     Public Declare Function DevQueryDevice Lib "libpros" Alias "Pros_Devices_DeviceClient_QueryDevice" (ByVal name As String, ByRef outInfo As DeviceInfo) As Boolean
 
+    ' PCI Hardware Device Information
+    <Packed>
+    Public Structure PciBarInfo
+        Public PhysBase   As UInt64
+        Public SizeBytes  As UInt64
+        Public IsIo       As Boolean
+        Public IsPrefetch As Boolean
+        Public Is64Bit    As Boolean
+    End Structure
+
+    <Packed>
+    Public Structure PciDevice
+        Public Bus         As Byte
+        Public Slot        As Byte
+        Public Func        As Byte
+        Public Active      As Boolean
+        Public VendorId    As UInt16
+        Public DeviceId    As UInt16
+        Public ClassCode   As Byte
+        Public SubClass    As Byte
+        Public ProgIf      As Byte
+        Public HeaderType  As Byte
+        Public IrqLine     As Byte
+        Public BarCount    As Byte
+        Public Bar0        As PciBarInfo
+        Public Bar1        As PciBarInfo
+        Public Bar2        As PciBarInfo
+        Public Bar3        As PciBarInfo
+        Public Bar4        As PciBarInfo
+        Public Bar5        As PciBarInfo
+    End Structure
+
+    ' PCI Hardware Bus APIs
+    Public Declare Function PciGetDeviceCount Lib "libpros" Alias "Pros_Driver_Pci_GetDeviceCount" () As UInt32
+    Public Declare Function PciGetDevice Lib "libpros" Alias "Pros_Driver_Pci_GetDevice" (ByVal index As UInt32, ByRef outDev As PciDevice) As Boolean
+    Public Declare Function PciMapBar Lib "libpros" Alias "Pros_Driver_Pci_MapBar" (ByVal devIdx As UInt32, ByVal barIdx As UInt32, ByVal targetVaddr As VirtualAddress, ByVal writeCombining As Boolean) As Pointer To UInt32
+
+    ' Direct Port I/O APIs
+    Public Declare Function PortIn8 Lib "libpros" Alias "Pros_IO_Port_In8" (ByVal port As UInt16) As Byte
+    Public Declare Function PortIn16 Lib "libpros" Alias "Pros_IO_Port_In16" (ByVal port As UInt16) As UInt16
+    Public Declare Function PortIn32 Lib "libpros" Alias "Pros_IO_Port_In32" (ByVal port As UInt16) As UInt32
+    Public Declare Sub PortOut8 Lib "libpros" Alias "Pros_IO_Port_Out8" (ByVal port As UInt16, ByVal val As Byte)
+    Public Declare Sub PortOut16 Lib "libpros" Alias "Pros_IO_Port_Out16" (ByVal port As UInt16, ByVal val As UInt16)
+    Public Declare Sub PortOut32 Lib "libpros" Alias "Pros_IO_Port_Out32" (ByVal port As UInt16, ByVal val As UInt32)
+
     ' Service Supervision APIs
     Public Declare Function PlexusIsServiceActive Lib "libpros" Alias "Pros_Services_ServiceSupervisorClient_IsServiceActive" (ByVal serviceName As String) As Boolean
+
+    ' System Telemetry & Metrics APIs
+    <Packed>
+    Public Structure CpuCoreMetric
+        Public ActiveTicks As UInt64
+        Public IdleTicks   As UInt64
+        Public TotalTicks  As UInt64
+        Public LoadPercent As UInt32
+        Public Reserved    As UInt32
+    End Structure
+
+    <Packed>
+    Public Structure SystemMetrics
+        Public CpuCount        As UInt32
+        Public Reserved0       As UInt32
+        Public SchedUptimeMs   As UInt64
+        Public Cores(15)       As CpuCoreMetric
+
+        ' RAM
+        Public TotalRamBytes   As UInt64
+        Public FreeRamBytes    As UInt64
+        Public UsedRamBytes    As UInt64
+        Public BuddyPoolBytes  As UInt64
+        Public HeapAllocBytes  As UInt64
+
+        ' VRAM & Display
+        Public DisplayWidth    As UInt32
+        Public DisplayHeight   As UInt32
+        Public DisplayPitch    As UInt32
+        Public DisplayBpp      As UInt32
+        Public VramTotalBytes  As UInt64
+        Public VramUsedBytes   As UInt64
+
+        ' GPU
+        Public GpuVendorId     As UInt16
+        Public GpuDeviceId     As UInt16
+        Public GpuSubsystemId  As UInt16
+        Public GpuBar0IoPort   As UInt16
+        Public GpuBar1FbPhys   As UInt64
+        Public GpuBar2FifoPhys As UInt64
+        Public GpuDriverType   As UInt32 ' 0 = GOP/VESA LFB, 1 = VMware SVGA-II, 2 = VirtIO-GPU
+    End Structure
+
+    Public Declare Function GetSystemMetrics Lib "libpros" Alias "Pros_Sys_Process_GetSystemMetrics" (ByRef outMetrics As SystemMetrics) As Boolean
 
     ' =========================================================================
     ' 4. Low-Level Basic Standard Library APIs (libpros)

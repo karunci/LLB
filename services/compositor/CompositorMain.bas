@@ -6,8 +6,10 @@
 '          smooth half-speed telemetry pulse, and minimalist Nord window decorations.
 
 Import "../../include/pros.bas"
+Import "DamageTracker.bas"
 Import "CursorTheme.bas"
 Import "../wm/WindowTheme.bas"
+Import "SvgaDriver.bas"
 
 Module CompositorMain
 
@@ -33,8 +35,17 @@ Module CompositorMain
     Private clientShmIds(32) As UInt64
     Private synWm As UInt64 = 0
     Private wmNodeId As UInt64 = 0
-    Private desktopDirty As Boolean = False
-    Private clientDirtyOnly As Boolean = False  ' True = only client surface changed, skip full scene clear
+
+    ' PRK Wallpaper & Background Buffer State (0x55000000 in PDPT[1])
+    Public Const WALLPAPER_NORD     As UInt32 = 0
+    Public Const WALLPAPER_GRADIENT As UInt32 = 1
+    Public Const WALLPAPER_CHECKER  As UInt32 = 2
+
+    Private bgSurf As Surface
+    Private currentWallpaper As UInt32 = WALLPAPER_GRADIENT
+
+    ' Discrete Damage Region State (tinywl / wlroots philosophy)
+    Private damage As DamageRegion
 
     Private cursorX As Int32 = 512
     Private cursorY As Int32 = 384
@@ -67,7 +78,8 @@ Module CompositorMain
     Private winTrackState(32) As Int32
 
     ''
-    ' @brief Zero-copy blit of client surface pixels directly into window client area.
+    ' @brief Zero-copy blit of client surface pixels directly into window client area,
+    '        with strict screen boundary clipping for windows positioned partially off-screen.
     ''
     Private Unsafe Sub BlitClientArea(ByVal dstX As Int32, ByVal dstY As Int32, _
                                       ByVal clientW As Int32, ByVal clientH As Int32, _
@@ -76,36 +88,114 @@ Module CompositorMain
         If backSurf.Pixels = 0 Or pSrcPixels = 0 Then Exit Sub
         If clientW <= 0 Or clientH <= 0 Then Exit Sub
 
-        ' 1. If window was resized larger than client surface, fill margin with window background
         If clientW > surfW Or clientH > surfH Then
             FillRect backSurf, dstX, dstY, clientW, clientH, COLOR_WIN_CLIENT_BG
         End If
 
-        ' 2. Clamp blit dimensions so we NEVER read beyond the client's allocated surface
         Dim blitW As Int32 = clientW
         If blitW > surfW Then blitW = surfW
         Dim blitH As Int32 = clientH
         If blitH > surfH Then blitH = surfH
 
+        ' 1. Horizontal clipping against screen bounds
+        Dim clipDstX0 As Int32 = dstX
+        Dim clipDstX1 As Int32 = dstX + blitW
+        Dim srcOffX As Int32 = 0
+
+        If clipDstX0 < 0 Then
+            srcOffX = -clipDstX0
+            clipDstX0 = 0
+        End If
+        If clipDstX1 > backSurf.Width Then
+            clipDstX1 = backSurf.Width
+        End If
+        Dim copyW As Int32 = clipDstX1 - clipDstX0
+        If copyW <= 0 Then Exit Sub
+
+        ' 2. Vertical clipping against screen bounds
+        Dim clipDstY0 As Int32 = dstY
+        Dim clipDstY1 As Int32 = dstY + blitH
+        Dim srcOffY As Int32 = 0
+
+        If clipDstY0 < 0 Then
+            srcOffY = -clipDstY0
+            clipDstY0 = 0
+        End If
+        If clipDstY1 > backSurf.Height Then
+            clipDstY1 = backSurf.Height
+        End If
+        Dim copyH As Int32 = clipDstY1 - clipDstY0
+        If copyH <= 0 Then Exit Sub
+
+        ' 3. Source surface boundary clamping
+        If srcOffX >= surfW Or srcOffY >= surfH Then Exit Sub
+        If (srcOffX + copyW) > surfW Then copyW = surfW - srcOffX
+        If (srcOffY + copyH) > surfH Then copyH = surfH - srcOffY
+        If copyW <= 0 Or copyH <= 0 Then Exit Sub
+
+        ' 4. Scanline blit of visible rectangle
         Dim pitchPix As UInt32 = backSurf.Pitch / 4
         Dim row As Int32 = 0
-        While row < blitH
-            Dim curY As Int32 = dstY + row
-            If curY >= 0 And curY < backSurf.Height Then
+        While row < copyH
+            Dim curY As Int32 = clipDstY0 + row
+            Dim curSrcY As Int32 = srcOffY + row
+            Dim baseDstRow As Pointer To UInt32 = backSurf.Pixels + (UInt32(curY) * pitchPix) + UInt32(clipDstX0)
+            Dim srcRow As Pointer To UInt32 = pSrcPixels + (UInt32(curSrcY) * UInt32(surfW)) + UInt32(srcOffX)
+            fast_blit32 baseDstRow, srcRow, UInt32(copyW)
+            row = row + 1
+        Wend
+    End Sub
+
+    ''
+    ' @brief Zero-copy scanline blit of client surface pixels directly into window client area,
+    '        clipped strictly to the active damage rectangle intersection.
+    ' @param outX Left screen coordinate of clipped blit rectangle.
+    ' @param outY Top screen coordinate of clipped blit rectangle.
+    ' @param outW Width of clipped blit rectangle.
+    ' @param outH Height of clipped blit rectangle.
+    ' @param clX Left screen coordinate of full window client area.
+    ' @param clY Top screen coordinate of full window client area.
+    ' @param clientW Width of window client area.
+    ' @param clientH Height of window client area.
+    ' @param surfW Width of allocated client surface.
+    ' @param surfH Height of allocated client surface.
+    ' @param pSrcPixels Pointer to client surface pixel array in shared memory.
+    ''
+    Private Unsafe Sub BlitClientAreaClipped(ByVal outX As Int32, ByVal outY As Int32, _
+                                            ByVal outW As Int32, ByVal outH As Int32, _
+                                            ByVal clX As Int32, ByVal clY As Int32, _
+                                            ByVal clientW As Int32, ByVal clientH As Int32, _
+                                            ByVal surfW As Int32, ByVal surfH As Int32, _
+                                            ByVal pSrcPixels As Pointer To UInt32)
+        If backSurf.Pixels = 0 Or pSrcPixels = 0 Then Exit Sub
+        If outW <= 0 Or outH <= 0 Then Exit Sub
+
+        ' 1. If client window resized larger than client surface, fill margin with background
+        If clientW > surfW Or clientH > surfH Then
+            FillRect backSurf, outX, outY, outW, outH, COLOR_WIN_CLIENT_BG
+        End If
+
+        ' 2. Client relative source offsets
+        Dim srcX0 As Int32 = outX - clX
+        Dim srcY0 As Int32 = outY - clY
+
+        Dim pitchPix As UInt32 = backSurf.Pitch / 4
+        Dim row As Int32 = 0
+        While row < outH
+            Dim curY As Int32 = outY + row
+            Dim curSrcY As Int32 = srcY0 + row
+            If curY >= 0 And curY < backSurf.Height And curSrcY >= 0 And curSrcY < surfH Then
                 Dim baseDstRow As Pointer To UInt32 = backSurf.Pixels + (UInt32(curY) * pitchPix)
-                Dim srcRow As Pointer To UInt32 = pSrcPixels + (UInt32(row) * UInt32(surfW))
-                If dstX >= 0 And (dstX + blitW) <= backSurf.Width Then
-                    Dim dstScanPtr As Pointer To UInt32 = baseDstRow + UInt32(dstX)
-                    fast_blit32 dstScanPtr, srcRow, blitW
-                Else
-                    Dim col As Int32 = 0
-                    While col < blitW
-                        Dim curX As Int32 = dstX + col
-                        If curX >= 0 And curX < backSurf.Width Then
-                            baseDstRow(curX) = srcRow(col)
-                        End If
-                        col = col + 1
-                    Wend
+                Dim srcRow As Pointer To UInt32 = pSrcPixels + (UInt32(curSrcY) * UInt32(surfW))
+
+                If srcX0 < surfW Then
+                    Dim copyW As Int32 = outW
+                    If (srcX0 + copyW) > surfW Then copyW = surfW - srcX0
+                    If copyW > 0 Then
+                        Dim dstScanPtr As Pointer To UInt32 = baseDstRow + UInt32(outX)
+                        Dim srcScanPtr As Pointer To UInt32 = srcRow + UInt32(srcX0)
+                        fast_blit32 dstScanPtr, srcScanPtr, copyW
+                    End If
                 End If
             End If
             row = row + 1
@@ -117,7 +207,8 @@ Module CompositorMain
     ' -------------------------------------------------------------------------
     ''
     ' @brief Burst-blit a dirty bounding box from RAM backbuffer to physical VRAM aperture.
-    '        Uses 64-bit aligned memory writes and sfence barrier for maximum PCIe throughput.
+    '        Uses 32-bit DWORD aligned non-temporal streaming writes (`fast_blit32_nt`)
+    '        to bypass CPU cache, avoid hypervisor EPT violations, and maximize PCIe throughput.
     ''
     Private Unsafe Sub FlushDirtyRegion(ByVal rx As Int32, ByVal ry As Int32, ByVal rw As Int32, ByVal rh As Int32)
         If frontSurf.Pixels = 0 Or backSurf.Pixels = 0 Then Exit Sub
@@ -145,11 +236,14 @@ Module CompositorMain
             Dim pixOff As UInt64 = (UInt64(py) * UInt64(pitchPixels)) + UInt64(x0)
             Dim dstPtr As Pointer To UInt32 = frontSurf.Pixels + pixOff
             Dim srcPtr As Pointer To UInt32 = backSurf.Pixels + pixOff
-            fast_blit32 dstPtr, srcPtr, clipW
+            fast_blit32_nt dstPtr, srcPtr, clipW
             py = py + 1
         Wend
 
-        Asm "sfence" : : : "memory"
+        ' Hypervisor hardware acceleration sync (VMware SVGA-II / VirtualBox)
+        If Pros.Compositor.Gpu.SvgaDriver.IsActive() Then
+            Pros.Compositor.Gpu.SvgaDriver.UpdateRect x0, y0, clipW, clipH
+        End If
     End Sub
 
     ' -------------------------------------------------------------------------
@@ -288,6 +382,13 @@ Module CompositorMain
     Private Unsafe Sub RenderTelemetryBadge(ByVal flushToScreen As Boolean)
         If Not badgeActive Then Exit Sub
 
+        ' 0. Draw Badge Container Card Background & Border (Nord Theme)
+        FillRect backSurf, badgeX, badgeY, 200, 26, &HFF232731
+        FillRect backSurf, badgeX, badgeY, 200, 1, &HFF3B4252
+        FillRect backSurf, badgeX, badgeY + 25, 200, 1, &HFF2E3440
+        FillRect backSurf, badgeX, badgeY, 1, 26, &HFF3B4252
+        FillRect backSurf, badgeX + 199, badgeY, 1, 26, &HFF2E3440
+
         ' 1. Cycle status LED color (breathing green -> cyan -> mint -> emerald)
         Dim ledColor As UInt32 = &HFF00C853
         Dim colorPhase As UInt32 = (frameCount / 12) Mod 4
@@ -369,89 +470,208 @@ Module CompositorMain
         End If
     End Sub
 
+    ' -------------------------------------------------------------------------
+    ' PRK Procedural Desktop Wallpaper Engine (Pre-rendered into bgSurf)
+    ' -------------------------------------------------------------------------
     ''
-    ' @brief Rasterize all active desktop windows in Z-order with decoupled frames and client surfaces.
+    ' @brief Pre-render active desktop wallpaper into dedicated RAM background buffer.
+    '        Supports Nord Dark (0), Smooth Diagonal Gradient (1), and 32x32 Checkerboard (2).
     ''
-    Private Unsafe Sub RenderDesktopWindows()
-        If backSurf.Pixels = 0 Then Exit Sub
-        If pWindowTable = 0 Or pWindowTable.Count = 0 Then Exit Sub
+    Private Unsafe Sub GenerateWallpaper(ByVal mode As UInt32)
+        If bgSurf.Pixels = 0 Then Exit Sub
+        Dim w As Int32 = dispInfo.Width
+        Dim h As Int32 = dispInfo.Height
+        Dim pitchPix As UInt32 = bgSurf.Pitch / 4
 
-        Dim i As UInt32 = 0
-        While i < pWindowTable.Count
-            Dim win As Pointer To WindowDescriptor = AddressOf pWindowTable.Windows(i)
-            If win.State <> WIN_STATE_MINIMIZED Then
-                ' 1. Draw window frame decorations
-                DrawWindowFrame backSurf, win.X, win.Y, win.Width, win.Height, win.Focused, win.State, 0
-
-                ' 2. Draw title text
-                Dim titleColor As UInt32 = COLOR_WIN_INACTIVE_TEXT
-                If win.Focused Then titleColor = COLOR_WIN_ACTIVE_TEXT
-                DrawText5x7 backSurf, win.X + 16, win.Y + 10, @win.Title(0), titleColor
-
-                ' 3. Attach and Blit Client Buffer if present
-                If win.ShmId <> 0 Then
-                    Dim wId As UInt32 = win.WinId
-                    If wId > 0 And wId <= 16 Then
-                        If clientSurfaces(wId) = 0 Or clientShmIds(wId) <> win.ShmId Then
-                            Dim clientVaddr As UInt64 = &H68000000 + (UInt64(wId) * &H00400000)
-                            If ShmemAttach(win.ShmId, clientVaddr) <> 0 Then
-                                clientSurfaces(wId) = *UInt32(clientVaddr)
-                                clientShmIds(wId) = win.ShmId
-                            End If
-                        End If
-
-                        If clientSurfaces(wId) <> 0 Then
-                            Dim clientW As Int32 = win.Width - 4
-                            Dim clientH As Int32 = (win.Height - TITLEBAR_HEIGHT) - 4
-                            Dim surfW As Int32 = win.SurfaceWidth
-                            Dim surfH As Int32 = win.SurfaceHeight
-                            If surfW <= 0 Then surfW = clientW
-                            If surfH <= 0 Then surfH = clientH
-                            BlitClientArea win.X + 2, win.Y + TITLEBAR_HEIGHT + 2, clientW, clientH, surfW, surfH, clientSurfaces(wId)
-                        End If
+        Dim y As Int32 = 0
+        While y < h
+            Dim rowPtr As Pointer To UInt32 = bgSurf.Pixels + (UInt32(y) * pitchPix)
+            Dim x As Int32 = 0
+            While x < w
+                Dim color As UInt32
+                If mode = WALLPAPER_GRADIENT Then
+                    ' Smooth Nord Diagonal Gradient (Deep Midnight -> Royal Indigo -> Dark Teal)
+                    Dim r As UInt32 = 15 + ((UInt32(x) * 20) / UInt32(w))
+                    Dim g As UInt32 = 23 + ((UInt32(y) * 35) / UInt32(h)) + ((UInt32(x) * 15) / UInt32(w))
+                    Dim b As UInt32 = 42 + ((UInt32(x) * 55) / UInt32(w)) + ((UInt32(y) * 25) / UInt32(h))
+                    color = &HFF000000 Or (r LShift 16) Or (g LShift 8) Or b
+                ElseIf mode = WALLPAPER_CHECKER Then
+                    ' 32x32 Retro Workstation Checkerboard
+                    Dim cellX As Int32 = x / 32
+                    Dim cellY As Int32 = y / 32
+                    If ((cellX + cellY) And 1) = 0 Then
+                        color = &HFF222731 ' Lighter Nord slate
+                    Else
+                        color = &HFF191D24 ' Darker Nord slate
                     End If
+                    ' Subtle 1px grid borders
+                    If (x Mod 32) = 0 Or (y Mod 32) = 0 Then
+                        color = &HFF15181E
+                    End If
+                Else
+                    ' Standard Minimalist Nord Dark
+                    color = &HFF191D24
                 End If
-            End If
-            i = i + 1
+
+                rowPtr(x) = color
+                x = x + 1
+            Wend
+            y = y + 1
         Wend
     End Sub
 
     ' -------------------------------------------------------------------------
-    ' Desktop Background & Window Canvas Renderer (with Scissor Clipping)
+    ' Double-Buffered Compositing Pass (wlroots / tinywl Core Rendering Engine)
     ' -------------------------------------------------------------------------
-    Private Unsafe Sub DrawDesktopSceneClipped(ByVal cx0 As Int32, ByVal cy0 As Int32, ByVal cw As Int32, ByVal ch As Int32)
-        If backSurf.Pixels = 0 Then Exit Sub
-        If cw <= 0 Or ch <= 0 Then Exit Sub
+    ''
+    ' @brief Double-buffered compositing pass for a single discrete damage rectangle.
+    '        Renders desktop background, top menu bar, Z-ordered window stack,
+    '        HUD overlays, and cursor glyph into RAM backbuffer, then presents
+    '        directly to physical Linear Framebuffer aperture via `fast_blit32_nt`.
+    ''
+    Private Unsafe Sub CompositeDamageRect(ByVal rx As Int32, ByVal ry As Int32, ByVal rw As Int32, ByVal rh As Int32)
+        If backSurf.Pixels = 0 Or frontSurf.Pixels = 0 Then Exit Sub
+        If rw <= 0 Or rh <= 0 Then Exit Sub
 
-        ' 1. Clear ONLY the clipped dirty area to Nord Dark Background (#191D24)
-        FillRect backSurf, cx0, cy0, cw, ch, &HFF191D24
-
-        ' 2. If top menu bar intersects clip region (y < 26), redraw menu bar
-        If cy0 < 26 Then
-            FillRect backSurf, 0, 0, dispInfo.Width, 26, &HFF232731
-            FillRect backSurf, 0, 25, dispInfo.Width, 1, &HFF4C566A
-            FillRect backSurf, 0, 0, 4, 25, &HFF88C0D0
-
-            DrawText5x7 backSurf, 16, 10, "PROS WORKSTATION  |  APPLICATIONS  NODES  SERVICES", &HFFECEFF4
-            RenderMouseCoordinates False
-            DrawText5x7 backSurf, dispInfo.Width - 360, 10, SYSTEM_VERSION_TAG, &HFF88C0D0
-            DrawText5x7 backSurf, dispInfo.Width - 170, 10, "SMP 4 CORES  ONLINE", &HFFA3BE8C
+        ' 1. Restore background on backbuffer from PRK Dedicated Background Buffer (bgSurf)
+        If bgSurf.Pixels <> 0 Then
+            Dim pitchPix As UInt32 = dispInfo.Pitch / 4
+            Dim py As Int32 = ry
+            While py < (ry + rh)
+                If py >= 0 And py < dispInfo.Height Then
+                    Dim off As UInt64 = (UInt64(py) * UInt64(pitchPix)) + UInt64(rx)
+                    fast_blit32 backSurf.Pixels + off, bgSurf.Pixels + off, rw
+                End If
+                py = py + 1
+            Wend
+        Else
+            FillRect backSurf, rx, ry, rw, rh, &HFF191D24
         End If
 
-        ' 3. Render all active desktop windows from shared memory
-        RenderDesktopWindows
-
-        ' 4. If telemetry badge container intersects clip region, re-render its frame
-        If badgeActive Then
-            If (cx0 + cw) > badgeX And cx0 < (badgeX + 200) And (cy0 + ch) > badgeY And cy0 < (badgeY + 26) Then
-                FillRect backSurf, badgeX, badgeY, 200, 26, &HFF2E3440
-                FillRect backSurf, badgeX, badgeY, 200, 1, &HFF434C5E
+        ' 2. If top menu bar intersects damage rectangle (ry < 26), redraw menu bar
+        If ry < 26 Then
+            Dim topH As Int32 = 26 - ry
+            If topH > rh Then topH = rh
+            FillRect backSurf, rx, ry, rw, topH, &HFF232731
+            If (ry + rh) >= 25 Then
+                FillRect backSurf, rx, 25, rw, 1, &HFF4C566A
             End If
+            If rx < 4 Then
+                Dim cyanW As Int32 = 4 - rx
+                If cyanW > rw Then cyanW = rw
+                FillRect backSurf, rx, ry, cyanW, topH, &HFF88C0D0
+            End If
+
+            ' System Title
+            If RectIntersects(rx, ry, rw, rh, 16, 10, 380, 10) Then
+                DrawText5x7 backSurf, 16, 10, "PROS WORKSTATION  |  APPLICATIONS  NODES  SERVICES", &HFFECEFF4
+            End If
+            ' Mouse Coordinates
+            If RectIntersects(rx, ry, rw, rh, 430, 6, 170, 14) Then
+                RenderMouseCoordinates False
+            End If
+            ' Interactive Wallpaper Switcher Button at X=540, Y=5, W=115, H=16
+            If RectIntersects(rx, ry, rw, rh, 540, 5, 115, 16) Then
+                FillRect backSurf, 540, 5, 115, 16, &HFF2E3440
+                FillRect backSurf, 540, 5, 115, 1, &HFF434C5E
+                If currentWallpaper = WALLPAPER_GRADIENT Then
+                    DrawText5x7 backSurf, 546, 9, "BG: GRADIENT", &HFF88C0D0
+                ElseIf currentWallpaper = WALLPAPER_CHECKER Then
+                    DrawText5x7 backSurf, 546, 9, "BG: CHECKER", &HFFEBCB8B
+                Else
+                    DrawText5x7 backSurf, 546, 9, "BG: NORD DARK", &HFFD8DEE9
+                End If
+            End If
+            ' Version Tag
+            If RectIntersects(rx, ry, rw, rh, dispInfo.Width - 340, 10, 180, 10) Then
+                DrawText5x7 backSurf, dispInfo.Width - 340, 10, SYSTEM_VERSION_TAG, &HFF88C0D0
+            End If
+            ' SMP Status
+            If RectIntersects(rx, ry, rw, rh, dispInfo.Width - 170, 10, 160, 10) Then
+                DrawText5x7 backSurf, dispInfo.Width - 170, 10, "SMP 4 CORES  ONLINE", &HFFA3BE8C
+            End If
+        End If
+
+        ' 3. Render all visible desktop windows in strict Z-order (bottom to top)
+        If pWindowTable <> 0 And pWindowTable.Count > 0 Then
+            Dim wi As UInt32 = 0
+            While wi < pWindowTable.Count
+                Dim win As Pointer To WindowDescriptor = AddressOf pWindowTable.Windows(wi)
+                If win.State <> WIN_STATE_MINIMIZED Then
+                    Dim winOuterW As Int32 = win.Width
+                    Dim winOuterH As Int32 = win.Height
+                    If win.State = WIN_STATE_NORMAL Then
+                        winOuterW = winOuterW + 4
+                        winOuterH = winOuterH + 4
+                    End If
+
+                    ' Check outer intersection (including shadow)
+                    If RectIntersects(win.X, win.Y, winOuterW, winOuterH, rx, ry, rw, rh) Then
+                        ' 3a. Draw window frame decorations
+                        DrawWindowFrame backSurf, win.X, win.Y, win.Width, win.Height, win.Focused, win.State, 0
+
+                        ' 3b. Draw window title text
+                        Dim titleColor As UInt32 = COLOR_WIN_INACTIVE_TEXT
+                        If win.Focused Then titleColor = COLOR_WIN_ACTIVE_TEXT
+                        DrawText5x7 backSurf, win.X + 16, win.Y + 10, @win.Title(0), titleColor
+
+                        ' 3c. Blit client surface if present
+                        If win.ShmId <> 0 Then
+                            Dim wId As UInt32 = win.WinId
+                            If wId > 0 And wId <= 16 Then
+                                If clientSurfaces(wId) = 0 Or clientShmIds(wId) <> win.ShmId Then
+                                    Dim clientVaddr As UInt64 = &H68000000 + (UInt64(wId) * &H00400000)
+                                    If ShmemAttach(win.ShmId, clientVaddr) <> 0 Then
+                                        clientSurfaces(wId) = *UInt32(clientVaddr)
+                                        clientShmIds(wId) = win.ShmId
+                                    End If
+                                End If
+
+                                If clientSurfaces(wId) <> 0 Then
+                                    Dim clientW As Int32 = win.Width - 4
+                                    Dim clientH As Int32 = (win.Height - TITLEBAR_HEIGHT) - 4
+                                    Dim surfW As Int32 = win.SurfaceWidth
+                                    Dim surfH As Int32 = win.SurfaceHeight
+                                    If surfW <= 0 Then surfW = clientW
+                                    If surfH <= 0 Then surfH = clientH
+                                    BlitClientArea win.X + 2, win.Y + TITLEBAR_HEIGHT + 2, clientW, clientH, surfW, surfH, clientSurfaces(wId)
+                                End If
+                            End If
+                        End If
+                    End If
+                End If
+                wi = wi + 1
+            Wend
+        End If
+
+        ' 4. Render telemetry badge container if intersecting damage rect
+        If badgeActive Then
+            If RectIntersects(badgeX, badgeY, 200, 26, rx, ry, rw, rh) Then
+                RenderTelemetryBadge False
+            End If
+        End If
+
+        ' 5. In-RAM Software Cursor Composition
+        Dim cursorDrawn As Boolean = False
+        If cursorInitialized Then
+            If RectIntersects(cursorX, cursorY, CURSOR_W, CURSOR_H, rx, ry, rw, rh) Then
+                SaveCursorBackground cursorX, cursorY
+                DrawCursorArrow cursorX, cursorY
+                cursorDrawn = True
+            End If
+        End If
+
+        ' 6. Hardware Presentation: Non-temporal burst copy to physical VRAM aperture
+        FlushDirtyRegion rx, ry, rw, rh
+
+        ' 7. Pristine Backbuffer Invariant: Restore cursor background on backbuffer
+        If cursorDrawn Then
+            RestoreCursorBackground cursorX, cursorY
         End If
     End Sub
 
     Private Unsafe Sub DrawDesktopScene()
-        DrawDesktopSceneClipped 0, 0, dispInfo.Width, dispInfo.Height
+        CompositeDamageRect 0, 0, dispInfo.Width, dispInfo.Height
     End Sub
 
     ' -------------------------------------------------------------------------
@@ -520,6 +740,25 @@ Module CompositorMain
             backSurf = frontSurf
         End If
 
+        ' 4c. Allocate Dedicated In-RAM Background Buffer (PRK Architecture) at 0x55000000
+        Dim bgPtr As Pointer To UInt32 = AllocatePages(pagesNeeded, &H55000000)
+        If bgPtr <> 0 Then
+            ConsoleWriteLine "[COMPOSITOR] Dedicated RAM Background Buffer allocated at 0x55000000"
+            bgSurf.Width = dispInfo.Width
+            bgSurf.Height = dispInfo.Height
+            bgSurf.Pitch = dispInfo.Pitch
+            bgSurf.Bpp = dispInfo.Bpp
+            bgSurf.Pixels = bgPtr
+            GenerateWallpaper currentWallpaper
+        Else
+            ConsoleWriteLine "[COMPOSITOR] WARN: Could not allocate background buffer; fallback to solid fill"
+            bgSurf.Pixels = 0
+        End If
+
+        ' 4d. Probe and initialize VMware SVGA-II / VirtualBox hardware accelerator
+        ConsoleWriteLine "[COMPOSITOR] Probing for Hardware GPU Accelerators..."
+        Pros.Compositor.Gpu.SvgaDriver.Initialize
+
         ' 5. Initialize Live Telemetry Status Badge Container
         If dispInfo.Width > 220 And dispInfo.Height > 60 Then
             badgeX = dispInfo.Width - 210
@@ -544,6 +783,7 @@ Module CompositorMain
         SaveCursorBackground cursorX, cursorY
         DrawCursorArrow cursorX, cursorY
         FlushDirtyRegion 0, 0, dispInfo.Width, dispInfo.Height
+        RestoreCursorBackground cursorX, cursorY
         ConsoleWriteLine "[COMPOSITOR] In-RAM software cursor plane initialized at screen center."
 
         ' 7. Active Presentation & Event Loop (Strictly Paced 60 FPS)
@@ -588,20 +828,48 @@ Module CompositorMain
                             ConsolePrintWithUInt "[COMPOSITOR] Attached WindowTable (SHMID: ", pShmId(0), ")\r\n"
                         End If
                     End If
-                    desktopDirty = True
-                    clientDirtyOnly = False  ' new table: need full scene rebuild
+                    DamageAddFull damage, dispInfo.Width, dispInfo.Height
                 ElseIf inPkt.PacketType = WM_CMD_WINDOW_DIRTY Then
-                    desktopDirty = True
-                    clientDirtyOnly = True  ' client surface update: skip full clear, only re-blit windows
+                    If inPkt.PayloadLength >= 20 Then
+                        Dim pDirtyPayload As Pointer To Int32 = *Int32(@inPkt.Payload(0))
+                        Dim dWinId As UInt32 = UInt32(pDirtyPayload(0))
+                        Dim dRx As Int32 = pDirtyPayload(1)
+                        Dim dRy As Int32 = pDirtyPayload(2)
+                        Dim dRw As Int32 = pDirtyPayload(3)
+                        Dim dRh As Int32 = pDirtyPayload(4)
+
+                        If pWindowTable <> 0 And pWindowTable.Count > 0 Then
+                            Dim di As UInt32 = 0
+                            While di < pWindowTable.Count
+                                Dim dWin As Pointer To WindowDescriptor = AddressOf pWindowTable.Windows(di)
+                                If dWin.WinId = dWinId And dWin.State <> WIN_STATE_MINIMIZED Then
+                                    Dim dgX As Int32 = dWin.X + 2 + dRx
+                                    Dim dgY As Int32 = dWin.Y + TITLEBAR_HEIGHT + 2 + dRy
+                                    DamageAdd damage, dgX, dgY, dRw, dRh, dispInfo.Width, dispInfo.Height
+                                    Exit While
+                                End If
+                                di = di + 1
+                            Wend
+                        End If
+                    Else
+                        ' Parameterless dirty signal: damage all visible windows
+                        If pWindowTable <> 0 And pWindowTable.Count > 0 Then
+                            Dim fwi As UInt32 = 0
+                            While fwi < pWindowTable.Count
+                                Dim fWin As Pointer To WindowDescriptor = AddressOf pWindowTable.Windows(fwi)
+                                If fWin.State <> WIN_STATE_MINIMIZED Then
+                                    DamageAdd damage, fWin.X - 4, fWin.Y - 4, fWin.Width + 16, fWin.Height + 16, dispInfo.Width, dispInfo.Height
+                                End If
+                                fwi = fwi + 1
+                            Wend
+                        End If
+                    End If
                 ElseIf inPkt.PacketType = WM_CMD_SET_CURSOR Then
                     Dim pCurType As Pointer To UInt32 = *UInt32(@inPkt.Payload(0))
                     If pCurType(0) <> currentCursor Then
                         currentCursor = pCurType(0)
                         If cursorInitialized Then
-                            RestoreCursorBackground cursorX, cursorY
-                            SaveCursorBackground cursorX, cursorY
-                            DrawCursorArrow cursorX, cursorY
-                            FlushDirtyRegion cursorX, cursorY, CURSOR_W, CURSOR_H
+                            DamageAdd damage, cursorX, cursorY, CURSOR_W, CURSOR_H, dispInfo.Width, dispInfo.Height
                         End If
                     End If
                 End If
@@ -637,10 +905,20 @@ Module CompositorMain
                 If newMy < 0 Then newMy = 0
                 If newMy >= dispInfo.Height Then newMy = dispInfo.Height - 1
 
+                Dim lastBtnState As Byte = lastButtons
                 If newMx <> targetMx Or newMy <> targetMy Or mState.Buttons <> lastButtons Then
                     targetMx = newMx
                     targetMy = newMy
                     lastButtons = mState.Buttons
+
+                    ' Check for click on Wallpaper Switcher Button at X=540, Y=5, W=115, H=16
+                    If (mState.Buttons And 1) <> 0 And (lastBtnState And 1) = 0 Then
+                        If targetMy >= 4 And targetMy <= 22 And targetMx >= 540 And targetMx <= 655 Then
+                            currentWallpaper = (currentWallpaper + 1) Mod 3
+                            GenerateWallpaper currentWallpaper
+                            DamageAddFull damage, dispInfo.Width, dispInfo.Height
+                        End If
+                    End If
 
                     ' Forward mouse event to Window Manager
                     If synWm <> 0 Then
@@ -694,189 +972,93 @@ Module CompositorMain
                         currentCursor = nextCursor
                     End If
 
-                    ' In-RAM zero-flicker cursor update:
+                    ' In-RAM zero-flicker cursor update using DamageTracker:
                     If cursorInitialized Then
-                        ' 1. Restore background on backSurf to erase old cursor
-                        RestoreCursorBackground oldCursorX, oldCursorY
-
-                        ' 2. Flush old cursor region from clean backSurf to VRAM
-                        FlushDirtyRegion oldCursorX, oldCursorY, CURSOR_W, CURSOR_H
-
+                        DamageAdd damage, oldCursorX, oldCursorY, CURSOR_W, CURSOR_H, dispInfo.Width, dispInfo.Height
                         cursorX = targetMx
                         cursorY = targetMy
-
-                        ' 3. Save new background on backSurf and draw new cursor
-                        SaveCursorBackground cursorX, cursorY
-                        DrawCursorArrow cursorX, cursorY
-
-                        ' 4. Flush new cursor region with composed cursor to VRAM
-                        FlushDirtyRegion cursorX, cursorY, CURSOR_W, CURSOR_H
-
-                        ' 5. Update mouse coordinates box on top bar
-                        RenderMouseCoordinates True
-
+                        DamageAdd damage, cursorX, cursorY, CURSOR_W, CURSOR_H, dispInfo.Width, dispInfo.Height
+                        DamageAdd damage, 430, 6, 180, 14, dispInfo.Width, dispInfo.Height
                         oldCursorX = cursorX
                         oldCursorY = cursorY
                         mouseMoved = True
+
+                        If Pros.Compositor.Gpu.SvgaDriver.IsActive() Then
+                            Pros.Compositor.Gpu.SvgaDriver.SetCursorPosition cursorX, cursorY, True
+                        End If
                     End If
                 End If
             End If
 
-            ' B. Check for WindowTable geometry/Z-order updates or dirty client surfaces
+            ' B. Check for WindowTable geometry/Z-order updates and closed windows
             If pWindowTable <> 0 Then
+                ' 1. Check for closed / destroyed windows
+                Dim wIdCheck As UInt32 = 1
+                While wIdCheck <= 16
+                    If winTrackKnown(wIdCheck) Then
+                        Dim stillExists As Boolean = False
+                        Dim k As UInt32 = 0
+                        While k < pWindowTable.Count
+                            If pWindowTable.Windows(k).WinId = wIdCheck Then
+                                stillExists = True
+                                Exit While
+                            End If
+                            k = k + 1
+                        Wend
+
+                        If Not stillExists Then
+                            ' Window was closed / destroyed! Damage its entire old bounds to erase it and restore background!
+                            DamageAdd damage, winTrackX(wIdCheck) - 4, winTrackY(wIdCheck) - 4, winTrackW(wIdCheck) + 16, winTrackH(wIdCheck) + 16, dispInfo.Width, dispInfo.Height
+                            winTrackKnown(wIdCheck) = False
+                            clientSurfaces(wIdCheck) = 0
+                            clientShmIds(wIdCheck) = 0
+                        End If
+                    End If
+                    wIdCheck = wIdCheck + 1
+                Wend
+
+                ' 2. Check for created or moved/resized windows
                 If pWindowTable.Revision <> lastRenderedRevision Then
-                    desktopDirty = True
-                    clientDirtyOnly = False  ' window geometry changed: need full scene rebuild
+                    Dim twi As UInt32 = 0
+                    While twi < pWindowTable.Count
+                        Dim twdesc As Pointer To WindowDescriptor = AddressOf pWindowTable.Windows(twi)
+                        Dim wId As UInt32 = twdesc.WinId
+                        If wId > 0 And wId <= 16 Then
+                            If Not winTrackKnown(wId) Then
+                                DamageAdd damage, twdesc.X - 4, twdesc.Y - 4, twdesc.Width + 16, twdesc.Height + 16, dispInfo.Width, dispInfo.Height
+                                winTrackKnown(wId) = True
+                            ElseIf twdesc.X <> winTrackX(wId) Or twdesc.Y <> winTrackY(wId) Or twdesc.Width <> winTrackW(wId) Or twdesc.Height <> winTrackH(wId) Or twdesc.State <> winTrackState(wId) Then
+                                DamageAdd damage, winTrackX(wId) - 4, winTrackY(wId) - 4, winTrackW(wId) + 16, winTrackH(wId) + 16, dispInfo.Width, dispInfo.Height
+                                DamageAdd damage, twdesc.X - 4, twdesc.Y - 4, twdesc.Width + 16, twdesc.Height + 16, dispInfo.Width, dispInfo.Height
+                            End If
+                            winTrackX(wId) = twdesc.X
+                            winTrackY(wId) = twdesc.Y
+                            winTrackW(wId) = twdesc.Width
+                            winTrackH(wId) = twdesc.Height
+                            winTrackState(wId) = twdesc.State
+                        End If
+                        twi = twi + 1
+                    Wend
+                    lastRenderedRevision = pWindowTable.Revision
                 End If
             End If
 
             ' C. 60 FPS Presentation Gate (strictly paced to 16ms intervals)
             If nowTime >= nextFrameTime Then
-                If desktopDirty Then
-                    cursorX = targetMx
-                    cursorY = targetMy
+                ' Telemetry scanner pulse animation
+                If badgeActive Then
+                    DamageAdd damage, badgeX, badgeY, 200, 26, dispInfo.Width, dispInfo.Height
+                End If
 
-                    ' Erase cursor on backSurf so window rendering writes over clean surface
-                    If cursorInitialized Then
-                        RestoreCursorBackground oldCursorX, oldCursorY
-                    End If
-
-                    ' 1. Determine Dirty Bounding Box across modified windows and cursor
-                    Dim dirtyX0 As Int32 = dispInfo.Width
-                    Dim dirtyY0 As Int32 = dispInfo.Height
-                    Dim dirtyX1 As Int32 = 0
-                    Dim dirtyY1 As Int32 = 0
-                    Dim anyWindowMoved As Boolean = False
-
-                    If pWindowTable <> 0 And pWindowTable.Count > 0 Then
-                        Dim twi As UInt32 = 0
-                        While twi < pWindowTable.Count
-                            Dim twdesc As Pointer To WindowDescriptor = AddressOf pWindowTable.Windows(twi)
-                            Dim wId As UInt32 = twdesc.WinId
-                            If wId > 0 And wId <= 16 Then
-                                If Not winTrackKnown(wId) Then
-                                    anyWindowMoved = True
-                                    dirtyX0 = 0
-                                    dirtyY0 = 0
-                                    dirtyX1 = dispInfo.Width
-                                    dirtyY1 = dispInfo.Height
-                                    winTrackKnown(wId) = True
-                                ElseIf twdesc.X <> winTrackX(wId) Or twdesc.Y <> winTrackY(wId) Or twdesc.Width <> winTrackW(wId) Or twdesc.Height <> winTrackH(wId) Or twdesc.State <> winTrackState(wId) Then
-                                    anyWindowMoved = True
-
-                                    ' Old window bounds + shadow margin
-                                    Dim r0X0 As Int32 = winTrackX(wId) - 4
-                                    Dim r0Y0 As Int32 = winTrackY(wId) - 4
-                                    Dim r0X1 As Int32 = winTrackX(wId) + winTrackW(wId) + 12
-                                    Dim r0Y1 As Int32 = winTrackY(wId) + winTrackH(wId) + 12
-
-                                    ' New window bounds + shadow margin
-                                    Dim r1X0 As Int32 = twdesc.X - 4
-                                    Dim r1Y0 As Int32 = twdesc.Y - 4
-                                    Dim r1X1 As Int32 = twdesc.X + twdesc.Width + 12
-                                    Dim r1Y1 As Int32 = twdesc.Y + twdesc.Height + 12
-
-                                    If r0X0 < dirtyX0 Then dirtyX0 = r0X0
-                                    If r0Y0 < dirtyY0 Then dirtyY0 = r0Y0
-                                    If r0X1 > dirtyX1 Then dirtyX1 = r0X1
-                                    If r0Y1 > dirtyY1 Then dirtyY1 = r0Y1
-
-                                    If r1X0 < dirtyX0 Then dirtyX0 = r1X0
-                                    If r1Y0 < dirtyY0 Then dirtyY0 = r1Y0
-                                    If r1X1 > dirtyX1 Then dirtyX1 = r1X1
-                                    If r1Y1 > dirtyY1 Then dirtyY1 = r1Y1
-                                End If
-
-                                ' Update tracked window geometry
-                                winTrackX(wId) = twdesc.X
-                                winTrackY(wId) = twdesc.Y
-                                winTrackW(wId) = twdesc.Width
-                                winTrackH(wId) = twdesc.Height
-                                winTrackState(wId) = twdesc.State
-                            End If
-                            twi = twi + 1
-                        Wend
-                    End If
-
-                    ' clientDirtyOnly = True  -> only re-blit client surfaces; skip FillRect full clear.
-                    ' clientDirtyOnly = False -> window moved/created; full scene rebuild required.
-                    If clientDirtyOnly And Not anyWindowMoved Then
-                        ' Lightweight path: redraw all desktop windows in proper Z-order (frames + clients)
-                        RenderDesktopWindows
-                        If pWindowTable <> 0 And pWindowTable.Count > 0 Then
-                            Dim cwi As UInt32 = 0
-                            While cwi < pWindowTable.Count
-                                Dim cwdesc As Pointer To WindowDescriptor = AddressOf pWindowTable.Windows(cwi)
-                                If cwdesc.State <> WIN_STATE_MINIMIZED Then
-                                    Dim cDX0 As Int32 = cwdesc.X - 2
-                                    Dim cDY0 As Int32 = cwdesc.Y - 2
-                                    Dim cDX1 As Int32 = cwdesc.X + cwdesc.Width + 8
-                                    Dim cDY1 As Int32 = cwdesc.Y + cwdesc.Height + 8
-                                    If cDX0 < dirtyX0 Then dirtyX0 = cDX0
-                                    If cDY0 < dirtyY0 Then dirtyY0 = cDY0
-                                    If cDX1 > dirtyX1 Then dirtyX1 = cDX1
-                                    If cDY1 > dirtyY1 Then dirtyY1 = cDY1
-                                End If
-                                cwi = cwi + 1
-                            Wend
-                        End If
-                    Else
-                        ' Window moved/created: scissor-clipped redraw of dirty delta
-                        If dirtyX0 < 0 Then dirtyX0 = 0
-                        If dirtyY0 < 0 Then dirtyY0 = 0
-                        If dirtyX1 > dispInfo.Width Then dirtyX1 = dispInfo.Width
-                        If dirtyY1 > dispInfo.Height Then dirtyY1 = dispInfo.Height
-                        Dim cdw As Int32 = dirtyX1 - dirtyX0
-                        Dim cdh As Int32 = dirtyY1 - dirtyY0
-                        If cdw > 0 And cdh > 0 And anyWindowMoved Then
-                            DrawDesktopSceneClipped dirtyX0, dirtyY0, cdw, cdh
-                        Else
-                            dirtyX0 = 0
-                            dirtyY0 = 0
-                            dirtyX1 = dispInfo.Width
-                            dirtyY1 = dispInfo.Height
-                            DrawDesktopScene
-                        End If
-                    End If
-
-                    If pWindowTable <> 0 Then
-                        lastRenderedRevision = pWindowTable.Revision
-                    End If
-                    desktopDirty = False
-                    clientDirtyOnly = False
-
-                    ' Render dynamic HUD elements into backSurf before flush
-                    RenderMouseCoordinates False
-                    RenderTelemetryBadge False
-
-                    ' Re-save background and draw cursor on backSurf so flushed region contains cursor
-                    If cursorInitialized Then
-                        SaveCursorBackground cursorX, cursorY
-                        DrawCursorArrow cursorX, cursorY
-                    End If
-
-                    ' Flush ONLY the calculated window dirty bounding box to VRAM
-                    If dirtyX0 < 0 Then dirtyX0 = 0
-                    If dirtyY0 < 0 Then dirtyY0 = 0
-                    If dirtyX1 > dispInfo.Width Then dirtyX1 = dispInfo.Width
-                    If dirtyY1 > dispInfo.Height Then dirtyY1 = dispInfo.Height
-                    Dim dirtyW As Int32 = dirtyX1 - dirtyX0
-                    Dim dirtyH As Int32 = dirtyY1 - dirtyY0
-                    If dirtyW > 0 And dirtyH > 0 Then
-                        FlushDirtyRegion dirtyX0, dirtyY0, dirtyW, dirtyH
-                    End If
-
-                    ' Flush HUD bars independently without inflating window dirty rect
-                    FlushDirtyRegion 430, 6, 180, 14
-                    If badgeActive Then
-                        FlushDirtyRegion badgeX, badgeY, 200, 26
-                    End If
-
-                    oldCursorX = cursorX
-                    oldCursorY = cursorY
-                Else
-                    ' Idle frame: only animate badge
-                    RenderTelemetryBadge True
+                ' Composite and present all accumulated discrete damaged rectangles
+                If damage.Count > 0 Then
+                    Dim dIdx As UInt32 = 0
+                    While dIdx < damage.Count
+                        Dim dr As Pointer To DamageRect = AddressOf damage.Rects(dIdx)
+                        CompositeDamageRect dr.X, dr.Y, dr.Width, dr.Height
+                        dIdx = dIdx + 1
+                    Wend
+                    DamageReset damage
                 End If
 
                 If (nowTime - nextFrameTime) > 32 Then

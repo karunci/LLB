@@ -589,15 +589,18 @@ Module WmMain
                         newX = 16
                         newY = 36
                     Else
-                        ' Compact window (SysMon, NodeViewer) -> Right Telemetry Column
+                        ' Compact window (SysMon, NodeViewer, ResMon) -> Right Telemetry Column / Bottom Left Slot
                         Dim slot0Taken As Boolean = False
                         Dim slot1Taken As Boolean = False
+                        Dim slot2Taken As Boolean = False
                         Dim k As Int32 = 0
                         While k < windowCount
                             If windows(k).X = 664 And windows(k).Y = 36 Then
                                 slot0Taken = True
-                            ElseIf windows(k).X = 664 And windows(k).Y = 266 Then
+                            ElseIf windows(k).X = 664 And windows(k).Y = 324 Then
                                 slot1Taken = True
+                            ElseIf windows(k).X = 16 And windows(k).Y = 450 Then
+                                slot2Taken = True
                             End If
                             k = k + 1
                         Wend
@@ -607,7 +610,10 @@ Module WmMain
                             newY = 36
                         ElseIf Not slot1Taken Then
                             newX = 664
-                            newY = 266
+                            newY = 324
+                        ElseIf Not slot2Taken Then
+                            newX = 16
+                            newY = 450
                         Else
                             newX = 60 + (windowCount * 30)
                             newY = 60 + (windowCount * 30)

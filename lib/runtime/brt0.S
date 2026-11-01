@@ -93,3 +93,24 @@ __stack_chk_fail:
     jmp 1b
 
 .size __stack_chk_fail, . - __stack_chk_fail
+
+/* ============================================================================
+ * Freestanding LLVM Error & Abort Fallback Handlers
+ * ============================================================================ */
+.global abort
+.type abort, @function
+abort:
+    movq $134, %rdi            /* 128 + SIGABRT(6) */
+    movq $16, %rax             /* SYS_PROCESS_EXIT = 16 */
+    syscall
+1:
+    pause
+    jmp 1b
+.size abort, . - abort
+
+.global dprintf
+.type dprintf, @function
+dprintf:
+    xorq %rax, %rax
+    ret
+.size dprintf, . - dprintf

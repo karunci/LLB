@@ -7,6 +7,7 @@ Import Arch.Acpi
 Import Core.Nodes
 Import Sched
 Import Exec
+Import Drivers.Pci
 Use Drivers.SerialUart As Serial
 Use Core.Nodes.SynapseChannel
 Use Core.Nodes.NodeRegistry As Registry
@@ -20,6 +21,7 @@ Use Drivers.Keyboard As Kbd
 Use Mem.PhysicalMemoryManager As PMM
 Use Exec.BaxLoader As Bax
 Use Mem.KernelHeap As KHeap
+Use Drivers.Pci.PciBus As Pci
 
 Namespace Sys
 
@@ -46,6 +48,47 @@ Namespace Sys
         Public Pitch    As UInt32
         Public Bpp      As UInt32
         Public PhysAddr As UInt64
+    End Structure
+
+    <Packed>
+    Public Structure CpuCoreMetric
+        Public ActiveTicks As UInt64
+        Public IdleTicks   As UInt64
+        Public TotalTicks  As UInt64
+        Public LoadPercent As UInt32
+        Public Reserved    As UInt32
+    End Structure
+
+    <Packed>
+    Public Structure SystemMetrics
+        Public CpuCount        As UInt32
+        Public Reserved0       As UInt32
+        Public SchedUptimeMs   As UInt64
+        Public Cores(15)       As CpuCoreMetric
+
+        ' RAM
+        Public TotalRamBytes   As UInt64
+        Public FreeRamBytes    As UInt64
+        Public UsedRamBytes    As UInt64
+        Public BuddyPoolBytes  As UInt64
+        Public HeapAllocBytes  As UInt64
+
+        ' VRAM & Display
+        Public DisplayWidth    As UInt32
+        Public DisplayHeight   As UInt32
+        Public DisplayPitch    As UInt32
+        Public DisplayBpp      As UInt32
+        Public VramTotalBytes  As UInt64
+        Public VramUsedBytes   As UInt64
+
+        ' GPU
+        Public GpuVendorId     As UInt16
+        Public GpuDeviceId     As UInt16
+        Public GpuSubsystemId  As UInt16
+        Public GpuBar0IoPort   As UInt16
+        Public GpuBar1FbPhys   As UInt64
+        Public GpuBar2FifoPhys As UInt64
+        Public GpuDriverType   As UInt32 ' 0 = GOP/VESA LFB, 1 = VMware SVGA-II, 2 = VirtIO-GPU
     End Structure
 
     Public Module Syscall
@@ -81,6 +124,14 @@ Namespace Sys
         ' Hardware Display Aperture Extensions
         Public Const SYS_FB_GET_INFO     As UInt64 = 70
         Public Const SYS_FB_MAP          As UInt64 = 71
+
+        ' PCI Bus Enumeration & Hardware Device Aperture Extensions
+        Public Const SYS_PCI_GET_DEVICE_COUNT As UInt64 = 72
+        Public Const SYS_PCI_GET_DEVICE       As UInt64 = 73
+        Public Const SYS_PCI_MAP_BAR          As UInt64 = 74
+        Public Const SYS_PORT_IN              As UInt64 = 75
+        Public Const SYS_PORT_OUT             As UInt64 = 76
+        Public Const SYS_GET_SYSTEM_METRICS   As UInt64 = 77
 
         ' Initrd Memory Mapping Extensions
         Public Const SYS_INITRD_GET_INFO As UInt64 = 80
@@ -777,6 +828,174 @@ Namespace Sys
                         For pmIdx = 0 To pageMapCount - 1
                             VmmEngine.MapPage callerMapCr3, arg1 + (pmIdx * 4096), initrdMapStart + (pmIdx * 4096), &H05 ' Present | User (Read-Only)
                         Next pmIdx
+                        Dispatch = 1
+                    Else
+                        Dispatch = 0
+                    End If
+
+                Case SYS_PCI_GET_DEVICE_COUNT
+                    Dispatch = UInt64(Pci.GetDeviceCount())
+
+                Case SYS_PCI_GET_DEVICE
+                    ' arg1 = index (UInt32), arg2 = outDevPtr (Pointer To PciDevice)
+                    Dim devIdx As UInt32 = UInt32(arg1)
+                    If ValidateUserBuffer(arg2, SizeOf(PciDevice)) Then
+                        Dim pDev As Pointer To PciDevice = Pci.GetDevice(devIdx)
+                        If pDev <> 0 Then
+                            Dim pOutDev As Pointer To PciDevice = Pointer To PciDevice(arg2)
+                            pOutDev(0) = pDev(0)
+                            Dispatch = 1
+                        Else
+                            Dispatch = 0
+                        End If
+                    Else
+                        Dispatch = 0
+                    End If
+
+                Case SYS_PCI_MAP_BAR
+                    ' arg1 = devIdx (UInt32), arg2 = barIdx (UInt32), arg3 = targetVaddr (UInt64), arg4 = writeCombining (0/1)
+                    Dim pciDevIdx As UInt32 = UInt32(arg1)
+                    Dim pciBarIdx As UInt32 = UInt32(arg2)
+                    Dim pciTargetVaddr As UInt64 = arg3
+                    Dim pciWc As Boolean = (arg4 <> 0)
+
+                    If pciBarIdx > 5 Or pciTargetVaddr = 0 Then
+                        Dispatch = 0
+                        Exit Function
+                    End If
+
+                    Dim pPciDev As Pointer To PciDevice = Pci.GetDevice(pciDevIdx)
+                    If pPciDev <> 0 Then
+                        Dim pBarInfo As Pointer To PciBarInfo = 0
+                        If pciBarIdx = 0 Then pBarInfo = AddressOf pPciDev.Bar0
+                        If pciBarIdx = 1 Then pBarInfo = AddressOf pPciDev.Bar1
+                        If pciBarIdx = 2 Then pBarInfo = AddressOf pPciDev.Bar2
+                        If pciBarIdx = 3 Then pBarInfo = AddressOf pPciDev.Bar3
+                        If pciBarIdx = 4 Then pBarInfo = AddressOf pPciDev.Bar4
+                        If pciBarIdx = 5 Then pBarInfo = AddressOf pPciDev.Bar5
+
+                        If pBarInfo <> 0 And pBarInfo.PhysBase <> 0 And Not pBarInfo.IsIo Then
+                            Dim pciBarSize As UInt64 = pBarInfo.SizeBytes
+                            If pciBarSize = 0 Then pciBarSize = 4096
+                            Dim pciBarPages As UInt64 = (pciBarSize + 4095) / 4096
+                            Dim pciCallerCr3 As UInt64 = SchedEngine.GetCurrentCr3()
+                            Dim pciFlags As UInt64 = &H07 ' Present | Read/Write | User
+                            If pciWc Then
+                                pciFlags = pciFlags Or &H08 ' PAT Index 1 = Write-Combining
+                            End If
+
+                            Dim pciPidx As UInt64
+                            For pciPidx = 0 To pciBarPages - 1
+                                VmmEngine.MapPage pciCallerCr3, pciTargetVaddr + (pciPidx * 4096), pBarInfo.PhysBase + (pciPidx * 4096), pciFlags
+                            Next pciPidx
+
+                            Dispatch = pciTargetVaddr
+                        Else
+                            Dispatch = 0
+                        End If
+                    Else
+                        Dispatch = 0
+                    End If
+
+                Case SYS_PORT_IN
+                    ' arg1 = port (UInt16), arg2 = size (1, 2, 4)
+                    Dim inPort As UInt16 = UInt16(arg1 And &HFFFF)
+                    If arg2 = 1 Then
+                        Dispatch = UInt64(Arch.X86_64.PortIO.InB(inPort))
+                    ElseIf arg2 = 2 Then
+                        Dispatch = UInt64(Arch.X86_64.PortIO.InW(inPort))
+                    Else
+                        Dispatch = UInt64(Arch.X86_64.PortIO.InL(inPort))
+                    End If
+
+                Case SYS_PORT_OUT
+                    ' arg1 = port (UInt16), arg2 = size (1, 2, 4), arg3 = val (UInt32)
+                    Dim outPort As UInt16 = UInt16(arg1 And &HFFFF)
+                    If arg2 = 1 Then
+                        Arch.X86_64.PortIO.OutB outPort, Byte(arg3 And &HFF)
+                    ElseIf arg2 = 2 Then
+                        Arch.X86_64.PortIO.OutW outPort, UInt16(arg3 And &HFFFF)
+                    Else
+                        Arch.X86_64.PortIO.OutL outPort, UInt32(arg3)
+                    End If
+                    Dispatch = 1
+
+                Case SYS_GET_SYSTEM_METRICS
+                    ' arg1 = pointer to SystemMetrics buffer in user space
+                    If arg1 <> 0 And ValidateUserBuffer(arg1, SizeOf(SystemMetrics)) Then
+                        Dim pMet As Pointer To SystemMetrics = Pointer To SystemMetrics(arg1)
+                        pMet.CpuCount = Arch.Acpi.GetCpuCount()
+                        pMet.Reserved0 = 0
+                        pMet.SchedUptimeMs = SchedEngine.GetUptime()
+
+                        Dim coreIdx As UInt32 = 0
+                        While coreIdx < 16
+                            If coreIdx < pMet.CpuCount Then
+                                pMet.Cores(coreIdx).ActiveTicks = SchedEngine.GetCoreActiveTicks(coreIdx)
+                                pMet.Cores(coreIdx).IdleTicks = SchedEngine.GetCoreIdleTicks(coreIdx)
+                                pMet.Cores(coreIdx).TotalTicks = SchedEngine.GetCoreTotalTicks(coreIdx)
+                                pMet.Cores(coreIdx).LoadPercent = SchedEngine.GetCoreLoad(coreIdx)
+                            Else
+                                pMet.Cores(coreIdx).ActiveTicks = 0
+                                pMet.Cores(coreIdx).IdleTicks = 0
+                                pMet.Cores(coreIdx).TotalTicks = 0
+                                pMet.Cores(coreIdx).LoadPercent = 0
+                            End If
+                            pMet.Cores(coreIdx).Reserved = 0
+                            coreIdx = coreIdx + 1
+                        Wend
+
+                        ' RAM Metrics (Direct from Physical Memory Manager)
+                        Dim totRam As UInt64 = PMM.GetTotalBytes()
+                        Dim freeRam As UInt64 = PMM.GetFreeBytes()
+                        pMet.TotalRamBytes = totRam
+                        pMet.FreeRamBytes = freeRam
+                        If totRam >= freeRam Then
+                            pMet.UsedRamBytes = totRam - freeRam
+                        Else
+                            pMet.UsedRamBytes = 0
+                        End If
+                        pMet.BuddyPoolBytes = 67108864 ' 64 MB managed buddy pool
+                        pMet.HeapAllocBytes = 8388608  ' 8 MB dynamic heap pool
+
+                        ' VRAM & Display Metrics (Direct from Linear Framebuffer driver)
+                        pMet.DisplayWidth = FbDriver.GetDisplayWidth()
+                        pMet.DisplayHeight = FbDriver.GetDisplayHeight()
+                        pMet.DisplayPitch = FbDriver.GetDisplayPitch()
+                        pMet.DisplayBpp = FbDriver.GetDisplayBpp()
+                        pMet.VramUsedBytes = UInt64(pMet.DisplayHeight) * UInt64(pMet.DisplayPitch)
+
+                        ' GPU Controller Metrics via PCI Bus
+                        Dim pDispDev As Pointer To PciDevice = Pci.FindDisplayDevice()
+                        If pDispDev <> 0 Then
+                            pMet.GpuVendorId = pDispDev.VendorId
+                            pMet.GpuDeviceId = pDispDev.DeviceId
+                            pMet.GpuSubsystemId = 0
+                            pMet.GpuBar0IoPort = UInt16(pDispDev.Bar0.PhysBase And &HFFFF)
+                            pMet.GpuBar1FbPhys = pDispDev.Bar1.PhysBase
+                            pMet.GpuBar2FifoPhys = pDispDev.Bar2.PhysBase
+                            If pDispDev.Bar1.SizeBytes > 0 Then
+                                pMet.VramTotalBytes = pDispDev.Bar1.SizeBytes
+                            Else
+                                pMet.VramTotalBytes = pMet.VramUsedBytes
+                            End If
+
+                            If pDispDev.VendorId = &H15AD And pDispDev.DeviceId = &H0405 Then
+                                pMet.GpuDriverType = 1 ' VMware SVGA-II / VirtualBox VBoxSVGA
+                            Else
+                                pMet.GpuDriverType = 0 ' Standard PCI VGA / UEFI GOP
+                            End If
+                        Else
+                            pMet.GpuVendorId = 0
+                            pMet.GpuDeviceId = 0
+                            pMet.GpuSubsystemId = 0
+                            pMet.GpuBar0IoPort = 0
+                            pMet.GpuBar1FbPhys = FbDriver.GetFramebufferPhys()
+                            pMet.GpuBar2FifoPhys = 0
+                            pMet.VramTotalBytes = pMet.VramUsedBytes
+                            pMet.GpuDriverType = 0
+                        End If
+
                         Dispatch = 1
                     Else
                         Dispatch = 0

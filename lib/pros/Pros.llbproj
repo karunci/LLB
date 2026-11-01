@@ -39,6 +39,8 @@ Files = [
     "src/Input.bas",
     "src/Gui.bas",
     "src/Display.bas",
+    "src/Pci.bas",
+    "src/PortIO.bas",
     "src/Vfs.bas",
     "src/FileSystem.bas",
     "src/Wm.bas",

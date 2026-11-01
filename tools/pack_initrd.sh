@@ -45,6 +45,7 @@ pack_bax apps/gui/terminal/build/terminal.elf apps/gui/terminal/build/terminal.b
 pack_bax apps/gui/node_viewer/build/node_viewer.elf apps/gui/node_viewer/build/node_viewer.bax apps/gui/node_viewer/manifest.json
 pack_bax apps/gui/resource_mon/build/res_mon.elf apps/gui/resource_mon/build/res_mon.bax apps/gui/resource_mon/manifest.json
 pack_bax apps/gui/user_app/build/user_app.elf apps/gui/user_app/build/user_app.bax apps/gui/user_app/manifest.json
+pack_bax apps/gui/doom/build/doom.elf apps/gui/doom/build/doom.bax apps/gui/doom/manifest.json
 
 # 1. Directory Tree Creation
 mkdir -p "${STAGING_DIR}/System/Services/Genesis"
@@ -69,6 +70,7 @@ mkdir -p "${STAGING_DIR}/System/Configurations/Drives"
 
 mkdir -p "${STAGING_DIR}/Apps/Terminal"
 mkdir -p "${STAGING_DIR}/Apps/UserApp"
+mkdir -p "${STAGING_DIR}/Apps/Doom"
 mkdir -p "${STAGING_DIR}/Libraries"
 mkdir -p "${STAGING_DIR}/Users/Default/Desktop"
 mkdir -p "${STAGING_DIR}/Users/Default/Documents"
@@ -107,6 +109,12 @@ cp apps/gui/node_viewer/build/node_viewer.bax "${STAGING_DIR}/System/Apps/NodeVi
 # 6. Stage User Applications
 cp apps/gui/terminal/build/terminal.bax "${STAGING_DIR}/Apps/Terminal/"
 cp apps/gui/user_app/build/user_app.bax "${STAGING_DIR}/Apps/UserApp/"
+if [ -f "apps/gui/doom/build/doom.bax" ]; then
+    cp apps/gui/doom/build/doom.bax "${STAGING_DIR}/Apps/Doom/"
+fi
+if [ -f "apps/gui/doom/DOOM1.WAD" ]; then
+    cp apps/gui/doom/DOOM1.WAD "${STAGING_DIR}/Apps/Doom/"
+fi
 
 mkdir -p build
 tar -cf build/initrd.tar -C "${STAGING_DIR}" .

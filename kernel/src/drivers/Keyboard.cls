@@ -165,7 +165,10 @@ Namespace Drivers
             If e0Escape Then
                 Dim isRel As Boolean = (scancode And &H80) <> 0
                 Dim baseCode As Byte = scancode And &H7F
-                If baseCode = &H1D Then ctrlActive = Not isRel
+                If baseCode = &H1D Then
+                    ctrlActive = Not isRel
+                    If Not isRel Then Me.EnqueueByte &H1D
+                End If
                 If baseCode = &H38 Then altActive = Not isRel
 
                 If Not isRel Then
@@ -214,6 +217,7 @@ Namespace Drivers
             End If
             If scancode = &H1D Then
                 ctrlActive = True
+                Me.EnqueueByte &H1D
                 Sync.SpinlockOps.ReleaseIrqRestore kbdLock, flags
                 Exit Sub
             End If

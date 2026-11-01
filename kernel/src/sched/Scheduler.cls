@@ -25,7 +25,7 @@ Public Declare Sub thread_start_trampoline()
 <Instancing(SingleUse)>
 Public Class Scheduler
 
-    Public Const KERNEL_STACK_SIZE As UInt32 = 4096
+    Public Const KERNEL_STACK_SIZE As UInt32 = 16384
     Public Const MAX_SCHED_CPUS    As UInt32 = 16
 
     ' Fine-Grained SMP Per-CPU Runqueue Spinlocks & Work-Stealing Lock (Two-Lock Protocol)

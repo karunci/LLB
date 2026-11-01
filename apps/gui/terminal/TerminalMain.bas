@@ -898,10 +898,40 @@ Module TerminalMain
             Exit Sub
         End If
 
-        ' Dynamic Binary Execution from PATH (for external utilities: sys_mon, node_viewer, etc.)
+        ' Dynamic Binary Execution (Direct Path or Search via PATH)
         Dim candPath(160) As Byte
         Dim foundBinary As Boolean = False
 
+        ' 1. Direct Execution Check (e.g. ./file.bax, .\file.bax, file.bax, or absolute path)
+        Dim verbToResolve As Pointer To Byte = @verb(0)
+        If verb(0) = 46 And (verb(1) = 47 Or verb(1) = 92) Then
+            verbToResolve = @verb(2)
+        End If
+
+        Dim directPath(160) As Byte
+        PathResolve currentDir, verbToResolve, @directPath(0), 160
+        If FileExists(@directPath(0)) Then
+            StrCopy @candPath(0), 160, @directPath(0)
+            foundBinary = True
+        Else
+            Dim directBax(160) As Byte
+            StrCopy @directBax(0), 160, verbToResolve
+            Dim dbLen As UInt32 = UInt32(StrLen(@directBax(0)))
+            If dbLen < 4 Or directBax(dbLen - 4) <> 46 Then
+                directBax(dbLen) = 46     ' '.'
+                directBax(dbLen + 1) = 98 ' 'b'
+                directBax(dbLen + 2) = 97 ' 'a'
+                directBax(dbLen + 3) = 120' 'x'
+                directBax(dbLen + 4) = 0
+                PathResolve currentDir, @directBax(0), @directPath(0), 160
+                If FileExists(@directPath(0)) Then
+                    StrCopy @candPath(0), 160, @directPath(0)
+                    foundBinary = True
+                End If
+            End If
+        End If
+
+        ' 2. Search executable in configured system search paths (PATH)
         Dim pi As UInt32 = 0
         While pi < g_pathCount And Not foundBinary
             Dim pDir As Pointer To Byte = @g_pathDirs(pi * 128)
@@ -956,10 +986,10 @@ Module TerminalMain
         If foundBinary Then
             DrawCursor False
 
-            ' Pass shell current directory or resolved absolute path to child utility
+            ' Pass options/arguments intact to child utility (e.g. --optionA -optsB or path)
             Dim childArgs(160) As Byte
             If args(0) <> 0 Then
-                PathResolve currentDir, args, @childArgs(0), 160
+                StrCopy @childArgs(0), 160, args
             Else
                 StrCopy @childArgs(0), 160, currentDir
             End If

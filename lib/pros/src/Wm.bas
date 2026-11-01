@@ -59,7 +59,20 @@ Namespace Pros.Gui
                 Exit Function
             End If
 
-            g_compNodeId = Pros.Nodes.NodeRegistry.Lookup("srv.compositor")
+            Dim compName(16) As Byte
+            Dim cnIdx As UInt32 = 0
+            AppendStr "srv.compositor", @compName(0), cnIdx
+            compName(cnIdx) = 0
+
+            Dim tries As UInt32 = 0
+            While tries < 50 And g_compNodeId = 0
+                g_compNodeId = Pros.Nodes.NodeRegistry.Lookup(@compName(0))
+                If g_compNodeId = 0 Then
+                    Pros.Sys.Process.Sleep 20
+                    tries = tries + 1
+                End If
+            Wend
+
             If g_compNodeId = 0 Then
                 EnsureCompChannel = False
                 Exit Function
@@ -131,7 +144,7 @@ Namespace Pros.Gui
             reqPkt.PacketType = WM_CMD_SET_FOCUS
             reqPkt.SourceNode = clientNodeId
             reqPkt.TargetNode = wmNodeId
-            Dim pWinId As Pointer To UInt32 = *UInt32(@reqPkt.Payload(0))
+            Dim pWinId As Pointer To UInt32 = CPtr(Pointer To UInt32, @reqPkt.Payload(0))
             pWinId(0) = winId
             reqPkt.PayloadLength = 4
 
@@ -189,6 +202,7 @@ Namespace Pros.Gui
             If clientNodeId = 0 Then
                 clientNodeId = Pros.Nodes.NodeRegistry.Register(1, @clientName(0), 7)
             End If
+            g_clientNodeId = clientNodeId
 
             Dim synChan As UInt64 = Pros.Nodes.NodeRegistry.Connect(clientNodeId, wmNodeId, 7)
             If synChan = 0 Then
@@ -202,9 +216,9 @@ Namespace Pros.Gui
             reqPkt.SourceNode = clientNodeId
             reqPkt.TargetNode = wmNodeId
 
-            Dim pW As Pointer To Int32 = *Int32(@reqPkt.Payload(0))
-            Dim pH As Pointer To Int32 = *Int32(@reqPkt.Payload(4))
-            Dim pShm As Pointer To UInt64 = *UInt64(@reqPkt.Payload(8))
+            Dim pW As Pointer To Int32 = CPtr(Pointer To Int32, @reqPkt.Payload(0))
+            Dim pH As Pointer To Int32 = CPtr(Pointer To Int32, @reqPkt.Payload(4))
+            Dim pShm As Pointer To UInt64 = CPtr(Pointer To UInt64, @reqPkt.Payload(8))
             pW(0) = w
             pH(0) = h
             pShm(0) = shmId
@@ -227,8 +241,8 @@ Namespace Pros.Gui
             While tries < 100
                 If Pros.Nodes.NodeRegistry.Pop(clientNodeId, respPkt) Then
                     If respPkt.PacketType = WM_RESP_OK Then
-                        Dim pResId As Pointer To UInt32 = *UInt32(@respPkt.Payload(0))
-                        Dim pTableShm As Pointer To UInt64 = *UInt64(@respPkt.Payload(8))
+                        Dim pResId As Pointer To UInt32 = CPtr(Pointer To UInt32, @respPkt.Payload(0))
+                        Dim pTableShm As Pointer To UInt64 = CPtr(Pointer To UInt64, @respPkt.Payload(8))
                         CreateWindow = pResId(0)
                         If g_pWindowTable = 0 And pTableShm(0) <> 0 Then
                             Dim tableVaddr As UInt64 = &H6A000000
@@ -313,7 +327,7 @@ Namespace Pros.Gui
             reqPkt.PacketType = WM_CMD_DESTROY_WINDOW
             reqPkt.SourceNode = clientNodeId
             reqPkt.TargetNode = wmNodeId
-            Dim pWinId As Pointer To UInt32 = *UInt32(@reqPkt.Payload(0))
+            Dim pWinId As Pointer To UInt32 = CPtr(Pointer To UInt32, @reqPkt.Payload(0))
             pWinId(0) = winId
             reqPkt.PayloadLength = 4
 
@@ -352,7 +366,7 @@ Namespace Pros.Gui
             reqPkt.PacketType = WM_CMD_WINDOW_DIRTY
             reqPkt.SourceNode = g_clientNodeId
             reqPkt.TargetNode = g_compNodeId
-            Dim pPayload As Pointer To Int32 = *Int32(@reqPkt.Payload(0))
+            Dim pPayload As Pointer To Int32 = CPtr(Pointer To Int32, @reqPkt.Payload(0))
             pPayload(0) = Int32(winId)
             pPayload(1) = rx
             pPayload(2) = ry

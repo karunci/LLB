@@ -137,16 +137,16 @@ Namespace Pros.Sys
                 Exit Function
             End If
 
-            ' 1. Allocate 64KB Shared Memory transfer window at 0x67000000
+            ' 1. Allocate 1MB Shared Memory transfer window at 0x67000000
             Dim spawnShmVaddr As UInt64 = &H67000000
-            Dim shmId As UInt64 = Pros.Memory.Shmem.Create(65536, spawnShmVaddr)
+            Dim shmId As UInt64 = Pros.Memory.Shmem.Create(1048576, spawnShmVaddr)
             If shmId = 0 Then
                 Spawn = 0
                 Exit Function
             End If
 
             ' 2. Stream binary from VFS into Shared Memory window
-            Dim bytesRead As UInt32 = Pros.IO.FileSystem.ReadAllText(path, Pointer To Byte(spawnShmVaddr), 65536)
+            Dim bytesRead As UInt32 = Pros.IO.FileSystem.ReadAllText(path, Pointer To Byte(spawnShmVaddr), 1048576)
             If bytesRead = 0 Then
                 Pros.Memory.Shmem.Detach shmId
                 Spawn = 0

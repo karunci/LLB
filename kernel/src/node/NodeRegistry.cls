@@ -14,8 +14,8 @@ Namespace Core.Nodes
     Public Class NodeRegistry
 
         Private nodes(64) As NodeDescriptor
-        Private channels(64) As SynapseChannel
-        Private channelAllocated(64) As Boolean
+        Private channels(128) As SynapseChannel
+        Private channelAllocated(128) As Boolean
 
         Private nextNodeId As UInt64
         Private nextChannelId As UInt64
@@ -34,8 +34,13 @@ Namespace Core.Nodes
                 nodes(i).Flags = 0
                 nodes(i).Capabilities = 0
                 nodes(i).OwnerPid = 0
-                channelAllocated(i) = False
                 i = i + 1
+            Wend
+
+            Dim c As UInt32 = 0
+            While c < SynapseCaps.MAX_CHANNELS
+                channelAllocated(c) = False
+                c = c + 1
             Wend
 
             Serial.PrintF "[NODE] Dual-Plane Neural Node Registry Online (Max: %u Nodes)\r\n", SynapseCaps.MAX_NODES
@@ -150,7 +155,7 @@ Namespace Core.Nodes
 
             ' Check if an existing channel connects srcNodeId -> tgtNodeId
             Dim existIdx As UInt32 = 0
-            While existIdx < SynapseCaps.MAX_NODES
+            While existIdx < SynapseCaps.MAX_CHANNELS
                 If channelAllocated(existIdx) Then
                     If channels(existIdx).GetSourceNode() = srcNodeId And channels(existIdx).GetTargetNode() = tgtNodeId Then
                         Dim existCid As UInt64 = channels(existIdx).GetChannelId()
@@ -164,7 +169,7 @@ Namespace Core.Nodes
 
             ' Find an available synapse channel slot
             Dim slot As UInt32 = 0
-            While slot < SynapseCaps.MAX_NODES
+            While slot < SynapseCaps.MAX_CHANNELS
                 If Not channelAllocated(slot) Then
                     Dim cid As UInt64 = nextChannelId
                     nextChannelId = nextChannelId + 1
@@ -192,7 +197,7 @@ Namespace Core.Nodes
         ''
         Public Unsafe Function GetChannel(ByVal cid As UInt64) As Pointer To SynapseChannel
             Dim i As UInt32 = 0
-            While i < SynapseCaps.MAX_NODES
+            While i < SynapseCaps.MAX_CHANNELS
                 If channelAllocated(i) Then
                     If channels(i).GetChannelId() = cid Then
                         GetChannel = AddressOf channels(i)
@@ -211,7 +216,7 @@ Namespace Core.Nodes
         ''
         Public Unsafe Function GetInboundChannel(ByVal targetNodeId As UInt64) As Pointer To SynapseChannel
             Dim i As UInt32 = 0
-            While i < SynapseCaps.MAX_NODES
+            While i < SynapseCaps.MAX_CHANNELS
                 If channelAllocated(i) Then
                     If channels(i).GetTargetNode() = targetNodeId And channels(i).GetCount() > 0 Then
                         GetInboundChannel = AddressOf channels(i)

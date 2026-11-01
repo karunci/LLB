@@ -1,0 +1,31 @@
+' Project Name: Personal Research Operating System / DOOM
+' Filename: apps/gui/doom/Doom.llbproj
+' Summary: Standalone Ring 3 DOOM GUI application project.
+
+[Project]
+Name    = "Doom"
+Type    = "Executable"
+Version = "1.0.0"
+
+[Target]
+Arch = "x86_64-unknown-none-elf"
+
+[Output]
+OutDir  = "build"
+OutFile = "doom.elf"
+
+[Entry]
+EntryPoint = "_start"
+
+[Linker]
+LinkerScript = "user_linker.ld"
+Libraries    = [
+    "build/libdoomgeneric.a",
+    "../../../lib/pros/build/libpros.a"
+]
+
+[Sources]
+Assembly = "../../../lib/runtime/brt0.S"
+Assembly = "../../../lib/runtime/mem.S"
+Module   = "DoomMain.bas"
+

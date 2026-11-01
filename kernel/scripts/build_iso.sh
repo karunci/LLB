@@ -45,6 +45,7 @@ if [ -n "${LLBC}" ] && [ -f "${LLBC}" ]; then
     "${LLBC}" apps/gui/terminal/Terminal.llbproj
     "${LLBC}" apps/gui/node_viewer/NodeViewer.llbproj
     "${LLBC}" apps/gui/user_app/UserApp.llbproj
+    "${LLBC}" apps/gui/doom/Doom.llbproj
     "${LLBC}" tools/bax_pack/BaxPack.llbproj
 fi
 
@@ -74,6 +75,9 @@ ${BAX_CMD} apps/gui/sys_mon/build/sys_mon.elf -o apps/gui/sys_mon/build/sys_mon.
 ${BAX_CMD} apps/gui/terminal/build/terminal.elf -o apps/gui/terminal/build/terminal.bax --manifest apps/gui/terminal/manifest.json
 ${BAX_CMD} apps/gui/node_viewer/build/node_viewer.elf -o apps/gui/node_viewer/build/node_viewer.bax --manifest apps/gui/node_viewer/manifest.json
 ${BAX_CMD} apps/gui/user_app/build/user_app.elf -o apps/gui/user_app/build/user_app.bax --manifest apps/gui/user_app/manifest.json
+if [ -f apps/gui/doom/build/doom.elf ]; then
+    ${BAX_CMD} apps/gui/doom/build/doom.elf -o apps/gui/doom/build/doom.bax --manifest apps/gui/doom/manifest.json
+fi
 
 bash tools/pack_initrd.sh
 

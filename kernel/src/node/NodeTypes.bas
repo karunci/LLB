@@ -22,6 +22,7 @@ Namespace Core.Nodes
 
         Public Const NODE_FLAG_ACTIVE   As UInt32 = &H01
         Public Const MAX_NODES          As UInt32 = 64
+        Public Const MAX_CHANNELS       As UInt32 = 128
         Public Const RING_BUFFER_SIZE   As UInt32 = 128
         Public Const MAX_PAYLOAD_SIZE   As UInt32 = 256
     End Module

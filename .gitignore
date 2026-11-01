@@ -7,9 +7,14 @@ bin/
 *.a
 *.elf
 *.bin
+*.bax
+*.iso
+*.tar
 *.tmp
 *.log
 *.ll
+*.wad
+*.WAD
 
 # CMake generated
 CMakeCache.txt

@@ -1,0 +1,9 @@
+{
+  "name": "apps.doom",
+  "version": "1.0.0",
+  "entry": "doom.bax",
+  "subsystem": 1,
+  "stack_size": 131072,
+  "priority": 10
+}
+

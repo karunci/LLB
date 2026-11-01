@@ -116,8 +116,8 @@ Module PlexusMgrMain
             Exit Function
         End If
 
-        ' Allocate 128KB Shared Memory transfer buffer at 0x67000000
-        Dim shmId As UInt64 = ShmemCreate(131072, &H67000000)
+        ' Allocate 512KB Shared Memory transfer buffer at 0x67000000
+        Dim shmId As UInt64 = ShmemCreate(524288, &H67000000)
         If shmId = 0 Then
             ConsoleWriteLine "[PLEXUS_MGR] ERR: Failed to allocate Shared Memory transfer window!"
             SpawnService = 0
@@ -232,6 +232,8 @@ Module PlexusMgrMain
         SpawnService ramdiskBase, "apps.node_viewer", "node_viewer.bax"
         ProcessSleep 30
         SpawnService ramdiskBase, "apps.terminal", "terminal.bax"
+        ProcessSleep 30
+        SpawnService ramdiskBase, "apps.doom", "doom.bax"
         ProcessSleep 30
         SpawnService ramdiskBase, "user.test.app", "user_app.bax"
 

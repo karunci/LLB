@@ -32,6 +32,9 @@ PROS is engineered with a strict microkernel design: only memory management, har
 |   | Terminal Emulator |  | System Telemetry   |  | Synapse Node Viewer        |   |
 |   |  (apps/gui/term)  |  | (apps/gui/sys_mon) |  | (apps/gui/node_viewer)     |   |
 |   +-------------------+  +--------------------+  +----------------------------+   |
+|   | Resource Monitor  |  | DOOM Engine        |                               |   |
+|   | (apps/gui/res_mon)|  | (apps/gui/doom)    |                               |   |
+|   +-------------------+  +--------------------+                               |   |
 +-----------------------------------------------------------------------------------+
 |                           Ring 3: Core System Daemons                             |
 |   +-------------------+  +--------------------+  +----------------------------+   |
@@ -103,6 +106,8 @@ pros/
 │   │   ├── sys_mon/            # Real-time CPU, memory, and telemetry monitor
 │   │   ├── terminal/           # Graphical terminal emulator with font rasterizer
 │   │   ├── node_viewer/        # Neural Synapse IPC channel visualizer
+│   │   ├── resource_mon/       # Hardware resource monitor
+│   │   ├── doom/               # Freestanding DOOM Generic gaming engine
 │   │   └── user_app/           # Interactive GUI demo application
 │   └── cli/                    # Command-line tools (future)
 │

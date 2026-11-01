@@ -184,10 +184,18 @@ Namespace Mem
                     Dim safeReloc As UInt64 = &H0C000000
                     Dim srcP As Pointer To Byte = CPtr(Pointer To Byte, origStart)
                     Dim dstP As Pointer To Byte = CPtr(Pointer To Byte, safeReloc)
-                    Dim bi As UInt64
-                    For bi = 0 To modLen - 1
-                        dstP(bi) = srcP(bi)
-                    Next bi
+                    Dim qwords As UInt64 = modLen / 8
+                    Dim srcQ As Pointer To UInt64 = CPtr(Pointer To UInt64, origStart)
+                    Dim dstQ As Pointer To UInt64 = CPtr(Pointer To UInt64, safeReloc)
+                    Dim qi As UInt64
+                    For qi = 0 To qwords - 1
+                        dstQ(qi) = srcQ(qi)
+                    Next qi
+                    Dim remBytes As UInt64 = modLen Mod 8
+                    Dim rbi As UInt64
+                    For rbi = (modLen - remBytes) To modLen - 1
+                        dstP(rbi) = srcP(rbi)
+                    Next rbi
 
                     initrdStartPhys = safeReloc
                     initrdEndPhys = safeReloc + modLen
@@ -271,10 +279,18 @@ Namespace Mem
                     Dim mb2Reloc As UInt64 = &H0C000000
                     Dim mb2Src As Pointer To Byte = CPtr(Pointer To Byte, mb2Start)
                     Dim mb2Dst As Pointer To Byte = CPtr(Pointer To Byte, mb2Reloc)
-                    Dim mb2Bi As UInt64
-                    For mb2Bi = 0 To mb2Len - 1
-                        mb2Dst(mb2Bi) = mb2Src(mb2Bi)
-                    Next mb2Bi
+                    Dim mb2Qwords As UInt64 = mb2Len / 8
+                    Dim mb2SrcQ As Pointer To UInt64 = CPtr(Pointer To UInt64, mb2Start)
+                    Dim mb2DstQ As Pointer To UInt64 = CPtr(Pointer To UInt64, mb2Reloc)
+                    Dim mb2Qi As UInt64
+                    For mb2Qi = 0 To mb2Qwords - 1
+                        mb2DstQ(mb2Qi) = mb2SrcQ(mb2Qi)
+                    Next mb2Qi
+                    Dim mb2Rem As UInt64 = mb2Len Mod 8
+                    Dim mb2Rbi As UInt64
+                    For mb2Rbi = (mb2Len - mb2Rem) To mb2Len - 1
+                        mb2Dst(mb2Rbi) = mb2Src(mb2Rbi)
+                    Next mb2Rbi
 
                     initrdStartPhys = mb2Reloc
                     initrdEndPhys = mb2Reloc + mb2Len

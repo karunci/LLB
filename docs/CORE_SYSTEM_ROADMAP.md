@@ -86,15 +86,29 @@ graph TD
 ```
 
 ### Current Status
-- [x] Synapse IPC ring buffer message passing.
-- [x] In-memory USTAR VFS with dual-path resolution.
-- [x] Double-buffered display compositor with dirty-rect optimization.
-- [x] Multi-window desktop with live memory graphs, terminal, and node inspector.
+- [x] Synapse IPC ring buffer message passing with dual-plane data gradients.
+- [x] In-memory USTAR VFS with dynamic mount arbiter (`/` TarFS, `/Users` RamFS).
+- [x] Double-buffered display compositor with Discrete Damage Tracking (wlroots-style).
+- [x] In-RAM software cursor plane eliminating PCIe MMIO read turnaround latency.
+- [x] Partitioned SMP runqueues with idle task retention (`sti; hlt`), eliminating spinlock deadlocks.
+- [x] Calibrated 100 Hz Local APIC timer and interrupt-driven PS/2 keyboard & mouse.
+- [x] Multi-window desktop with live memory graphs, terminal, node inspector, and resource monitor.
 - [x] Uncacheable PCIe MMIO mapping (`0x1F`) resolving hardware display artifacts.
+- [x] PCI configuration bus driver and Ring 3 port I/O & PCI config access.
+- [x] 2D screen boundary clipping for window dragging beyond display boundaries.
 
 ### Next Core Milestones
-- [ ] **CS.1:** Consolidate runtime startup stub into single `lib/runtime/brt0.S` across all services.
-- [ ] **CS.2:** Eliminate duplicate font and string formatting code across services into `libpros`.
-- [ ] **CS.3:** Replace manual ASCII byte array initialization in services with native `String`.
-- [ ] **CS.4:** Resolve remaining window dragging/resizing "wobbly" effect by unifying mouse event sampling and scanline burst pacing.
+- [x] **CS.1:** Minimal Genesis PID 1 & Decoupled Plexus Manager PID 2 (`PROS-ARCH-GENESIS-01`):
+  - Stripped all secondary service spawns from `KernelMain.bas`; kernel strictly initializes hardware and spawns `sys.genesis` (PID 1).
+  - Minimal Genesis PID 1: Adopts orphaned/zombie processes, listens for shutdown/reboot signals, and spawns `srv.plexus_mgr` (PID 2).
+  - Decoupled Plexus Manager PID 2: Reads boot initrd, summons Plexuses (`srv.vfs`, `srv.dev_mgr`, `srv.display`, `srv.input`, `srv.compositor`, `srv.wm`, and GUI apps) in staged dependency order, monitors heartbeats, and handles automatic service restarts. Verified live in `re40`.
+- [ ] **CS.2:** Modular Compositor Display Backends (`PROS-ARCH-COMP-02`):
+  - Decouple display presentation behind `IDisplayBackend` interface (`LfbBackend`, `SvgaBackend`, `VirtioGpuBackend`).
+  - Wire VMware SVGA II FIFO commands and hardware cursor plane (`SVGA_CMD_DEFINE_CURSOR` + `SVGA_CMD_MOVE_CURSOR`).
+- [ ] **CS.3:** Software Graphics & Rasterization Tier (`IRenderBackend`):
+  - Implement freestanding 2D blitter and software OpenGL 1.x pipeline (`TinyGL / SoftGL`) in `lib/pros` for zero-dependency window canvas 3D rendering.
+- [ ] **CS.4:** Window Manager Interactivity Polish:
+  - Wire interactive Minimize, Maximize/Tile, and Close controls on window decorations; implement taskbar window list.
+- [ ] **CS.5:** Port DOOM Engine (`doom.bax`):
+  - Integrate `doomgeneric` to render inside a standard 640x400 window surface with keyboard input and sound synthesis.
 

@@ -1120,6 +1120,33 @@ Public Class Scheduler
     End Sub
 
     ''
+    ' @brief Reap any terminated zombie process from the exited tasks tracking table.
+    ' @param outPid ByRef variable receiving the reaped Process ID.
+    ' @param outExitCode ByRef variable receiving the reaped process exit code.
+    ' @return True if a zombie was found and reaped, False if no zombies pending.
+    ''
+    Public Unsafe Function ReapAnyExitedProcess(ByRef outPid As UInt64, ByRef outExitCode As UInt32) As Boolean
+        outPid = 0
+        outExitCode = 0
+
+        Dim gFlags As UInt64 = Sync.SpinlockOps.AcquireIrqSave(schedGlobalLock)
+        Dim i As UInt32 = 0
+        While i < 64
+            If exitedPids(i) <> 0 Then
+                outPid = exitedPids(i)
+                outExitCode = exitedCodes(i)
+                exitedPids(i) = 0 ' Consume reaped zombie slot
+                Sync.SpinlockOps.ReleaseIrqRestore schedGlobalLock, gFlags
+                ReapAnyExitedProcess = True
+                Exit Function
+            End If
+            i = i + 1
+        Wend
+        Sync.SpinlockOps.ReleaseIrqRestore schedGlobalLock, gFlags
+        ReapAnyExitedProcess = False
+    End Function
+
+    ''
     ' @brief Query the termination status and exit code of a process.
     ' @param pid Process ID to query.
     ' @param outExitCode ByRef variable receiving the process exit code.

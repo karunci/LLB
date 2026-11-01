@@ -296,6 +296,8 @@ Module ProsApi
     Public Declare Function InitrdGetInfo Lib "libpros" Alias "Pros_Sys_Process_InitrdGetInfo" (ByVal outInfo As Pointer To InitrdInfo) As Boolean
     Public Declare Function InitrdMap Lib "libpros" Alias "Pros_Sys_Process_InitrdMap" (ByVal targetVaddr As UInt64) As Boolean
     Public Declare Function ProcessSpawn Lib "libpros" Alias "Pros_Sys_Process_Spawn" (ByVal path As String, ByVal args As String, Optional ByVal inSyn As SynapseId = 0, Optional ByVal outSyn As SynapseId = 0, Optional ByVal errSyn As SynapseId = 0) As ProcessId
+    Public Declare Function SpawnBaxProcess Lib "libpros" Alias "Pros_Sys_Process_SpawnBax" (ByVal name As String, ByVal shmId As UInt64, Optional ByVal args As String = 0) As ProcessId
+    Public Declare Function ReapProcess Lib "libpros" Alias "Pros_Sys_Process_ReapZombie" (ByRef outExitCode As UInt32) As ProcessId
     Public Declare Function ProcessWaitForExit Lib "libpros" Alias "Pros_Sys_Process_WaitForExit" (ByVal pid As ProcessId, ByRef outExitCode As UInt32) As Boolean
     Public Declare Function ProcessPollExit Lib "libpros" Alias "Pros_Sys_Process_PollExit" (ByVal pid As ProcessId, ByRef outExitCode As UInt32) As Int32
 

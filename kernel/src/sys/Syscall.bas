@@ -522,6 +522,22 @@ Namespace Sys
 
                     Dim exitCode As UInt32 = 0
 
+                    ' If targetPid == 0: adopt / reap ANY zombie process
+                    If targetPid = 0 Then
+                        Dim reapedPid As UInt64 = 0
+                        Dim foundZombie As Boolean = SchedEngine.ReapAnyExitedProcess(reapedPid, exitCode)
+                        If foundZombie Then
+                            If outPtr <> 0 Then
+                                Dim pOutReap As Pointer To UInt32 = Pointer To UInt32(outPtr)
+                                pOutReap(0) = exitCode
+                            End If
+                            Dispatch = reapedPid
+                        Else
+                            Dispatch = 0 ' No zombies pending
+                        End If
+                        Exit Function
+                    End If
+
                     If flags = 1 Then
                         ' Non-blocking poll
                         Dim pollStatus As Int32 = SchedEngine.GetProcessExitStatus(targetPid, exitCode)

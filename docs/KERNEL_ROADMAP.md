@@ -1,7 +1,7 @@
 # PROS Microkernel Architecture & Roadmap (`KERNEL_ROADMAP`)
 
 > **Target Architecture:** x86_64 Long Mode Bare-Metal Microkernel  
-> **Source Directory:** `tests/kernel/src/` (`tests/kernel/Kernel.llbproj`)  
+> **Source Directory:** `kernel/src/` (`kernel/Kernel.llbproj`)  
 > **Compiler:** `llbc-stage0` (LLVM 21 backend, embedded LLD)  
 > **Status:** Operational on Bare-Metal, QEMU (SMP 4), and VirtualBox  
 
@@ -77,19 +77,38 @@ graph TD
 
 | Syscall Number | Name | Arguments | Description |
 | :--- | :--- | :--- | :--- |
-| `0x01` | `SYS_CONSOLE_WRITE` | `(strPtr As Pointer To Byte, len As UInt64)` | Outputs string to COM1 and framebuffer. |
-| `0x02` | `SYS_PROCESS_YIELD` | `()` | Voluntarily yields remaining CPU quantum. |
-| `0x03` | `SYS_PROCESS_SLEEP` | `(ms As UInt64)` | Suspends caller for `ms` milliseconds. |
-| `0x04` | `SYS_PROCESS_EXIT` | `(code As UInt64)` | Terminates calling process cleanly. |
-| `0x05` | `SYS_PROCESS_GETPID`| `()` | Returns current process identifier. |
-| `0x06` | `SYS_GET_CORE_COUNT`| `()` | Returns total active online SMP cores. |
-| `0x07` | `SYS_GET_UPTIME` | `()` | Returns system uptime in milliseconds. |
-| `0x08` | `SYS_ALLOC_PAGES` | `(count As UInt64, targetVaddr As UInt64)` | Maps anonymous physical pages into `PDPT[1]`. |
-| `0x10` | `SYS_SYNAPSE_CONNECT`| `(srcId, dstId, caps)` | Establishes directed IPC communication channel. |
-| `0x11` | `SYS_SYNAPSE_PUSH` | `(synId, pktPtr)` | Sends axon packet over synapse channel. |
-| `0x12` | `SYS_SYNAPSE_POP` | `(synId, pktPtr)` | Receives incoming packet (blocking/non-blocking). |
-| `0x20` | `SYS_FB_GET_INFO` | `(infoPtr)` | Retrieves framebuffer dimensions, pitch, and bpp. |
-| `0x21` | `SYS_FB_MAP` | `(targetVaddr)` | Maps physical VRAM aperture into userspace (`0x1F` uncacheable). |
+| `1` | `SYS_CONSOLE_WRITE` | `(strPtr As Pointer To Byte, len As UInt64)` | Outputs string to COM1 UART and framebuffer. |
+| `2` | `SYS_PROCESS_YIELD` | `()` | Voluntarily yields remaining CPU quantum. |
+| `3` | `SYS_PROCESS_SLEEP` | `(ms As UInt64)` | Suspends caller for `ms` milliseconds. |
+| `6` | `SYS_PROCESS_GETPID`| `()` | Returns current process identifier. |
+| `10` | `SYS_PROCESS_SPAWN` | `(shmId, entryPoint, userRsp, namePtr)` | Spawns a new process from shared memory `.bax` image. |
+| `11` | `SYS_PROCESS_WAIT` | `(targetPid, outExitCodePtr)` | Synchronously waits for child termination. |
+| `16` | `SYS_PROCESS_EXIT` | `(code As UInt64)` | Terminates calling process cleanly. |
+| `19` | `SYS_GET_MOUSE` | `(outPktPtr)` | Consumes next PS/2 mouse packet from ring buffer. |
+| `20` | `SYS_GET_KEY` | `()` | Consumes next PS/2 keyboard scancode from ring buffer. |
+| `26` | `SYS_MEM_ALLOC_PAGES`| `(count As UInt64, targetVaddr As UInt64)` | Maps anonymous physical pages into `PDPT[1]`. |
+| `28` | `SYS_TIME_UPTIME` | `()` | Returns system uptime in milliseconds. |
+| `33` | `SYS_SYSTEM_INFO` | `(infoPtr)` | Returns microkernel version, topology, and uptime. |
+| `34` | `SYS_SMP_CORE_COUNT`| `()` | Returns total active online SMP cores. |
+| `50` | `SYS_NODE_REGISTER` | `(namePtr, role, caps)` | Enrolls process in Neural Node Registry. |
+| `51` | `SYS_SYNAPSE_CONNECT`| `(srcId, dstId, caps)` | Establishes directed IPC communication channel. |
+| `52` | `SYS_SYNAPSE_PUSH` | `(synId, pktPtr)` | Sends axon packet over synapse channel. |
+| `53` | `SYS_SYNAPSE_POP` | `(synId, pktPtr)` | Receives incoming packet (non-blocking). |
+| `54` | `SYS_SYNAPSE_WAIT` | `(synId, pktPtr)` | Receives incoming packet (blocking). |
+| `55` | `SYS_NODE_LOOKUP` | `(namePtr)` | Resolves registered Node ID by canonical name. |
+| `60` | `SYS_SHMEM_CREATE` | `(pages As UInt64)` | Allocates physical frames for shared memory segment. |
+| `61` | `SYS_SHMEM_ATTACH` | `(shmId, targetVaddr)` | Maps shared memory segment into caller's PML4. |
+| `62` | `SYS_SHMEM_DETACH` | `(shmId, targetVaddr)` | Unmaps shared memory segment from caller's PML4. |
+| `70` | `SYS_FB_GET_INFO` | `(infoPtr)` | Retrieves framebuffer dimensions, pitch, and bpp. |
+| `71` | `SYS_FB_MAP` | `(targetVaddr)` | Maps physical VRAM aperture into userspace (`0x1F` uncacheable). |
+| `72` | `SYS_PCI_GET_DEVICE_COUNT` | `()` | Returns number of discovered PCI devices on bus. |
+| `73` | `SYS_PCI_GET_DEVICE` | `(index, outDescPtr)` | Queries PCI descriptor (Vendor/Device ID, Class, BARs). |
+| `74` | `SYS_PCI_MAP_BAR` | `(pciIndex, barIndex, targetVaddr)` | Maps physical PCI BAR MMIO window into userland. |
+| `75` | `SYS_PORT_IN` | `(port, width)` | Safe userspace port I/O read (8/16/32-bit). |
+| `76` | `SYS_PORT_OUT` | `(port, value, width)` | Safe userspace port I/O write (8/16/32-bit). |
+| `77` | `SYS_GET_SYSTEM_METRICS` | `(outMetricsPtr)` | Queries real CPU load, Buddy RAM pool, KHeap, and PCI GPU. |
+| `80` | `SYS_INITRD_GET_INFO` | `(infoPtr)` | Queries physical address and size of Multiboot initrd. |
+| `81` | `SYS_INITRD_MAP` | `(targetVaddr)` | Maps initrd USTAR ramdisk into userland space. |
 
 ---
 
@@ -98,9 +117,11 @@ graph TD
 - [ ] **K.1:** Complete Kernel ABI type modernization (adopt `ProcessId`, `Handle`, `VirtualAddress`, and typed enums).
 - [ ] **K.2:** Inter-Core IPI (Inter-Processor Interrupt) cross-core task migration and TLB shootdown.
 - [ ] **K.3:** Dynamic ELF / BAX kernel module loader for loadable device drivers.
-- [ ] **K.4:** Dynamic Process Creation Subsystem (`SYS_PROCESS_SPAWN (10)`):
-  - Implement native microkernel syscall 10 (`SYS_PROCESS_SPAWN`) to allocate a dedicated user PML4 address space, map `.bax` segments at `0x40000000`, set up user stack at `0x78000000`, and enqueue a new Task Control Block (TCB) into `Scheduler`.
-  - Implement `Pros.Sys.Process.Spawn(path As String, args As String) As UInt64` and `WaitForExit(pid As UInt64, ByRef outExitCode As UInt32) As Boolean` in `libpros.a`.
-  - Enable the Terminal Shell (`terminal.bax`) to summon and execute userland executables from the configured `PATH` (`X:\System\Apps\CoreUtils\*.bax`) dynamically on demand.
+- [x] **K.4:** Dynamic Process Creation Subsystem (`SYS_PROCESS_SPAWN (10)` & `SYS_PROCESS_WAIT (11)`):
+  - Native microkernel syscall 10 (`SYS_PROCESS_SPAWN`) allocates user PML4 address space, maps `.bax` segments at `0x40000000`, sets up user stack at `0x78000000`, and enqueues a new Task Control Block (TCB) into `Scheduler`.
+  - Implemented `Pros.Sys.Process.Spawn` and `WaitForExit` in `libpros.a`.
+- [x] **K.5:** Pure Microkernel Boot Handoff (`PROS-ARCH-GENESIS-01`):
+  - Purged hardcoded secondary userland service probes from `KernelMain.bas`.
+  - Kernel strictly initializes hardware, probes `genesis.bax` from ramdisk, spawns `sys.genesis` as PID 1, and hands off the CPU to the scheduler. Verified live in `re40`.
 
 

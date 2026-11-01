@@ -157,6 +157,30 @@ Namespace Pros.Sys
         End Function
 
         ''
+        ' @brief Spawn a new child process directly from a Shared Memory buffer containing a BAX image.
+        ' @param name Identifier string.
+        ' @param shmId Shared memory segment handle containing the binary.
+        ' @param args Optional command line arguments.
+        ' @return Process ID (>0) on success, or 0 on error.
+        ''
+        Public Unsafe Function SpawnBax(ByVal name As String, ByVal shmId As UInt64, Optional ByVal args As String = 0) As UInt64
+            Dim argPtr As UInt64 = 0
+            If args <> 0 Then
+                argPtr = UInt64(Pointer To Byte(args))
+            End If
+            SpawnBax = Pros.Sys.RawSyscall.Call5(SYS_PROCESS_SPAWN, UInt64(Pointer To Byte(name)), shmId, 0, argPtr, 1)
+        End Function
+
+        ''
+        ' @brief Non-blocking adoption/reaping of any terminated child/zombie process.
+        ' @param outExitCode ByRef variable receiving the terminated process exit code.
+        ' @return PID of reaped process if reaped, 0 if no zombies pending.
+        ''
+        Public Unsafe Function ReapZombie(ByRef outExitCode As UInt32) As UInt64
+            ReapZombie = Pros.Sys.RawSyscall.Call3(SYS_PROCESS_WAIT, 0, UInt64(@outExitCode), 1)
+        End Function
+
+        ''
         ' @brief Synchronously wait for a child process to terminate and retrieve its exit code.
         ' @param pid Target Process ID.
         ' @param outExitCode ByRef variable receiving the child process exit code.

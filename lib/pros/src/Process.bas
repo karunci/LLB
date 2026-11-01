@@ -70,6 +70,23 @@ Namespace Pros.Sys
         End Function
 
         ''
+        ' @brief Query the CMOS hardware Real-Time Clock (Year, Month, Day, Hour, Min, Sec).
+        ' @param outRtc ByRef variable receiving the live RtcTime data.
+        ' @return True on success, False on error.
+        ''
+        Public Unsafe Function GetRealTime(ByRef outRtc As RtcTime) As Boolean
+            GetRealTime = (Pros.Sys.RawSyscall.Call1(SYS_TIME_GET_RTC, UInt64(AddressOf outRtc)) <> 0)
+        End Function
+
+        ''
+        ' @brief Read high-resolution CPU Time-Stamp Counter (RDTSC).
+        ' @return 64-bit cycle count since CPU reset.
+        ''
+        Public Unsafe Function GetTicks() As UInt64
+            GetTicks = Pros.Sys.RawSyscall.Call0(SYS_TIME_GET_TICKS)
+        End Function
+
+        ''
         ' @brief Allocate anonymous physical RAM pages and map them into user space.
         ' @param pageCount Number of 4KB pages to allocate.
         ' @param targetVaddr Base virtual address to map to (must be page aligned).

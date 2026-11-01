@@ -599,7 +599,7 @@ Module WmMain
                                 slot0Taken = True
                             ElseIf windows(k).X = 664 And windows(k).Y = 324 Then
                                 slot1Taken = True
-                            ElseIf windows(k).X = 16 And windows(k).Y = 450 Then
+                            ElseIf windows(k).X = 16 And windows(k).Y = 472 Then
                                 slot2Taken = True
                             End If
                             k = k + 1
@@ -613,7 +613,7 @@ Module WmMain
                             newY = 324
                         ElseIf Not slot2Taken Then
                             newX = 16
-                            newY = 450
+                            newY = 472
                         Else
                             newX = 60 + (windowCount * 30)
                             newY = 60 + (windowCount * 30)

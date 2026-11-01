@@ -213,9 +213,29 @@ Module WindowTheme
     End Sub
 
     ''
-    ' @brief Draw bottom-right resize gripper corner.
+    ' @brief Fill a rectangular region with solid ARGB color, strictly clipped to a bounding box.
     ''
-    Public Unsafe Sub DrawResizeGripper(ByRef surf As Surface, ByVal winX As Int32, ByVal winY As Int32, ByVal winW As Int32, ByVal winH As Int32, ByVal color As UInt32)
+    Public Unsafe Sub FillRectClipped(ByRef surf As Surface, ByVal rx As Int32, ByVal ry As Int32, ByVal rw As Int32, ByVal rh As Int32, ByVal color As UInt32, _
+                                      ByVal cx As Int32, ByVal cy As Int32, ByVal cw As Int32, ByVal ch As Int32)
+        If rw <= 0 Or rh <= 0 Or cw <= 0 Or ch <= 0 Then Exit Sub
+        Dim x0 As Int32 = rx
+        Dim y0 As Int32 = ry
+        Dim x1 As Int32 = rx + rw
+        Dim y1 As Int32 = ry + rh
+        If x0 < cx Then x0 = cx
+        If y0 < cy Then y0 = cy
+        If x1 > (cx + cw) Then x1 = cx + cw
+        If y1 > (cy + ch) Then y1 = cy + ch
+        If x1 > x0 And y1 > y0 Then
+            FillRect surf, x0, y0, x1 - x0, y1 - y0, color
+        End If
+    End Sub
+
+    ''
+    ' @brief Draw bottom-right resize gripper corner strictly clipped to a bounding box.
+    ''
+    Public Unsafe Sub DrawResizeGripperClipped(ByRef surf As Surface, ByVal winX As Int32, ByVal winY As Int32, ByVal winW As Int32, ByVal winH As Int32, ByVal color As UInt32, _
+                                              ByVal cx As Int32, ByVal cy As Int32, ByVal cw As Int32, ByVal ch As Int32)
         If surf.Pixels = 0 Then Exit Sub
         Dim pitchPix As UInt32 = surf.Pitch / 4
         Dim right As Int32 = winX + winW
@@ -228,9 +248,11 @@ Module WindowTheme
             While i <= d
                 Dim px As Int32 = (right - 2) - (d - i)
                 Dim py As Int32 = (bottom - 2) - i
-                If px >= 0 And px < surf.Width And py >= 0 And py < surf.Height Then
-                    Dim rowPtr As Pointer To UInt32 = surf.Pixels + (UInt32(py) * pitchPix)
-                    rowPtr(px) = color
+                If px >= cx And px < (cx + cw) And py >= cy And py < (cy + ch) Then
+                    If px >= 0 And px < surf.Width And py >= 0 And py < surf.Height Then
+                        Dim rowPtr As Pointer To UInt32 = surf.Pixels + (UInt32(py) * pitchPix)
+                        rowPtr(px) = color
+                    End If
                 End If
                 i = i + 1
             Wend
@@ -239,7 +261,14 @@ Module WindowTheme
     End Sub
 
     ''
-    ' @brief Render complete window frame decorations (shadow, frame, titlebar, accent, buttons, gripper).
+    ' @brief Draw bottom-right resize gripper corner.
+    ''
+    Public Unsafe Sub DrawResizeGripper(ByRef surf As Surface, ByVal winX As Int32, ByVal winY As Int32, ByVal winW As Int32, ByVal winH As Int32, ByVal color As UInt32)
+        DrawResizeGripperClipped surf, winX, winY, winW, winH, color, 0, 0, surf.Width, surf.Height
+    End Sub
+
+    ''
+    ' @brief Render complete window frame decorations strictly clipped to a damage rectangle.
     ' @param surf Target rendering surface (RAM backbuffer).
     ' @param x Window X position.
     ' @param y Window Y position.
@@ -248,17 +277,23 @@ Module WindowTheme
     ' @param focused True if window holds active input focus.
     ' @param state Normal (0), Minimized (1), Maximized (2).
     ' @param hoverHit Active hovered button (HIT_BTN_CLOSE, HIT_BTN_MAX, HIT_BTN_MIN, or 0).
+    ' @param cx Clipping rectangle left bound.
+    ' @param cy Clipping rectangle top bound.
+    ' @param cw Clipping rectangle width.
+    ' @param ch Clipping rectangle height.
     ''
-    Public Unsafe Sub DrawWindowFrame(ByRef surf As Surface, ByVal x As Int32, ByVal y As Int32, _
-                                      ByVal w As Int32, ByVal h As Int32, _
-                                      ByVal focused As Boolean, ByVal state As Int32, _
-                                      ByVal hoverHit As UInt32)
+    Public Unsafe Sub DrawWindowFrameClipped(ByRef surf As Surface, ByVal x As Int32, ByVal y As Int32, _
+                                            ByVal w As Int32, ByVal h As Int32, _
+                                            ByVal focused As Boolean, ByVal state As Int32, _
+                                            ByVal hoverHit As UInt32, _
+                                            ByVal cx As Int32, ByVal cy As Int32, _
+                                            ByVal cw As Int32, ByVal ch As Int32)
         If surf.Pixels = 0 Then Exit Sub
         If state = WIN_STATE_MINIMIZED Then Exit Sub
 
         ' 1. Outer drop-shadow (only for non-maximized floating windows)
         If state = WIN_STATE_NORMAL Then
-            FillRect surf, x + SHADOW_OFFSET, y + SHADOW_OFFSET, w, h, COLOR_WIN_SHADOW
+            FillRectClipped surf, x + SHADOW_OFFSET, y + SHADOW_OFFSET, w, h, COLOR_WIN_SHADOW, cx, cy, cw, ch
         End If
 
         ' 2. Window Frame Border
@@ -276,14 +311,14 @@ Module WindowTheme
             accentColor = COLOR_WIN_INACTIVE_ACCENT
         End If
 
-        FillRect surf, x, y, w, h, borderColor
-        FillRect surf, x + 1, y + 1, w - 2, h - 2, titleBgColor
+        FillRectClipped surf, x, y, w, h, borderColor, cx, cy, cw, ch
+        FillRectClipped surf, x + 1, y + 1, w - 2, h - 2, titleBgColor, cx, cy, cw, ch
 
         ' 3. Titlebar (height: TITLEBAR_HEIGHT)
-        FillRect surf, x + 1, y + 1, w - 2, TITLEBAR_HEIGHT, titleBgColor
+        FillRectClipped surf, x + 1, y + 1, w - 2, TITLEBAR_HEIGHT, titleBgColor, cx, cy, cw, ch
 
         ' 4. Titlebar Accent Indicator (left edge)
-        FillRect surf, x + 1, y + 1, 4, TITLEBAR_HEIGHT, accentColor
+        FillRectClipped surf, x + 1, y + 1, 4, TITLEBAR_HEIGHT, accentColor, cx, cy, cw, ch
 
         ' 5. Window Buttons (Minimize, Maximize/Restore, Close)
         Dim minBtnX As Int32 = (x + w) - 54
@@ -294,25 +329,43 @@ Module WindowTheme
         ' Minimize Button
         Dim minColor As UInt32 = COLOR_BTN_MIN_NORMAL
         If hoverHit = HIT_BTN_MIN Then minColor = COLOR_BTN_MIN_HOVER
-        FillRect surf, minBtnX, btnY, BUTTON_W, BUTTON_H, minColor
+        FillRectClipped surf, minBtnX, btnY, BUTTON_W, BUTTON_H, minColor, cx, cy, cw, ch
 
         ' Maximize / Restore Button
         Dim maxColor As UInt32 = COLOR_BTN_MAX_NORMAL
         If hoverHit = HIT_BTN_MAX Then maxColor = COLOR_BTN_MAX_HOVER
-        FillRect surf, maxBtnX, btnY, BUTTON_W, BUTTON_H, maxColor
+        FillRectClipped surf, maxBtnX, btnY, BUTTON_W, BUTTON_H, maxColor, cx, cy, cw, ch
 
         ' Close Button
         Dim closeColor As UInt32 = COLOR_BTN_CLOSE_NORMAL
         If hoverHit = HIT_BTN_CLOSE Then closeColor = COLOR_BTN_CLOSE_HOVER
-        FillRect surf, closeBtnX, btnY, BUTTON_W, BUTTON_H, closeColor
+        FillRectClipped surf, closeBtnX, btnY, BUTTON_W, BUTTON_H, closeColor, cx, cy, cw, ch
 
         ' 6. Window Client Canvas Area
-        FillRect surf, x + 2, y + TITLEBAR_HEIGHT + 2, w - 4, (h - TITLEBAR_HEIGHT) - 4, COLOR_WIN_CLIENT_BG
+        FillRectClipped surf, x + 2, y + TITLEBAR_HEIGHT + 2, w - 4, (h - TITLEBAR_HEIGHT) - 4, COLOR_WIN_CLIENT_BG, cx, cy, cw, ch
 
         ' 7. Bottom-Right Resize Gripper (only in normal state)
         If state = WIN_STATE_NORMAL Then
-            DrawResizeGripper surf, x, y, w, h, COLOR_RESIZE_GRIPPER
+            DrawResizeGripperClipped surf, x, y, w, h, COLOR_RESIZE_GRIPPER, cx, cy, cw, ch
         End If
+    End Sub
+
+    ''
+    ' @brief Render complete window frame decorations (shadow, frame, titlebar, accent, buttons, gripper).
+    ' @param surf Target rendering surface (RAM backbuffer).
+    ' @param x Window X position.
+    ' @param y Window Y position.
+    ' @param w Window width.
+    ' @param h Window height.
+    ' @param focused True if window holds active input focus.
+    ' @param state Normal (0), Minimized (1), Maximized (2).
+    ' @param hoverHit Active hovered button (HIT_BTN_CLOSE, HIT_BTN_MAX, HIT_BTN_MIN, or 0).
+    ''
+    Public Unsafe Sub DrawWindowFrame(ByRef surf As Surface, ByVal x As Int32, ByVal y As Int32, _
+                                      ByVal w As Int32, ByVal h As Int32, _
+                                      ByVal focused As Boolean, ByVal state As Int32, _
+                                      ByVal hoverHit As UInt32)
+        DrawWindowFrameClipped surf, x, y, w, h, focused, state, hoverHit, 0, 0, surf.Width, surf.Height
     End Sub
 
 End Module

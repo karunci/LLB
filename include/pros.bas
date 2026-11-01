@@ -181,6 +181,8 @@ Module ProsApi
         GetMouse       = 19
         MemAllocPages  = 26
         TimeUptime     = 28
+        TimeGetRtc     = 29
+        TimeGetTicks   = 30
         SmpCoreCount   = 34
         NodeRegister   = 50
         SynapseConnect = 51
@@ -280,6 +282,18 @@ Module ProsApi
         Public PhysAddr As PhysicalAddress
     End Structure
 
+    <Packed>
+    Public Structure RtcTime
+        Public Year          As UInt16
+        Public Month         As Byte
+        Public Day           As Byte
+        Public Hour          As Byte
+        Public Minute        As Byte
+        Public Second        As Byte
+        Public Pad           As Byte
+        Public UnixTimestamp As UInt64
+    End Structure
+
     ' Display Driver IPC Protocol Message Types (Synapse Control Plane)
     Public Const DRV_DISP_INIT          As UInt32 = &H0701
     Public Const DRV_DISP_GET_CAPS      As UInt32 = &H0702
@@ -336,6 +350,8 @@ Module ProsApi
     Public Declare Sub TerminateProcess Lib "libpros" Alias "Pros_Sys_Process_ExitProcess" (ByVal exitCode As UInt64)
     Public Declare Function GetCoreCount Lib "libpros" Alias "Pros_Sys_Process_GetCoreCount" () As UInt64
     Public Declare Function GetUptime Lib "libpros" Alias "Pros_Sys_Process_GetUptime" () As UInt64
+    Public Declare Function GetRealTime Lib "libpros" Alias "Pros_Sys_Process_GetRealTime" (ByRef outRtc As RtcTime) As Boolean
+    Public Declare Function GetTicks Lib "libpros" Alias "Pros_Sys_Process_GetTicks" () As UInt64
     Public Declare Function AllocatePages Lib "libpros" Alias "Pros_Sys_Process_AllocatePages" (ByVal pageCount As UInt64, ByVal targetVaddr As VirtualAddress) As Pointer To UInt32
     Public Declare Function InitrdGetInfo Lib "libpros" Alias "Pros_Sys_Process_InitrdGetInfo" (ByVal outInfo As Pointer To InitrdInfo) As Boolean
     Public Declare Function InitrdMap Lib "libpros" Alias "Pros_Sys_Process_InitrdMap" (ByVal targetVaddr As UInt64) As Boolean

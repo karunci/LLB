@@ -106,9 +106,6 @@ Module SvgaDriverMain
             FifoPush UInt32(y)
             FifoPush UInt32(w)
             FifoPush UInt32(h)
-            WriteReg SVGA_REG_SYNC, 1
-        Else
-            WriteReg SVGA_REG_SYNC, 1
         End If
     End Sub
 
@@ -205,7 +202,19 @@ Module SvgaDriverMain
             End If
         End If
 
-        ' 6. Enable Hardware SVGA Engine
+        ' Query display geometry
+        If Not GetDisplayInfo(dispInfo) Then
+            ConsoleWriteLine "[DRV_SVGA] WARN: Could not query display info; defaulting to 1024x768"
+            dispInfo.Width = 1024
+            dispInfo.Height = 768
+            dispInfo.Pitch = 4096
+            dispInfo.Bpp = 32
+        End If
+
+        ' 6. Configure mode dimensions and enable Hardware SVGA Engine
+        WriteReg SVGA_REG_WIDTH, UInt32(dispInfo.Width)
+        WriteReg SVGA_REG_HEIGHT, UInt32(dispInfo.Height)
+        WriteReg SVGA_REG_BITS_PER_PIXEL, UInt32(dispInfo.Bpp)
         WriteReg SVGA_REG_ENABLE, 1
         ConsoleWriteLine "[DRV_SVGA] Hardware Acceleration Engine Enabled."
 
@@ -217,15 +226,6 @@ Module SvgaDriverMain
             Exit Function
         End If
         ConsoleWriteLine "[DRV_SVGA] Mapped VRAM Aperture at 0x78000000"
-
-        ' Query display geometry
-        If Not GetDisplayInfo(dispInfo) Then
-            ConsoleWriteLine "[DRV_SVGA] WARN: Could not query display info; defaulting to 1024x768"
-            dispInfo.Width = 1024
-            dispInfo.Height = 768
-            dispInfo.Pitch = 4096
-            dispInfo.Bpp = 32
-        End If
 
         ' 8. Register Node 'drv.disp.svga'
         Dim drvNodeId As UInt64 = NodeRegister(NODE_KIND_DEVICE, "drv.disp.svga", 7)

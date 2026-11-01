@@ -115,8 +115,11 @@ Namespace Mem
                 Exit Sub
             End If
 
-            ' Protect beyond 16GB (0x400000000) for early identity paging
-            If physAddr >= &H400000000 Then
+            ' Protect beyond 1GB (&H40000000) for early identity paging window.
+            ' Physical frames >= 1GB reside in the 0x40000000-0x80000000 range which is
+            ' reserved for User Space in User PML4s (PDPT[1]), preventing Ring 0 page faults
+            ' when dereferencing intrusive free-list pointers during syscalls.
+            If physAddr >= &H40000000 Then
                 Exit Sub
             End If
 
@@ -213,7 +216,7 @@ Namespace Mem
 
                             Dim addr As UInt64 = startAddr
                             While addr < endAddr
-                                If addr >= &H1000000 And addr < &H400000000 Then
+                                If addr >= &H1000000 And addr < &H40000000 Then
                                     ' Exclude BuddyAllocator User Pool (64MB - 128MB) and Initrd archive
                                     If addr >= &H4000000 And addr < &H8000000 Then
                                         ' Reserved exclusively for Buddy Allocator (User/Shmem/Demand)
@@ -298,7 +301,7 @@ Namespace Mem
 
                                 addr = startAddr
                                 While addr < endAddr
-                                    If addr >= &H1000000 And addr < &H400000000 Then
+                                    If addr >= &H1000000 And addr < &H40000000 Then
                                         ' Exclude BuddyAllocator User Pool (64MB - 128MB) and Initrd archive
                                         If addr >= &H4000000 And addr < &H8000000 Then
                                             ' Reserved exclusively for Buddy Allocator (User/Shmem/Demand)

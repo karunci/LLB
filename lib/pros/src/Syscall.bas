@@ -15,6 +15,8 @@ Namespace Pros.Sys
     Public Const SYS_GET_KEY         As UInt64 = 20
     Public Const SYS_MEM_ALLOC_PAGES As UInt64 = 26
     Public Const SYS_TIME_UPTIME     As UInt64 = 28
+    Public Const SYS_TIME_GET_RTC    As UInt64 = 29
+    Public Const SYS_TIME_GET_TICKS  As UInt64 = 30
     Public Const SYS_SMP_CORE_COUNT  As UInt64 = 34
 
     Public Const SYS_NODE_REGISTER   As UInt64 = 50
@@ -87,7 +89,43 @@ Namespace Pros.Sys
         Public GpuDriverType   As UInt32 ' 0 = GOP/VESA LFB, 1 = VMware SVGA-II, 2 = VirtIO-GPU
     End Structure
 
+    <Packed>
+    Public Structure RtcTime
+        Public Year          As UInt16
+        Public Month         As Byte
+        Public Day           As Byte
+        Public Hour          As Byte
+        Public Minute        As Byte
+        Public Second        As Byte
+        Public Pad           As Byte
+        Public UnixTimestamp As UInt64
+    End Structure
+
     Public Module RawSyscall
+
+        ''
+        ' @brief Query CMOS Real-Time Clock hardware registers.
+        ' @param rtc Destination RtcTime structure.
+        ' @return True if read succeeded.
+        ''
+        Public Unsafe Function GetRealTime(ByRef rtc As RtcTime) As Boolean
+            GetRealTime = (Call1(SYS_TIME_GET_RTC, UInt64(AddressOf rtc)) <> 0)
+        End Function
+
+        ''
+        ' @brief Read high-resolution CPU Time-Stamp Counter (ticks).
+        ' @return 64-bit cycle count since CPU reset.
+        ''
+        Public Unsafe Function GetTicks() As UInt64
+            GetTicks = Call0(SYS_TIME_GET_TICKS)
+        End Function
+
+        ''
+        ' @brief Query kernel monotonic uptime in milliseconds.
+        ''
+        Public Unsafe Function GetUptime() As UInt64
+            GetUptime = Call0(SYS_TIME_UPTIME)
+        End Function
 
         ''
         ' @brief Invoke x86_64 syscall instruction with 0 arguments.

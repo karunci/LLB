@@ -91,6 +91,18 @@ Namespace Sys
         Public GpuDriverType   As UInt32 ' 0 = GOP/VESA LFB, 1 = VMware SVGA-II, 2 = VirtIO-GPU
     End Structure
 
+    <Packed>
+    Public Structure RtcTime
+        Public Year          As UInt16
+        Public Month         As Byte
+        Public Day           As Byte
+        Public Hour          As Byte
+        Public Minute        As Byte
+        Public Second        As Byte
+        Public Pad           As Byte
+        Public UnixTimestamp As UInt64
+    End Structure
+
     Public Module Syscall
 
         ' Native Microkernel System Call Constants
@@ -105,6 +117,8 @@ Namespace Sys
         Public Const SYS_GET_KEY         As UInt64 = 20
         Public Const SYS_MEM_ALLOC_PAGES As UInt64 = 26
         Public Const SYS_TIME_UPTIME     As UInt64 = 28
+        Public Const SYS_TIME_GET_RTC    As UInt64 = 29
+        Public Const SYS_TIME_GET_TICKS  As UInt64 = 30
         Public Const SYS_SYSTEM_INFO     As UInt64 = 33
         Public Const SYS_SMP_CORE_COUNT  As UInt64 = 34
 
@@ -180,6 +194,41 @@ Namespace Sys
             Dim highPart As UInt32 = 0
             Asm "rdmsr" : "=a"(lowPart), "=d"(highPart) : "c"(msr) : "memory"
             ReadMsr = (CType(UInt64, highPart) LShift 32) Or CType(UInt64, lowPart)
+        End Function
+
+        ''
+        ' @brief Read CMOS RTC hardware register via ports 0x70/0x71.
+        ''
+        Private Unsafe Function CmosRead(ByVal reg As Byte) As Byte
+            Arch.X86_64.PortIO.OutB &H70, reg
+            Arch.X86_64.PortIO.IoWait
+            CmosRead = Arch.X86_64.PortIO.InB(&H71)
+        End Function
+
+        ''
+        ' @brief Check if CMOS RTC update is in progress (UIP flag).
+        ''
+        Private Unsafe Function CmosIsUpdating() As Boolean
+            Arch.X86_64.PortIO.OutB &H70, &H0A
+            Arch.X86_64.PortIO.IoWait
+            CmosIsUpdating = ((Arch.X86_64.PortIO.InB(&H71) And &H80) <> 0)
+        End Function
+
+        ''
+        ' @brief Convert BCD byte to standard binary byte.
+        ''
+        Private Function BcdToBin(ByVal val As Byte) As Byte
+            BcdToBin = ((val RShift 4) * 10) + (val And &H0F)
+        End Function
+
+        ''
+        ' @brief Read 64-bit high-resolution CPU Time-Stamp Counter (RDTSC).
+        ''
+        Private Unsafe Function ReadTsc() As UInt64
+            Dim lowPart As UInt32 = 0
+            Dim highPart As UInt32 = 0
+            Asm "rdtsc" : "=a"(lowPart), "=d"(highPart) : : "memory"
+            ReadTsc = (CType(UInt64, highPart) LShift 32) Or CType(UInt64, lowPart)
         End Function
 
         ''
@@ -653,6 +702,57 @@ Namespace Sys
                 Case SYS_TIME_UPTIME
                     Dispatch = SchedEngine.GetUptime()
 
+                Case SYS_TIME_GET_TICKS
+                    Dispatch = ReadTsc()
+
+                Case SYS_TIME_GET_RTC
+                    ' arg1 = pointer to RtcTime structure in user space
+                    If arg1 <> 0 And ValidateUserBuffer(arg1, SizeOf(RtcTime)) Then
+                        Dim timeout As UInt32 = 0
+                        While CmosIsUpdating() And timeout < 1000
+                            timeout = timeout + 1
+                        Wend
+
+                        Dim sec As Byte = CmosRead(0)
+                        Dim min As Byte = CmosRead(2)
+                        Dim hr  As Byte = CmosRead(4)
+                        Dim day As Byte = CmosRead(7)
+                        Dim mon As Byte = CmosRead(8)
+                        Dim yr  As Byte = CmosRead(9)
+                        Dim statusB As Byte = CmosRead(&H0B)
+
+                        ' Convert BCD to binary if bit 2 of statusB is clear
+                        If (statusB And &H04) = 0 Then
+                            sec = BcdToBin(sec)
+                            min = BcdToBin(min)
+                            hr  = BcdToBin(hr And &H7F) Or (hr And &H80)
+                            day = BcdToBin(day)
+                            mon = BcdToBin(mon)
+                            yr  = BcdToBin(yr)
+                        End If
+
+                        ' Convert 12h to 24h if bit 1 of statusB is clear and PM bit set
+                        If (statusB And &H02) = 0 And (hr And &H80) <> 0 Then
+                            hr = ((hr And &H7F) + 12) Mod 24
+                        End If
+
+                        Dim fullYear As UInt16 = 2000 + UInt16(yr)
+                        If yr >= 70 Then fullYear = 1900 + UInt16(yr)
+
+                        Dim pRtc As Pointer To RtcTime = Pointer To RtcTime(arg1)
+                        pRtc.Year = fullYear
+                        pRtc.Month = mon
+                        pRtc.Day = day
+                        pRtc.Hour = hr
+                        pRtc.Minute = min
+                        pRtc.Second = sec
+                        pRtc.Pad = 0
+                        pRtc.UnixTimestamp = SchedEngine.GetUptime() / 1000
+                        Dispatch = 1
+                    Else
+                        Dispatch = 0
+                    End If
+
                 Case SYS_SMP_CORE_COUNT
                     Dispatch = UInt64(Arch.Acpi.GetCpuCount())
 
@@ -806,7 +906,7 @@ Namespace Sys
                         Dim pageCount As UInt64 = (lfbSize + 4095) / 4096
                         Dim pIdx As UInt64
                         For pIdx = 0 To pageCount - 1
-                            VmmEngine.MapPage callerCr3, arg1 + (pIdx * 4096), lfbPhys + (pIdx * 4096), &H07 ' Present | Writable | User
+                            VmmEngine.MapPage callerCr3, arg1 + (pIdx * 4096), lfbPhys + (pIdx * 4096), &H0F ' Present | Writable | User | Write-Combining (PAT 1)
                         Next pIdx
                         Dispatch = 1
                     Else

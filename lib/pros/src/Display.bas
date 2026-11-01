@@ -84,7 +84,7 @@ Namespace Pros.Driver
         Public Unsafe Function Map(ByVal targetVaddr As UInt64) As Pointer To UInt32
             Dim res As UInt64 = Pros.Sys.RawSyscall.Call1(SYS_FB_MAP, targetVaddr)
             If res = 1 Then
-                Map = *UInt32(targetVaddr)
+                Map = Pointer To UInt32(targetVaddr)
             Else
                 Map = Nothing
             End If

@@ -76,6 +76,8 @@ Module CompositorMain
     Private winTrackW(32) As Int32
     Private winTrackH(32) As Int32
     Private winTrackState(32) As Int32
+    Private winTrackFocused(32) As Boolean
+    Private winTrackZ(32) As UInt32
 
     ''
     ' @brief Zero-copy blit of client surface pixels directly into window client area,
@@ -459,6 +461,62 @@ Module CompositorMain
     End Sub
 
     ''
+    ' @brief Render null-terminated ASCII text string in 5x7 font strictly clipped to a bounding box.
+    ''
+    Private Unsafe Sub DrawText5x7Clipped(ByRef surf As Surface, ByVal x As Int32, ByVal y As Int32, ByVal text As Pointer To Byte, ByVal color As UInt32, _
+                                         ByVal cx As Int32, ByVal cy As Int32, ByVal cw As Int32, ByVal ch As Int32)
+        If surf.Pixels = 0 Or text = 0 Then Exit Sub
+        If cw <= 0 Or ch <= 0 Then Exit Sub
+        Dim tx As Int32 = x
+        Dim i As UInt32 = 0
+        While text(i) <> 0
+            If (tx + 5) >= cx And tx < (cx + cw) And (y + 7) >= cy And y < (cy + ch) Then
+                DrawGlyph5x7 surf, tx, y, text(i), color
+            End If
+            tx = tx + 6
+            i = i + 1
+        Wend
+    End Sub
+
+    ''
+    ' @brief Render window title text clipped to damage rectangle AND occluded by higher Z-order windows.
+    ''
+    Private Unsafe Sub DrawWindowTitleOcclusionClipped(ByRef surf As Surface, ByVal x As Int32, ByVal y As Int32, _
+                                                       ByVal text As Pointer To Byte, ByVal color As UInt32, _
+                                                       ByVal cx As Int32, ByVal cy As Int32, ByVal cw As Int32, ByVal ch As Int32, _
+                                                       ByVal currentZ As UInt32)
+        If surf.Pixels = 0 Or text = 0 Then Exit Sub
+        If cw <= 0 Or ch <= 0 Then Exit Sub
+        Dim tx As Int32 = x
+        Dim i As UInt32 = 0
+        While text(i) <> 0
+            If (tx + 5) >= cx And tx < (cx + cw) And (y + 7) >= cy And y < (cy + ch) Then
+                Dim isGlyphOccluded As Boolean = False
+                If pWindowTable <> 0 Then
+                    Dim higherZ As UInt32 = currentZ + 1
+                    While higherZ < pWindowTable.Count
+                        Dim hWin As Pointer To WindowDescriptor = AddressOf pWindowTable.Windows(higherZ)
+                        If hWin.State <> WIN_STATE_MINIMIZED Then
+                            If (tx + 5) >= hWin.X And tx < (hWin.X + hWin.Width) And _
+                               (y + 7) >= hWin.Y And y < (hWin.Y + hWin.Height) Then
+                                isGlyphOccluded = True
+                                Exit While
+                            End If
+                        End If
+                        higherZ = higherZ + 1
+                    Wend
+                End If
+
+                If Not isGlyphOccluded Then
+                    DrawGlyph5x7 surf, tx, y, text(i), color
+                End If
+            End If
+            tx = tx + 6
+            i = i + 1
+        Wend
+    End Sub
+
+    ''
     ' @brief Render live mouse coordinates text on top system menu bar.
     '        Rendered exclusively to backSurf; flushed to display service.
     ''
@@ -478,6 +536,57 @@ Module CompositorMain
 
         If flushToScreen Then
             FlushDirtyRegion 430, 6, 180, 14
+        End If
+    End Sub
+
+    ''
+    ' @brief Render live system real-time clock on top menu bar.
+    '        Queries CMOS RTC via GetRealTime and renders HH:MM:SS format.
+    ' @param flushToScreen True if dirty region should be immediately flushed.
+    ''
+    Private Unsafe Sub RenderSystemClock(ByVal flushToScreen As Boolean)
+        If backSurf.Pixels = 0 Then Exit Sub
+
+        Dim rtc As RtcTime
+        GetRealTime rtc
+
+        Dim clockBuf(32) As Byte
+        Dim cIdx As UInt32 = 0
+
+        AppendStr "TIME: ", @clockBuf(0), cIdx
+
+        ' Hours (2-digit zero-padded)
+        If rtc.Hour < 10 Then
+            clockBuf(cIdx) = 48 ' '0'
+            cIdx = cIdx + 1
+        End If
+        AppendUInt UInt32(rtc.Hour), @clockBuf(0), cIdx
+        clockBuf(cIdx) = 58 ' ':'
+        cIdx = cIdx + 1
+
+        ' Minutes (2-digit zero-padded)
+        If rtc.Minute < 10 Then
+            clockBuf(cIdx) = 48 ' '0'
+            cIdx = cIdx + 1
+        End If
+        AppendUInt UInt32(rtc.Minute), @clockBuf(0), cIdx
+        clockBuf(cIdx) = 58 ' ':'
+        cIdx = cIdx + 1
+
+        ' Seconds (2-digit zero-padded)
+        If rtc.Second < 10 Then
+            clockBuf(cIdx) = 48 ' '0'
+            cIdx = cIdx + 1
+        End If
+        AppendUInt UInt32(rtc.Second), @clockBuf(0), cIdx
+        clockBuf(cIdx) = 0
+
+        Dim clockX As Int32 = dispInfo.Width - 170
+        FillRect backSurf, clockX, 6, 160, 14, &HFF232731
+        DrawText5x7 backSurf, clockX + 4, 10, @clockBuf(0), &HFFEBCB8B
+
+        If flushToScreen Then
+            FlushDirtyRegion clockX, 6, 160, 14
         End If
     End Sub
 
@@ -597,9 +706,9 @@ Module CompositorMain
             If RectIntersects(rx, ry, rw, rh, dispInfo.Width - 340, 10, 180, 10) Then
                 DrawText5x7 backSurf, dispInfo.Width - 340, 10, SYSTEM_VERSION_TAG, &HFF88C0D0
             End If
-            ' SMP Status
-            If RectIntersects(rx, ry, rw, rh, dispInfo.Width - 170, 10, 160, 10) Then
-                DrawText5x7 backSurf, dispInfo.Width - 170, 10, "SMP 4 CORES  ONLINE", &HFFA3BE8C
+            ' Live System Real-Time Clock
+            If RectIntersects(rx, ry, rw, rh, dispInfo.Width - 170, 6, 160, 14) Then
+                RenderSystemClock False
             End If
         End If
 
@@ -618,34 +727,86 @@ Module CompositorMain
 
                     ' Check outer intersection (including shadow)
                     If RectIntersects(win.X, win.Y, winOuterW, winOuterH, rx, ry, rw, rh) Then
-                        ' 3a. Draw window frame decorations
-                        DrawWindowFrame backSurf, win.X, win.Y, win.Width, win.Height, win.Focused, win.State, 0
+                        ' Check if damage rectangle is completely occluded by any higher Z-order window
+                        Dim isOccluded As Boolean = False
+                        Dim oj As UInt32 = wi + 1
+                        While oj < pWindowTable.Count
+                            Dim oWin As Pointer To WindowDescriptor = AddressOf pWindowTable.Windows(oj)
+                            If oWin.State <> WIN_STATE_MINIMIZED Then
+                                If rx >= oWin.X And (rx + rw) <= (oWin.X + oWin.Width) And _
+                                   ry >= oWin.Y And (ry + rh) <= (oWin.Y + oWin.Height) Then
+                                    isOccluded = True
+                                    Exit While
+                                End If
+                            End If
+                            oj = oj + 1
+                        Wend
 
-                        ' 3b. Draw window title text
-                        Dim titleColor As UInt32 = COLOR_WIN_INACTIVE_TEXT
-                        If win.Focused Then titleColor = COLOR_WIN_ACTIVE_TEXT
-                        DrawText5x7 backSurf, win.X + 16, win.Y + 10, @win.Title(0), titleColor
+                        If Not isOccluded Then
+                            Dim clX As Int32 = win.X + 2
+                            Dim clY As Int32 = win.Y + TITLEBAR_HEIGHT + 2
+                            Dim clW As Int32 = win.Width - 4
+                            Dim clH As Int32 = (win.Height - TITLEBAR_HEIGHT) - 4
 
-                        ' 3c. Blit client surface if present
-                        If win.ShmId <> 0 Then
-                            Dim wId As UInt32 = win.WinId
-                            If wId > 0 And wId <= 16 Then
-                                If clientSurfaces(wId) = 0 Or clientShmIds(wId) <> win.ShmId Then
-                                    Dim clientVaddr As UInt64 = &H68000000 + (UInt64(wId) * &H00400000)
-                                    If ShmemAttach(win.ShmId, clientVaddr) <> 0 Then
-                                        clientSurfaces(wId) = *UInt32(clientVaddr)
-                                        clientShmIds(wId) = win.ShmId
+                            ' Check if damage rectangle intersects window decorations
+                            Dim decorDamaged As Boolean = False
+                            If rx < clX Or ry < clY Or (rx + rw) > (clX + clW) Or (ry + rh) > (clY + clH) Then
+                                decorDamaged = True
+                            End If
+
+                            ' 3a. Draw window frame decorations ONLY if decorations are damaged
+                            If decorDamaged Then
+                                DrawWindowFrameClipped backSurf, win.X, win.Y, win.Width, win.Height, win.Focused, win.State, 0, rx, ry, rw, rh
+
+                                ' 3b. Draw window title text strictly clipped to damage rect and occluded by higher windows
+                                If RectIntersects(win.X + 16, win.Y + 10, win.Width - 70, 10, rx, ry, rw, rh) Then
+                                    Dim titleColor As UInt32 = COLOR_WIN_INACTIVE_TEXT
+                                    If win.Focused Then titleColor = COLOR_WIN_ACTIVE_TEXT
+                                    DrawWindowTitleOcclusionClipped backSurf, win.X + 16, win.Y + 10, @win.Title(0), titleColor, rx, ry, rw, rh, wi
+                                End If
+                            End If
+
+                            ' 3c. Blit client surface strictly clipped to intersection with damage rect
+                            Dim ix0 As Int32 = clX
+                            Dim iy0 As Int32 = clY
+                            Dim ix1 As Int32 = clX + clW
+                            Dim iy1 As Int32 = clY + clH
+
+                            If ix0 < rx Then ix0 = rx
+                            If iy0 < ry Then iy0 = ry
+                            If ix1 > (rx + rw) Then ix1 = rx + rw
+                            If iy1 > (ry + rh) Then iy1 = ry + rh
+
+                            If ix1 > ix0 And iy1 > iy0 Then
+                                Dim outW As Int32 = ix1 - ix0
+                                Dim outH As Int32 = iy1 - iy0
+                                Dim blittedClient As Boolean = False
+                                If win.ShmId <> 0 Then
+                                    Dim wId As UInt32 = win.WinId
+                                    If wId > 0 And wId <= 16 Then
+                                        If clientSurfaces(wId) = 0 Or clientShmIds(wId) <> win.ShmId Then
+                                            Dim clientVaddr As UInt64 = &H68000000 + (UInt64(wId) * &H00400000)
+                                            If ShmemAttach(win.ShmId, clientVaddr) <> 0 Then
+                                                clientSurfaces(wId) = Pointer To UInt32(clientVaddr)
+                                                clientShmIds(wId) = win.ShmId
+                                            End If
+                                        End If
+
+                                        If clientSurfaces(wId) <> 0 Then
+                                            Dim surfW As Int32 = win.SurfaceWidth
+                                            Dim surfH As Int32 = win.SurfaceHeight
+                                            If surfW <= 0 Then surfW = clW
+                                            If surfH <= 0 Then surfH = clH
+                                            BlitClientAreaClipped ix0, iy0, outW, outH, clX, clY, clW, clH, surfW, surfH, clientSurfaces(wId)
+                                            blittedClient = True
+                                        End If
                                     End If
                                 End If
 
-                                If clientSurfaces(wId) <> 0 Then
-                                    Dim clientW As Int32 = win.Width - 4
-                                    Dim clientH As Int32 = (win.Height - TITLEBAR_HEIGHT) - 4
-                                    Dim surfW As Int32 = win.SurfaceWidth
-                                    Dim surfH As Int32 = win.SurfaceHeight
-                                    If surfW <= 0 Then surfW = clientW
-                                    If surfH <= 0 Then surfH = clientH
-                                    BlitClientArea win.X + 2, win.Y + TITLEBAR_HEIGHT + 2, clientW, clientH, surfW, surfH, clientSurfaces(wId)
+                                ' Unconditionally fill solid client canvas background if client surface is unattached,
+                                ' preventing any lower Z-order window contents from bleeding through.
+                                If Not blittedClient Then
+                                    FillRect backSurf, ix0, iy0, outW, outH, COLOR_WIN_CLIENT_BG
                                 End If
                             End If
                         End If
@@ -796,6 +957,7 @@ Module CompositorMain
         Dim lastButtons As Byte = 0
         Dim inPkt As AxonPacket
         Dim nextFrameTime As UInt64 = GetUptime()
+        Dim nextClockTime As UInt64 = 0
         lastFpsTime = nextFrameTime
 
         Do
@@ -805,7 +967,7 @@ Module CompositorMain
             ' 0. Service incoming Synapse control packets on srv.compositor node
             While SynapsePop(srvNodeId, inPkt)
                 If inPkt.PacketType = WM_CMD_REGISTER_TABLE Then
-                    Dim pShmId As Pointer To UInt64 = *UInt64(@inPkt.Payload(0))
+                    Dim pShmId As Pointer To UInt64 = Pointer To UInt64(@inPkt.Payload(0))
                     Dim tableVaddr As UInt64 = &H62000000
                     If pWindowTable = 0 Then
                         If ShmemAttach(pShmId(0), tableVaddr) <> 0 Then
@@ -816,7 +978,7 @@ Module CompositorMain
                     DamageAddFull damage, dispInfo.Width, dispInfo.Height
                 ElseIf inPkt.PacketType = WM_CMD_WINDOW_DIRTY Then
                     If inPkt.PayloadLength >= 20 Then
-                        Dim pDirtyPayload As Pointer To Int32 = *Int32(@inPkt.Payload(0))
+                        Dim pDirtyPayload As Pointer To Int32 = Pointer To Int32(@inPkt.Payload(0))
                         Dim dWinId As UInt32 = UInt32(pDirtyPayload(0))
                         Dim dRx As Int32 = pDirtyPayload(1)
                         Dim dRy As Int32 = pDirtyPayload(2)
@@ -850,7 +1012,7 @@ Module CompositorMain
                         End If
                     End If
                 ElseIf inPkt.PacketType = WM_CMD_SET_CURSOR Then
-                    Dim pCurType As Pointer To UInt32 = *UInt32(@inPkt.Payload(0))
+                    Dim pCurType As Pointer To UInt32 = Pointer To UInt32(@inPkt.Payload(0))
                     If pCurType(0) <> currentCursor Then
                         currentCursor = pCurType(0)
                         If cursorInitialized Then
@@ -912,9 +1074,9 @@ Module CompositorMain
                         mEvtPkt.PacketType = WM_CMD_MOUSE_EVENT
                         mEvtPkt.SourceNode = srvNodeId
                         mEvtPkt.TargetNode = wmNodeId
-                        Dim pMx As Pointer To Int32 = *Int32(@mEvtPkt.Payload(0))
-                        Dim pMy As Pointer To Int32 = *Int32(@mEvtPkt.Payload(4))
-                        Dim pBtn As Pointer To Int32 = *Int32(@mEvtPkt.Payload(8))
+                        Dim pMx As Pointer To Int32 = Pointer To Int32(@mEvtPkt.Payload(0))
+                        Dim pMy As Pointer To Int32 = Pointer To Int32(@mEvtPkt.Payload(4))
+                        Dim pBtn As Pointer To Int32 = Pointer To Int32(@mEvtPkt.Payload(8))
                         pMx(0) = targetMx
                         pMy(0) = targetMy
                         pBtn(0) = Int32(mState.Buttons)
@@ -1009,7 +1171,7 @@ Module CompositorMain
                             If Not winTrackKnown(wId) Then
                                 DamageAdd damage, twdesc.X - 4, twdesc.Y - 4, twdesc.Width + 16, twdesc.Height + 16, dispInfo.Width, dispInfo.Height
                                 winTrackKnown(wId) = True
-                            ElseIf twdesc.X <> winTrackX(wId) Or twdesc.Y <> winTrackY(wId) Or twdesc.Width <> winTrackW(wId) Or twdesc.Height <> winTrackH(wId) Or twdesc.State <> winTrackState(wId) Then
+                            ElseIf twdesc.X <> winTrackX(wId) Or twdesc.Y <> winTrackY(wId) Or twdesc.Width <> winTrackW(wId) Or twdesc.Height <> winTrackH(wId) Or twdesc.State <> winTrackState(wId) Or twdesc.Focused <> winTrackFocused(wId) Or twi <> winTrackZ(wId) Then
                                 DamageAdd damage, winTrackX(wId) - 4, winTrackY(wId) - 4, winTrackW(wId) + 16, winTrackH(wId) + 16, dispInfo.Width, dispInfo.Height
                                 DamageAdd damage, twdesc.X - 4, twdesc.Y - 4, twdesc.Width + 16, twdesc.Height + 16, dispInfo.Width, dispInfo.Height
                             End If
@@ -1018,6 +1180,8 @@ Module CompositorMain
                             winTrackW(wId) = twdesc.Width
                             winTrackH(wId) = twdesc.Height
                             winTrackState(wId) = twdesc.State
+                            winTrackFocused(wId) = twdesc.Focused
+                            winTrackZ(wId) = twi
                         End If
                         twi = twi + 1
                     Wend
@@ -1027,6 +1191,12 @@ Module CompositorMain
 
             ' C. 60 FPS Presentation Gate (strictly paced to 16ms intervals)
             If nowTime >= nextFrameTime Then
+                ' Periodic system clock refresh (every 500ms)
+                If nowTime >= nextClockTime Then
+                    DamageAdd damage, dispInfo.Width - 170, 6, 160, 14, dispInfo.Width, dispInfo.Height
+                    nextClockTime = nowTime + 500
+                End If
+
                 ' Telemetry scanner pulse animation
                 If badgeActive Then
                     DamageAdd damage, badgeX, badgeY, 200, 26, dispInfo.Width, dispInfo.Height

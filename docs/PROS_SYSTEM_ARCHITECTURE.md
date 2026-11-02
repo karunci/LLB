@@ -524,6 +524,27 @@ To eliminate external runtime dependencies (such as Python), the BAX packaging t
 - **Packaging Logic:** Directly parses ELF64 headers, extracts `.text`, `.rodata`, `.data`, and `.bss` segments, validates JSON manifests, calculates checksums, and serializes the complete Neural BAX container binary stream natively.
 - Integrated into `tools/pack_initrd.sh` and `tools/rebuild_all.sh` as the primary production packager.
 
+## 13. Unified Window Manager Input Event Routing Pipeline
+
+### 13.1 Production Architecture & Focus Isolation
+In production windowing systems (such as X11/Wayland and Windows Shell), user applications never poll raw hardware scancode buffers directly. Instead:
+1. **Single Event Consumer (`srv.wm`):** The Window Manager daemon serves as the exclusive Ring 3 consumer of keyboard and mouse hardware events.
+2. **Zero-Copy Lock-Free Event Routing:** `srv.wm` maintains a shared memory `WindowTable` containing dedicated, decoupled event queues (`Queues(16) As WindowEventQueue`).
+3. **Strict Input Focus Confinement:** Keystrokes are directed exclusively to the active focused window (`focusedWinId`). Inactive windows receive zero events, preventing keystroke accumulation while running in the background.
+4. **Focus Shift Queue Invalidation:** When focus shifts away from a window, its input queue is instantly cleared (`EventHead = EventTail`), preventing stale keystroke replay upon refocus.
+
+### 13.2 Microkernel Syscall 21: `SYS_GET_KEY_EVENT`
+To support accurate key state tracking, typematic repeat, and multi-key rollover:
+- **Kernel PS/2 Scancode Decoder (`Keyboard.cls`):** Emits full `<Packed> Structure RawKeyEvent (Scancode As Byte, State As Byte, Ascii As Byte, Modifiers As Byte)` records.
+- **Break Code Preservation:** The driver decodes both make codes (`State = 1`, KeyDown) and break codes (`State = 2`, KeyUp), preserving extended key flags (`0xE0` prefixes).
+- **Syscall 21 Dispatch:** Returns the next `RawKeyEvent` non-blockingly to `srv.wm`, enabling true press-and-hold semantics for complex applications and real-time games.
+
+### 13.3 Client Input Polling API (`WmPollEvent`)
+Client GUI applications poll for incoming events from the shared memory table via `WmPollEvent`:
+- **Constant-Time Direct Indexing:** Queues are indexed via `winId Mod 16`, eliminating table scanning loops and shielding the queue from window Z-order shifts or reordering.
+- **Continuous Momentum in DOOM:** DOOM maintains continuous player momentum by receiving paired KeyDown and KeyUp events, keeping `gamekeydown[key_forward]` asserted throughout the movement period and eliminating stuttering or frame-to-frame velocity drops.
+
+
 
 
 

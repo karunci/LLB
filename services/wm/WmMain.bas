@@ -175,6 +175,12 @@ Module WmMain
         windows(idx).Title(t) = 0
 
         windowCount = windowCount + 1
+        If pWindowTable <> 0 Then
+            Dim qSlot As UInt32 = id Mod 16
+            pWindowTable.Queues(qSlot).WinId = id
+            pWindowTable.Queues(qSlot).EventHead = 0
+            pWindowTable.Queues(qSlot).EventTail = 0
+        End If
         SyncWindowTable
         AddWindow = Pointer To WindowItem(AddressOf windows(idx))
     End Function
@@ -227,6 +233,10 @@ Module WmMain
                 found = True
             Else
                 windows(i).Focused = False
+                If pWindowTable <> 0 Then
+                    Dim qSlot As UInt32 = windows(i).Id Mod 16
+                    pWindowTable.Queues(qSlot).EventHead = pWindowTable.Queues(qSlot).EventTail
+                End If
             End If
             i = i + 1
         Wend
@@ -523,6 +533,13 @@ Module WmMain
         If pWindowTable <> 0 Then
             pWindowTable.Revision = 1
             pWindowTable.Count = 0
+            Dim qi As UInt32 = 0
+            While qi < 16
+                pWindowTable.Queues(qi).WinId = 0
+                pWindowTable.Queues(qi).EventHead = 0
+                pWindowTable.Queues(qi).EventTail = 0
+                qi = qi + 1
+            Wend
             ConsolePrintWithUInt "[WM] Shared WindowTable allocated (SHMID: ", shmTableId, " @ 0x62000000)\r\n"
         End If
 
@@ -564,14 +581,36 @@ Module WmMain
         ConsoleWriteLine "[WM] Window arbitration active. Entering event loop..."
         ConsoleWriteLine "[WM] ======================================================="
 
-        ' 7. Active event loop (Zero idle CPU via SynapsePopWait)
+        ' 7. Active event loop (Input event router and request dispatcher)
         Dim reqPkt As AxonPacket
         Dim respPkt As AxonPacket
         Dim wmReqCount As UInt64 = 0
 
         Do
-            ' Service incoming window manager requests from compositor / client applications
-            If SynapsePopWait(wmNodeId, reqPkt) Then
+            ' 1. Drain raw hardware keyboard events and dispatch strictly to the active focused window
+            Dim rawEvt As RawKeyEvent
+            While GetKeyEvent(rawEvt)
+                If focusedWinId <> 0 And pWindowTable <> 0 Then
+                    Dim qSlot As UInt32 = focusedWinId Mod 16
+                    Dim pQ As Pointer To WindowEventQueue = AddressOf pWindowTable.Queues(qSlot)
+                    If pQ.WinId = focusedWinId Then
+                        Dim nextHead As UInt32 = (pQ.EventHead + 1) Mod 16
+                        If nextHead <> pQ.EventTail Then
+                            Dim pInEvt As Pointer To InputEvent = AddressOf pQ.EventQueue(pQ.EventHead)
+                            pInEvt.Timestamp = GetUptime()
+                            pInEvt.EventType = UInt32(rawEvt.State)
+                            pInEvt.DeviceId = 1
+                            pInEvt.Code = UInt32(rawEvt.Scancode)
+                            pInEvt.Ascii = UInt32(rawEvt.Ascii)
+                            pInEvt.Modifiers = UInt32(rawEvt.Modifiers)
+                            pQ.EventHead = nextHead
+                        End If
+                    End If
+                End If
+            Wend
+
+            ' 2. Service incoming window manager requests from compositor / client applications
+            If SynapsePop(wmNodeId, reqPkt) Then
                 If reqPkt.PacketType = WM_CMD_CREATE_WINDOW Then
                     Dim pW As Pointer To Int32 = *Int32(@reqPkt.Payload(0))
                     Dim pH As Pointer To Int32 = *Int32(@reqPkt.Payload(4))
@@ -593,6 +632,7 @@ Module WmMain
                         Dim slot0Taken As Boolean = False
                         Dim slot1Taken As Boolean = False
                         Dim slot2Taken As Boolean = False
+                        Dim slot3Taken As Boolean = False
                         Dim k As Int32 = 0
                         While k < windowCount
                             If windows(k).X = 664 And windows(k).Y = 36 Then
@@ -601,6 +641,8 @@ Module WmMain
                                 slot1Taken = True
                             ElseIf windows(k).X = 16 And windows(k).Y = 472 Then
                                 slot2Taken = True
+                            ElseIf windows(k).X = 380 And windows(k).Y = 472 Then
+                                slot3Taken = True
                             End If
                             k = k + 1
                         Wend
@@ -613,6 +655,9 @@ Module WmMain
                             newY = 324
                         ElseIf Not slot2Taken Then
                             newX = 16
+                            newY = 472
+                        ElseIf Not slot3Taken Then
+                            newX = 380
                             newY = 472
                         Else
                             newX = 60 + (windowCount * 30)
@@ -749,6 +794,8 @@ Module WmMain
                         SynapsePush synComp, dDirtyPkt
                     End If
                 End If
+            Else
+                ProcessSleep 2
             End If
         Loop
 

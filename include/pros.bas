@@ -217,10 +217,19 @@ Module ProsApi
     End Structure
 
     <Packed>
+    Public Structure WindowEventQueue
+        Public WinId         As UInt32
+        Public EventHead     As UInt32
+        Public EventTail     As UInt32
+        Public EventQueue(15) As InputEvent
+    End Structure
+
+    <Packed>
     Public Structure WindowTable
         Public Revision    As UInt32
         Public Count       As Int32
         Public Windows(16) As WindowDescriptor
+        Public Queues(16)  As WindowEventQueue
     End Structure
 
     <Packed>
@@ -239,11 +248,20 @@ Module ProsApi
         Public EventType  As UInt32
         Public DeviceId   As UInt32
         Public Code       As UInt32
+        Public Ascii      As UInt32
         Public Modifiers  As UInt32
         Public PosX       As Int32
         Public PosY       As Int32
         Public DeltaX     As Int32
         Public DeltaY     As Int32
+    End Structure
+
+    <Packed>
+    Public Structure RawKeyEvent
+        Public Scancode  As Byte   ' Base PS/2 scancode 1..127
+        Public State     As Byte   ' 1 = KeyDown, 2 = KeyUp
+        Public Ascii     As Byte   ' Translated ASCII or 0
+        Public Modifiers As Byte   ' Bit 0: Shift, Bit 1: Ctrl, Bit 2: Alt, Bit 3: Extended E0
     End Structure
 
     <Packed>
@@ -449,6 +467,7 @@ Module ProsApi
 
     ' Hardware Input APIs
     Public Declare Function GetMouseState Lib "libpros" Alias "Pros_Inputs_DeviceInput_GetMouseState" (ByRef state As MouseState) As Boolean
+    Public Declare Function GetKeyEvent Lib "libpros" Alias "Pros_Inputs_DeviceInput_GetKeyEvent" (ByRef evt As RawKeyEvent) As Boolean
 
     ' Virtual File System (VFS) APIs
     <Packed>
@@ -466,6 +485,7 @@ Module ProsApi
     Public Declare Function WmCreateWindow Lib "libpros" Alias "Pros_Gui_WindowManagerClient_CreateWindow" (ByVal w As Int32, ByVal h As Int32, ByVal shmId As Handle, ByVal title As String) As UInt32
     Public Declare Function WmDestroyWindow Lib "libpros" Alias "Pros_Gui_WindowManagerClient_DestroyWindow" (ByVal winId As UInt32) As Boolean
     Public Declare Function WmSignalDirty Lib "libpros" Alias "Pros_Gui_WindowManagerClient_SignalDirty" (ByVal winId As UInt32, ByVal rx As Int32, ByVal ry As Int32, ByVal rw As Int32, ByVal rh As Int32) As Boolean
+    Public Declare Function WmPollEvent Lib "libpros" Alias "Pros_Gui_WindowManagerClient_PollEvent" (ByVal winId As UInt32, ByRef evt As InputEvent) As Boolean
 
     ' Device Management APIs
     <Packed>
@@ -615,5 +635,44 @@ Module ProsApi
     Public Declare Sub DrawText8x16 Lib "libpros" Alias "Pros_Drawing_FontRenderer_DrawText8x16" (ByRef surf As Surface, ByVal x As Int32, ByVal y As Int32, ByVal text As String, ByVal color As UInt32)
     Public Declare Sub DrawGlyph Lib "libpros" Alias "Pros_Drawing_FontRenderer_DrawGlyph" (ByRef surf As Surface, ByVal gx As Int32, ByVal gy As Int32, ByVal ascii As Byte, ByVal color As UInt32, ByVal useLargeFont As Boolean = False)
     Public Declare Sub DrawText Lib "libpros" Alias "Pros_Drawing_FontRenderer_DrawText" (ByRef surf As Surface, ByVal x As Int32, ByVal y As Int32, ByVal text As String, ByVal color As UInt32, ByVal useLargeFont As Boolean = False)
+
+    ' =========================================================================
+    ' 5. Software 3D OpenGL Rasterizer APIs (libpros: GL.bas)
+    ' =========================================================================
+    Public Const GL_COLOR_BUFFER_BIT As UInt32 = 1
+    Public Const GL_DEPTH_BUFFER_BIT As UInt32 = 2
+
+    Public Const GL_MODELVIEW        As Int32 = 0
+    Public Const GL_PROJECTION       As Int32 = 1
+
+    Public Const GL_TRIANGLES        As Int32 = 0
+    Public Const GL_QUADS            As Int32 = 1
+    Public Const GL_LINES            As Int32 = 2
+
+    Public Const GL_DEPTH_TEST       As UInt32 = 1
+    Public Const GL_CULL_FACE        As UInt32 = 2
+
+    Public Declare Sub GlInit Lib "libpros" (ByVal width As Int32, ByVal height As Int32, ByVal pColor As Pointer To UInt32, ByVal pDepth As Pointer To Single)
+    Public Declare Sub GlViewport Lib "libpros" (ByVal x As Int32, ByVal y As Int32, ByVal width As Int32, ByVal height As Int32)
+    Public Declare Sub GlClearColor Lib "libpros" (ByVal r As Single, ByVal g As Single, ByVal b As Single, ByVal a As Single)
+    Public Declare Sub GlClearDepth Lib "libpros" (ByVal depth As Single)
+    Public Declare Sub GlClear Lib "libpros" (ByVal mask As UInt32)
+    Public Declare Sub GlEnable Lib "libpros" (ByVal cap As UInt32)
+    Public Declare Sub GlDisable Lib "libpros" (ByVal cap As UInt32)
+
+    Public Declare Sub GlMatrixMode Lib "libpros" (ByVal mode As Int32)
+    Public Declare Sub GlLoadIdentity Lib "libpros" ()
+    Public Declare Sub GlPushMatrix Lib "libpros" ()
+    Public Declare Sub GlPopMatrix Lib "libpros" ()
+    Public Declare Sub GlTranslatef Lib "libpros" (ByVal tx As Single, ByVal ty As Single, ByVal tz As Single)
+    Public Declare Sub GlRotatef Lib "libpros" (ByVal angleDeg As Single, ByVal x As Single, ByVal y As Single, ByVal z As Single)
+    Public Declare Sub GlScalef Lib "libpros" (ByVal sx As Single, ByVal sy As Single, ByVal sz As Single)
+    Public Declare Sub GluPerspective Lib "libpros" (ByVal fovYDeg As Single, ByVal aspect As Single, ByVal zNear As Single, ByVal zFar As Single)
+
+    Public Declare Sub GlBegin Lib "libpros" (ByVal mode As Int32)
+    Public Declare Sub GlColor4f Lib "libpros" (ByVal r As Single, ByVal g As Single, ByVal b As Single, ByVal a As Single)
+    Public Declare Sub GlTexCoord2f Lib "libpros" (ByVal u As Single, ByVal v As Single)
+    Public Declare Sub GlVertex3f Lib "libpros" (ByVal x As Single, ByVal y As Single, ByVal z As Single)
+    Public Declare Sub GlEnd Lib "libpros" ()
 
 End Module

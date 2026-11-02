@@ -7,6 +7,14 @@ Import Sync
 
 Namespace Drivers
 
+    <Packed>
+    Public Structure RawKeyEvent
+        Public Scancode  As Byte   ' Base PS/2 scancode 1..127
+        Public State     As Byte   ' 1 = KeyDown, 2 = KeyUp
+        Public Ascii     As Byte   ' Translated ASCII or 0
+        Public Modifiers As Byte   ' Bit 0: Shift, Bit 1: Ctrl, Bit 2: Alt, Bit 3: E0 Extended
+    End Structure
+
     <Instancing(SingleUse)>
     Public Class Keyboard
 
@@ -20,6 +28,10 @@ Namespace Drivers
         Private kbdTail As UInt32
         Private kbdLock As Sync.Spinlock
 
+        Private rawEvents(256) As RawKeyEvent
+        Private rawHead As UInt32
+        Private rawTail As UInt32
+
         Private shiftActive As Boolean
         Private ctrlActive As Boolean
         Private altActive As Boolean
@@ -30,6 +42,8 @@ Namespace Drivers
             Sync.SpinlockOps.Init kbdLock
             kbdHead = 0
             kbdTail = 0
+            rawHead = 0
+            rawTail = 0
             shiftActive = False
             ctrlActive = False
             altActive = False
@@ -45,12 +59,29 @@ Namespace Drivers
             Arch.X86_64.PortIO.OutB KBD_COMMAND_PORT, &HAE
         End Sub
 
-        ' Push single character byte to keyboard ring buffer
+        ' Push single character byte to legacy keyboard ring buffer
         Private Sub EnqueueByte(ByVal ch As Byte)
             Dim nextHead As UInt32 = (kbdHead + 1) Mod BUFFER_SIZE
             If nextHead <> kbdTail Then
                 kbdBuffer(kbdHead) = ch
                 kbdHead = nextHead
+            End If
+        End Sub
+
+        ' Push structured high-fidelity key event (KeyDown/KeyUp)
+        Private Sub EnqueueRaw(ByVal code As Byte, ByVal state As Byte, ByVal ascii As Byte, ByVal isExt As Boolean)
+            Dim nextHead As UInt32 = (rawHead + 1) Mod BUFFER_SIZE
+            If nextHead <> rawTail Then
+                rawEvents(rawHead).Scancode = code
+                rawEvents(rawHead).State = state
+                rawEvents(rawHead).Ascii = ascii
+                Dim mods As Byte = 0
+                If shiftActive Then mods = mods Or 1
+                If ctrlActive Then mods = mods Or 2
+                If altActive Then mods = mods Or 4
+                If isExt Then mods = mods Or 8
+                rawEvents(rawHead).Modifiers = mods
+                rawHead = nextHead
             End If
         End Sub
 
@@ -119,6 +150,7 @@ Namespace Drivers
             If scancode = &H35 Then If isShifted Then res = 63 Else res = 47     ' ? or /
 
             ' Special characters & control keys
+            If scancode = &H01 Then res = 27 ' Escape
             If scancode = &H1C Then res = 10 ' Enter / Newline
             If scancode = &H0E Then res = 8  ' Backspace
             If scancode = &H0F Then res = 9  ' Tab
@@ -163,33 +195,39 @@ Namespace Drivers
             End If
 
             If e0Escape Then
-                Dim isRel As Boolean = (scancode And &H80) <> 0
-                Dim baseCode As Byte = scancode And &H7F
-                If baseCode = &H1D Then
-                    ctrlActive = Not isRel
-                    If Not isRel Then Me.EnqueueByte &H1D
-                End If
-                If baseCode = &H38 Then altActive = Not isRel
+                Dim isRelExt As Boolean = (scancode And &H80) <> 0
+                Dim baseCodeExt As Byte = scancode And &H7F
+                Dim stateExt As Byte = 1
+                If isRelExt Then stateExt = 2
 
-                If Not isRel Then
-                    ' Extended Navigation & Cursor Keys -> Standard ANSI Sequences
-                    If baseCode = &H48 Then     ' Up Arrow: \x1B[A
+                If baseCodeExt = &H1D Then
+                    ctrlActive = Not isRelExt
+                    If Not isRelExt Then Me.EnqueueByte &H1D
+                End If
+                If baseCodeExt = &H38 Then altActive = Not isRelExt
+
+                ' Post high-fidelity raw key event for extended key
+                Me.EnqueueRaw baseCodeExt, stateExt, 0, True
+
+                If Not isRelExt Then
+                    ' Extended Navigation & Cursor Keys -> Standard ANSI Sequences for legacy GetChar
+                    If baseCodeExt = &H48 Then     ' Up Arrow: \x1B[A
                         Me.EnqueueByte 27: Me.EnqueueByte 91: Me.EnqueueByte 65
-                    ElseIf baseCode = &H50 Then ' Down Arrow: \x1B[B
+                    ElseIf baseCodeExt = &H50 Then ' Down Arrow: \x1B[B
                         Me.EnqueueByte 27: Me.EnqueueByte 91: Me.EnqueueByte 66
-                    ElseIf baseCode = &H4D Then ' Right Arrow: \x1B[C
+                    ElseIf baseCodeExt = &H4D Then ' Right Arrow: \x1B[C
                         Me.EnqueueByte 27: Me.EnqueueByte 91: Me.EnqueueByte 67
-                    ElseIf baseCode = &H4B Then ' Left Arrow: \x1B[D
+                    ElseIf baseCodeExt = &H4B Then ' Left Arrow: \x1B[D
                         Me.EnqueueByte 27: Me.EnqueueByte 91: Me.EnqueueByte 68
-                    ElseIf baseCode = &H47 Then ' Home: \x1B[H
+                    ElseIf baseCodeExt = &H47 Then ' Home: \x1B[H
                         Me.EnqueueByte 27: Me.EnqueueByte 91: Me.EnqueueByte 72
-                    ElseIf baseCode = &H4F Then ' End: \x1B[F
+                    ElseIf baseCodeExt = &H4F Then ' End: \x1B[F
                         Me.EnqueueByte 27: Me.EnqueueByte 91: Me.EnqueueByte 70
-                    ElseIf baseCode = &H53 Then ' Delete: 127 (ASCII DEL)
+                    ElseIf baseCodeExt = &H53 Then ' Delete: 127 (ASCII DEL)
                         Me.EnqueueByte 127
-                    ElseIf baseCode = &H1C Then ' Keypad Enter: 10 (\n)
+                    ElseIf baseCodeExt = &H1C Then ' Keypad Enter: 10 (\n)
                         Me.EnqueueByte 10
-                    ElseIf baseCode = &H35 Then ' Keypad Slash: 47 (/)
+                    ElseIf baseCodeExt = &H35 Then ' Keypad Slash: 47 (/)
                         Me.EnqueueByte 47
                     End If
                 End If
@@ -199,53 +237,34 @@ Namespace Drivers
                 Exit Sub
             End If
 
-            ' Key release handling
-            If (scancode And &H80) <> 0 Then
-                Dim releasedKey As Byte = scancode And &H7F
-                If releasedKey = &H2A Or releasedKey = &H36 Then shiftActive = False
-                If releasedKey = &H1D Then ctrlActive = False
-                If releasedKey = &H38 Then altActive = False
-                Sync.SpinlockOps.ReleaseIrqRestore kbdLock, flags
-                Exit Sub
-            End If
+            ' Normal (Non-Extended) Scancode Handling
+            Dim isRel As Boolean = (scancode And &H80) <> 0
+            Dim baseCode As Byte = scancode And &H7F
+            Dim state As Byte = 1
+            If isRel Then state = 2
 
-            ' Key press modifier tracking
-            If scancode = &H2A Or scancode = &H36 Then
-                shiftActive = True
-                Sync.SpinlockOps.ReleaseIrqRestore kbdLock, flags
-                Exit Sub
-            End If
-            If scancode = &H1D Then
-                ctrlActive = True
-                Me.EnqueueByte &H1D
-                Sync.SpinlockOps.ReleaseIrqRestore kbdLock, flags
-                Exit Sub
-            End If
-            If scancode = &H38 Then
-                altActive = True
-                Sync.SpinlockOps.ReleaseIrqRestore kbdLock, flags
-                Exit Sub
-            End If
+            ' Modifier tracking
+            If baseCode = &H2A Or baseCode = &H36 Then shiftActive = Not isRel
+            If baseCode = &H1D Then ctrlActive = Not isRel
+            If baseCode = &H38 Then altActive = Not isRel
+            If baseCode = &H3A And Not isRel Then capsLockActive = Not capsLockActive
 
-            ' CapsLock toggle
-            If scancode = &H3A Then
-                capsLockActive = Not capsLockActive
-                Sync.SpinlockOps.ReleaseIrqRestore kbdLock, flags
-                Exit Sub
-            End If
-
-            ' Translate scancode to ASCII
-            If scancode < 128 Then
-                Dim asciiChar As Byte = Me.MapScancode(scancode, shiftActive)
+            ' Translate scancode to ASCII for key-down
+            Dim asciiChar As Byte = 0
+            If Not isRel Then
+                asciiChar = Me.MapScancode(baseCode, shiftActive)
                 If asciiChar <> 0 Then
                     Me.EnqueueByte asciiChar
                 End If
             End If
 
+            ' Post high-fidelity raw key event
+            Me.EnqueueRaw baseCode, state, asciiChar, False
+
             Sync.SpinlockOps.ReleaseIrqRestore kbdLock, flags
         End Sub
 
-        ' Non-blocking character read from keyboard ring buffer
+        ' Non-blocking character read from legacy keyboard ring buffer
         Public Unsafe Function GetChar() As Byte
             Dim flags As UInt64 = Sync.SpinlockOps.AcquireIrqSave(kbdLock)
 
@@ -260,6 +279,28 @@ Namespace Drivers
 
             Sync.SpinlockOps.ReleaseIrqRestore kbdLock, flags
             GetChar = ch
+        End Function
+
+        ' Non-blocking read of next raw structured key event
+        Public Unsafe Function GetKeyEvent(ByVal pOut As Pointer To RawKeyEvent) As Boolean
+            If pOut = 0 Then
+                GetKeyEvent = False
+                Exit Function
+            End If
+
+            Dim flags As UInt64 = Sync.SpinlockOps.AcquireIrqSave(kbdLock)
+
+            If rawHead = rawTail Then
+                Sync.SpinlockOps.ReleaseIrqRestore kbdLock, flags
+                GetKeyEvent = False
+                Exit Function
+            End If
+
+            pOut(0) = rawEvents(rawTail)
+            rawTail = (rawTail + 1) Mod BUFFER_SIZE
+
+            Sync.SpinlockOps.ReleaseIrqRestore kbdLock, flags
+            GetKeyEvent = True
         End Function
 
     End Class

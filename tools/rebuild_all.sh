@@ -32,6 +32,7 @@ echo "=== 3. Building CoreUtils & GUI Apps ==="
 (cd apps/gui/node_viewer && "${LLBC}" NodeViewer.llbproj)
 (cd apps/gui/resource_mon && "${LLBC}" ResourceMon.llbproj)
 (cd apps/gui/user_app && "${LLBC}" UserApp.llbproj)
+(cd apps/gui/gl_demo && "${LLBC}" GlDemo.llbproj)
 (cd apps/gui/doom && bash build_libdoom.sh && "${LLBC}" Doom.llbproj)
 (cd tools/bax_pack && "${LLBC}" BaxPack.llbproj)
 

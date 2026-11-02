@@ -6,6 +6,7 @@ Import Pros.Sys.RawSyscall
 Import Pros.Sys.Process
 Import Pros.Nodes.NodeRegistry
 Import Pros.String.StringUtil
+Import Pros.Inputs
 
 Namespace Pros.Gui
 
@@ -34,10 +35,19 @@ Namespace Pros.Gui
     End Structure
 
     <Packed>
+    Public Structure WindowEventQueue
+        Public WinId         As UInt32
+        Public EventHead     As UInt32
+        Public EventTail     As UInt32
+        Public EventQueue(15) As Pros.Inputs.InputEvent
+    End Structure
+
+    <Packed>
     Public Structure WindowTable
         Public Revision    As UInt32
         Public Count       As Int32
         Public Windows(16) As WindowDescriptor
+        Public Queues(16)  As WindowEventQueue
     End Structure
 
     Public Module WindowManagerClient
@@ -375,6 +385,30 @@ Namespace Pros.Gui
             reqPkt.PayloadLength = 20
 
             SignalDirty = Pros.Nodes.NodeRegistry.Push(g_compSynChan, reqPkt)
+        End Function
+
+        ''
+        ' @brief Non-blocking poll for next input event targeting the specified window.
+        ' @param winId Target window identifier.
+        ' @param evt Output InputEvent structure.
+        ' @return True if an event was popped, False if the queue is empty.
+        ''
+        Public Unsafe Function PollEvent(ByVal winId As UInt32, ByRef evt As Pros.Inputs.InputEvent) As Boolean
+            If g_pWindowTable = 0 Or winId = 0 Then
+                PollEvent = False
+                Exit Function
+            End If
+            Dim slot As UInt32 = winId Mod 16
+            Dim pQ As Pointer To WindowEventQueue = AddressOf g_pWindowTable.Queues(slot)
+            If pQ.WinId = winId Then
+                If pQ.EventHead <> pQ.EventTail Then
+                    evt = pQ.EventQueue(pQ.EventTail)
+                    pQ.EventTail = (pQ.EventTail + 1) Mod 16
+                    PollEvent = True
+                    Exit Function
+                End If
+            End If
+            PollEvent = False
         End Function
 
     End Module

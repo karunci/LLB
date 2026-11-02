@@ -36,7 +36,7 @@ static int       g_canvas_w = 640;
 static int       g_canvas_h = 400;
 static int       g_frame_dirty = 0;
 
-/* Circular Key Event Buffer with Auto-Hold & Release Tracking */
+/* Circular Key Event Buffer */
 #define KEY_QUEUE_CAP 128
 typedef struct {
     int pressed;
@@ -46,7 +46,6 @@ typedef struct {
 static KeyPacket g_key_queue[KEY_QUEUE_CAP];
 static int g_key_head = 0;
 static int g_key_tail = 0;
-static uint8_t g_active_hold[256]; /* Remaining hold tics before auto-release */
 
 /* ========================================================================= */
 /* 2. doomgeneric Platform Callbacks                                         */
@@ -107,29 +106,11 @@ void doom_platform_set_canvas(uint32_t *canvas, int width, int height) {
 }
 
 void doom_platform_push_key(int pressed, unsigned char key) {
-    if (pressed) {
-        /* If key is not already active, push KEYDOWN */
-        if (g_active_hold[key] == 0) {
-            int next_head = (g_key_head + 1) % KEY_QUEUE_CAP;
-            if (next_head != g_key_tail) {
-                g_key_queue[g_key_head].pressed = 1;
-                g_key_queue[g_key_head].key = key;
-                g_key_head = next_head;
-            }
-        }
-        /* Hold key active for 4 game frames (~114ms) or refresh on typematic repeat */
-        g_active_hold[key] = 4;
-    } else {
-        /* Explicit key release */
-        if (g_active_hold[key] > 0) {
-            g_active_hold[key] = 0;
-            int next_head = (g_key_head + 1) % KEY_QUEUE_CAP;
-            if (next_head != g_key_tail) {
-                g_key_queue[g_key_head].pressed = 0;
-                g_key_queue[g_key_head].key = key;
-                g_key_head = next_head;
-            }
-        }
+    int next_head = (g_key_head + 1) % KEY_QUEUE_CAP;
+    if (next_head != g_key_tail) {
+        g_key_queue[g_key_head].pressed = (pressed != 0) ? 1 : 0;
+        g_key_queue[g_key_head].key = key;
+        g_key_head = next_head;
     }
 }
 
@@ -140,21 +121,6 @@ int doom_platform_start(void) {
 }
 
 void doom_platform_tick(void) {
-    /* Step active key hold counters and generate release events when hold expires */
-    for (int k = 0; k < 256; k++) {
-        if (g_active_hold[k] > 0) {
-            g_active_hold[k]--;
-            if (g_active_hold[k] == 0) {
-                int next_head = (g_key_head + 1) % KEY_QUEUE_CAP;
-                if (next_head != g_key_tail) {
-                    g_key_queue[g_key_head].pressed = 0;
-                    g_key_queue[g_key_head].key = (unsigned char)k;
-                    g_key_head = next_head;
-                }
-            }
-        }
-    }
-
     doomgeneric_Tick();
 }
 

@@ -2020,7 +2020,7 @@ void M_Drawer (void)
     {
         name = DEH_String(currentMenu->menuitems[i].name);
 
-	if (name[0])
+	if (name[0] && W_CheckNumForName(name) >= 0)
 	{
 	    V_DrawPatchDirect (x, y, W_CacheLumpName(name, PU_CACHE));
 	}
@@ -2112,12 +2112,15 @@ void M_Init (void)
     }
 
     // Versions of doom.exe before the Ultimate Doom release only had
-    // three episodes; if we're emulating one of those then don't try
-    // to show episode four. If we are, then do show episode four
-    // (should crash if missing).
-    if (gameversion < exe_ultimate)
+    // three episodes; if we're emulating one of those or using a WAD without
+    // the 4th episode (e.g. DOOM1.WAD), adapt dynamically.
+    if (gameversion < exe_ultimate || W_CheckNumForName("M_EPI4") < 0)
     {
-	EpiDef.numitems--;
+	EpiDef.numitems = 3;
+    }
+    if (gamemode == shareware || W_CheckNumForName("M_EPI2") < 0)
+    {
+	EpiDef.numitems = 1;
     }
 
     //opldev = M_CheckParm("-opldev") > 0;

@@ -115,6 +115,7 @@ Namespace Sys
         Public Const SYS_PROCESS_EXIT    As UInt64 = 16
         Public Const SYS_GET_MOUSE       As UInt64 = 19
         Public Const SYS_GET_KEY         As UInt64 = 20
+        Public Const SYS_GET_KEY_EVENT   As UInt64 = 21
         Public Const SYS_MEM_ALLOC_PAGES As UInt64 = 26
         Public Const SYS_TIME_UPTIME     As UInt64 = 28
         Public Const SYS_TIME_GET_RTC    As UInt64 = 29
@@ -642,6 +643,19 @@ Namespace Sys
 
                 Case SYS_GET_KEY
                     Dispatch = UInt64(Kbd.GetChar())
+
+                Case SYS_GET_KEY_EVENT
+                    ' arg1 = Pointer To RawKeyEvent (4 bytes)
+                    If ValidateUserBuffer(arg1, 4) Then
+                        Dim pEvt As Pointer To Drivers.RawKeyEvent = Pointer To Drivers.RawKeyEvent(arg1)
+                        If Kbd.GetKeyEvent(pEvt) Then
+                            Dispatch = 1
+                        Else
+                            Dispatch = 0
+                        End If
+                    Else
+                        Dispatch = 0
+                    End If
 
                 Case SYS_MEM_ALLOC_PAGES
                     ' arg1 = pageCount (UInt64), arg2 = targetVaddr (UInt64)

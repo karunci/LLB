@@ -1,0 +1,8 @@
+{
+  "name": "gl_demo",
+  "version": "1.0.0",
+  "type": "application",
+  "entry": "gl_demo.elf",
+  "priority": 2,
+  "description": "PROS Ring 3 Software 3D OpenGL Rasterizer Demo Application"
+}

@@ -1113,151 +1113,130 @@ Module TerminalMain
 
         Do
             Dim isFocused As Boolean = WmIsFocused(g_winId)
-
-            ' Discard all keystrokes when unfocused or transitioning to focus to prevent input leakage
-            If Not isFocused Then
-                While GetKey() <> 0
-                Wend
-            ElseIf Not lastFocusedState Then
-                While GetKey() <> 0
-                Wend
-            End If
             lastFocusedState = isFocused
 
-            ' Poll microkernel keyboard ring buffer (SYS_GET_KEY) only when window has input focus
-            If isFocused Then
-                Dim key As Byte = GetKey()
-                If key <> 0 Then
-                If key = 27 Then
-                    ' ANSI Escape Sequence (\x1B[...)
-                    Dim b2 As Byte = GetKey()
-                    Dim tries2 As UInt32 = 0
-                    While b2 = 0 And tries2 < 200
-                        b2 = GetKey()
-                        tries2 = tries2 + 1
-                    Wend
+            ' Poll keystrokes exclusively from the Window Manager event queue
+            Dim inEvt As InputEvent
+            While WmPollEvent(g_winId, inEvt)
+                If inEvt.EventType = EVENT_KEY_DOWN Then
+                    Dim scancode As UInt32 = inEvt.Code
+                    Dim isExt As Boolean = ((inEvt.Modifiers And 8) <> 0)
 
-                    If b2 = 91 Then ' '['
-                        Dim b3 As Byte = GetKey()
-                        Dim tries3 As UInt32 = 0
-                        While b3 = 0 And tries3 < 200
-                            b3 = GetKey()
-                            tries3 = tries3 + 1
-                        Wend
-
-                        If b3 = 68 Then ' Left Arrow (\x1B[D)
+                    If isExt Then
+                        If scancode = &H4B Then ' Left Arrow
                             If cursorIdx > 0 Then
                                 DrawCursor False
                                 cursorIdx = cursorIdx - 1
                                 UpdateCursorPos
                                 DrawCursor True
                             End If
-                        ElseIf b3 = 67 Then ' Right Arrow (\x1B[C)
+                        ElseIf scancode = &H4D Then ' Right Arrow
                             If cursorIdx < cmdLen Then
                                 DrawCursor False
                                 cursorIdx = cursorIdx + 1
                                 UpdateCursorPos
                                 DrawCursor True
                             End If
-                        ElseIf b3 = 72 Then ' Home (\x1B[H)
+                        ElseIf scancode = &H47 Then ' Home
                             DrawCursor False
                             cursorIdx = 0
                             UpdateCursorPos
                             DrawCursor True
-                        ElseIf b3 = 70 Then ' End (\x1B[F)
+                        ElseIf scancode = &H4F Then ' End
                             DrawCursor False
                             cursorIdx = cmdLen
                             UpdateCursorPos
                             DrawCursor True
                         End If
-                    End If
-
-                ElseIf key = 10 Or key = 13 Then
-                    ' Enter key -> Submit command
-                    DrawCursor False
-
-                    ' Advance cursor past any wrapped lines of the current command
-                    Dim endOff As Int32 = promptLen + Int32(cmdLen)
-                    Dim endRow As Int32 = promptStartRow + (endOff / GRID_COLS)
-                    cursorRow = endRow + 1
-                    cursorCol = 0
-                    While cursorRow >= GRID_ROWS
-                        ScrollUp
-                        cursorRow = cursorRow - 1
-                    Wend
-
-                    ExecuteCommand @cmdBuf(0)
-
-                    PrintPrompt
-                    DrawCursor True
-
-                ElseIf key = 8 Then
-                    ' Backspace key -> Delete character before cursor (with multi-line wrap-back)
-                    If cursorIdx > 0 Then
-                        DrawCursor False
-                        Dim oldLenBk As UInt32 = cmdLen
-
-                        ' Shift subsequent characters left
-                        Dim bi As UInt32 = cursorIdx - 1
-                        While bi < (cmdLen - 1)
-                            cmdBuf(bi) = cmdBuf(bi + 1)
-                            bi = bi + 1
-                        Wend
-
-                        cursorIdx = cursorIdx - 1
-                        cmdLen = cmdLen - 1
-                        cmdBuf(cmdLen) = 0
-
-                        RedrawCommandLine oldLenBk
-                        DrawCursor True
-                    End If
-
-                ElseIf key = 127 Then
-                    ' Delete key -> Delete character directly under cursor
-                    If cursorIdx < cmdLen Then
-                        DrawCursor False
-                        Dim oldLenDel As UInt32 = cmdLen
-
-                        ' Shift characters after cursor left
-                        Dim di As UInt32 = cursorIdx
-                        While di < (cmdLen - 1)
-                            cmdBuf(di) = cmdBuf(di + 1)
-                            di = di + 1
-                        Wend
-
-                        cmdLen = cmdLen - 1
-                        cmdBuf(cmdLen) = 0
-
-                        RedrawCommandLine oldLenDel
-                        DrawCursor True
-                    End If
-
-                ElseIf key >= 32 And key <= 126 Then
-                    ' Printable ASCII character -> Insert at cursorIdx (with multi-line wrapping)
-                    If cmdLen < 1000 Then
+                    ElseIf scancode = &H1C Then
+                        ' Enter key -> Submit command
                         DrawCursor False
 
-                        ' Ensure room on screen for line expansion
-                        EnsureLineVisible cmdLen + 1
-
-                        ' Shift subsequent characters right
-                        Dim si As UInt32 = cmdLen
-                        While si > cursorIdx
-                            cmdBuf(si) = cmdBuf(si - 1)
-                            si = si - 1
+                        ' Advance cursor past any wrapped lines of the current command
+                        Dim endOff As Int32 = promptLen + Int32(cmdLen)
+                        Dim endRow As Int32 = promptStartRow + (endOff / GRID_COLS)
+                        cursorRow = endRow + 1
+                        cursorCol = 0
+                        While cursorRow >= GRID_ROWS
+                            ScrollUp
+                            cursorRow = cursorRow - 1
                         Wend
 
-                        cmdBuf(cursorIdx) = key
-                        cursorIdx = cursorIdx + 1
-                        cmdLen = cmdLen + 1
-                        cmdBuf(cmdLen) = 0
+                        ExecuteCommand @cmdBuf(0)
 
-                        RedrawCommandLine cmdLen
+                        PrintPrompt
                         DrawCursor True
+
+                    ElseIf scancode = &H0E Then
+                        ' Backspace key -> Delete character before cursor (with multi-line wrap-back)
+                        If cursorIdx > 0 Then
+                            DrawCursor False
+                            Dim oldLenBk As UInt32 = cmdLen
+
+                            ' Shift subsequent characters left
+                            Dim bi As UInt32 = cursorIdx - 1
+                            While bi < (cmdLen - 1)
+                                cmdBuf(bi) = cmdBuf(bi + 1)
+                                bi = bi + 1
+                            Wend
+
+                            cursorIdx = cursorIdx - 1
+                            cmdLen = cmdLen - 1
+                            cmdBuf(cmdLen) = 0
+
+                            RedrawCommandLine oldLenBk
+                            DrawCursor True
+                        End If
+
+                    ElseIf scancode = &H53 Then
+                        ' Delete key -> Delete character directly under cursor
+                        If cursorIdx < cmdLen Then
+                            DrawCursor False
+                            Dim oldLenDel As UInt32 = cmdLen
+
+                            ' Shift characters after cursor left
+                            Dim di As UInt32 = cursorIdx
+                            While di < (cmdLen - 1)
+                                cmdBuf(di) = cmdBuf(di + 1)
+                                di = di + 1
+                            Wend
+
+                            cmdLen = cmdLen - 1
+                            cmdBuf(cmdLen) = 0
+
+                            RedrawCommandLine oldLenDel
+                            DrawCursor True
+                        End If
+
+                    Else
+                        ' Printable ASCII character
+                        Dim key As Byte = CType(Byte, inEvt.Ascii)
+                        If key >= 32 And key <= 126 Then
+                            If cmdLen < 1000 Then
+                                DrawCursor False
+
+                                ' Ensure room on screen for line expansion
+                                EnsureLineVisible cmdLen + 1
+
+                                ' Shift subsequent characters right
+                                Dim si As UInt32 = cmdLen
+                                While si > cursorIdx
+                                    cmdBuf(si) = cmdBuf(si - 1)
+                                    si = si - 1
+                                Wend
+
+                                cmdBuf(cursorIdx) = key
+                                cursorIdx = cursorIdx + 1
+                                cmdLen = cmdLen + 1
+                                cmdBuf(cmdLen) = 0
+
+                                RedrawCommandLine cmdLen
+                                DrawCursor True
+                            End If
+                        End If
                     End If
                 End If
-            End If
-            End If
+            Wend
 
             ' Poll incoming Synapse TTY packets from other processes
             If g_termNodeId <> 0 Then

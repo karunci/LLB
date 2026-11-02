@@ -24,9 +24,10 @@ Module PlexusMgrMain
         Public BaxFile       As String
         Public Status        As UInt32
         Public LastHeartbeat As UInt64
+        Public IsDaemon      As Boolean
     End Structure
 
-    Private services(16) As ServiceItem
+    Private services(32) As ServiceItem
     Private serviceCount As UInt32
 
     ''
@@ -100,19 +101,19 @@ Module PlexusMgrMain
     End Function
 
     ''
-    ' @brief Spawn a service binary from the mapped ramdisk via shared memory and SYS_PROCESS_SPAWN.
+    ' @brief Low-level helper to unpack and spawn a binary without modifying supervisor tables.
     ' @param ramdiskBase Base virtual address of mapped initrd.
     ' @param procName Canonical process and node name.
     ' @param baxFilename Name of binary file in ramdisk.
     ' @return Process ID of newly spawned process, or 0 on failure.
     ''
-    Private Unsafe Function SpawnService(ByVal ramdiskBase As UInt64, ByVal procName As String, ByVal baxFilename As String) As UInt64
+    Private Unsafe Function SpawnProcessInternal(ByVal ramdiskBase As UInt64, ByVal procName As String, ByVal baxFilename As String) As UInt64
         Dim baxSize As UInt64 = 0
         Dim pBax As Pointer To Byte = FindBaxInRamdisk(ramdiskBase, baxFilename, baxSize)
         If pBax = 0 Or baxSize = 0 Then
             ConsoleWrite "[PLEXUS_MGR] ERR: Failed to locate binary in ramdisk: "
             ConsoleWriteLine baxFilename
-            SpawnService = 0
+            SpawnProcessInternal = 0
             Exit Function
         End If
 
@@ -120,7 +121,7 @@ Module PlexusMgrMain
         Dim shmId As UInt64 = ShmemCreate(524288, &H67000000)
         If shmId = 0 Then
             ConsoleWriteLine "[PLEXUS_MGR] ERR: Failed to allocate Shared Memory transfer window!"
-            SpawnService = 0
+            SpawnProcessInternal = 0
             Exit Function
         End If
 
@@ -137,22 +138,29 @@ Module PlexusMgrMain
             ConsoleWrite "[PLEXUS_MGR] Summoned '"
             ConsoleWrite procName
             ConsolePrintWithUInt "' -> PID ", childPid, "\r\n"
-
-            ' Record into supervisor tracking table
-            If serviceCount < 16 Then
-                services(serviceCount).Pid = childPid
-                services(serviceCount).Name = procName
-                services(serviceCount).BaxFile = baxFilename
-                services(serviceCount).Status = PLEXUS_STATUS_RUNNING
-                services(serviceCount).LastHeartbeat = GetUptime()
-                serviceCount = serviceCount + 1
-            End If
         Else
             ConsoleWrite "[PLEXUS_MGR] ERR: Failed to spawn '"
             ConsoleWrite procName
             ConsoleWriteLine "'!"
         End If
 
+        SpawnProcessInternal = childPid
+    End Function
+
+    ''
+    ' @brief Spawn a service binary and register in supervisor tracking table.
+    ''
+    Private Unsafe Function SpawnService(ByVal ramdiskBase As UInt64, ByVal procName As String, ByVal baxFilename As String, ByVal isDaemon As Boolean) As UInt64
+        Dim childPid As UInt64 = SpawnProcessInternal(ramdiskBase, procName, baxFilename)
+        If childPid <> 0 And serviceCount < 32 Then
+            services(serviceCount).Pid = childPid
+            services(serviceCount).Name = procName
+            services(serviceCount).BaxFile = baxFilename
+            services(serviceCount).Status = PLEXUS_STATUS_RUNNING
+            services(serviceCount).LastHeartbeat = GetUptime()
+            services(serviceCount).IsDaemon = isDaemon
+            serviceCount = serviceCount + 1
+        End If
         SpawnService = childPid
     End Function
 
@@ -195,47 +203,45 @@ Module PlexusMgrMain
 
         ' Stage 1: Storage Subsystem (VFS and In-Memory RamFS)
         ConsoleWriteLine "[PLEXUS_MGR] Staging Stage 1: Storage Subsystem..."
-        SpawnService ramdiskBase, "srv.vfs", "vfs_srv.bax"
+        SpawnService ramdiskBase, "srv.vfs", "vfs_srv.bax", True
         ProcessSleep 40
-        SpawnService ramdiskBase, "fs.ramfs", "ramfs_srv.bax"
+        SpawnService ramdiskBase, "fs.ramfs", "ramfs_srv.bax", True
         ProcessSleep 40
 
         ' Stage 2: Hardware Device Arbiter
         ConsoleWriteLine "[PLEXUS_MGR] Staging Stage 2: Device Arbiter..."
-        SpawnService ramdiskBase, "srv.dev_mgr", "dev_mgr.bax"
+        SpawnService ramdiskBase, "srv.dev_mgr", "dev_mgr.bax", True
         ProcessSleep 40
 
         ' Stage 3: Hardware Drivers (Display & Input)
         ConsoleWriteLine "[PLEXUS_MGR] Staging Stage 3: Display & Input Drivers..."
-        SpawnService ramdiskBase, "drv.disp.svga", "svga_drv.bax"
+        SpawnService ramdiskBase, "drv.disp.svga", "svga_drv.bax", True
         ProcessSleep 40
-        SpawnService ramdiskBase, "drv.disp.lfb", "lfb_drv.bax"
+        SpawnService ramdiskBase, "drv.disp.lfb", "lfb_drv.bax", True
         ProcessSleep 40
-        SpawnService ramdiskBase, "srv.display", "disp_srv.bax"
+        SpawnService ramdiskBase, "srv.display", "disp_srv.bax", True
         ProcessSleep 50
-        SpawnService ramdiskBase, "srv.input", "input_srv.bax"
+        SpawnService ramdiskBase, "srv.input", "input_srv.bax", True
         ProcessSleep 40
 
         ' Stage 4: Windowing & Presentation Engine
         ConsoleWriteLine "[PLEXUS_MGR] Staging Stage 4: Windowing Engine..."
-        SpawnService ramdiskBase, "srv.compositor", "compositor.bax"
+        SpawnService ramdiskBase, "srv.compositor", "compositor.bax", True
         ProcessSleep 50
-        SpawnService ramdiskBase, "srv.wm", "wm.bax"
+        SpawnService ramdiskBase, "srv.wm", "wm.bax", True
         ProcessSleep 50
 
         ' Stage 5: Desktop Applications & Core Utilities
         ConsoleWriteLine "[PLEXUS_MGR] Staging Stage 5: Desktop Applications..."
-        SpawnService ramdiskBase, "apps.sys_mon", "sys_mon.bax"
+        SpawnService ramdiskBase, "apps.sys_mon", "sys_mon.bax", False
         ProcessSleep 30
-        SpawnService ramdiskBase, "apps.res_mon", "res_mon.bax"
+        SpawnService ramdiskBase, "apps.res_mon", "res_mon.bax", False
         ProcessSleep 30
-        SpawnService ramdiskBase, "apps.node_viewer", "node_viewer.bax"
+        SpawnService ramdiskBase, "apps.node_viewer", "node_viewer.bax", False
         ProcessSleep 30
-        SpawnService ramdiskBase, "apps.terminal", "terminal.bax"
+        SpawnService ramdiskBase, "apps.terminal", "terminal.bax", False
         ProcessSleep 30
-        SpawnService ramdiskBase, "apps.doom", "doom.bax"
-        ProcessSleep 30
-        SpawnService ramdiskBase, "user.test.app", "user_app.bax"
+        SpawnService ramdiskBase, "apps.doom", "doom.bax", False
 
         ConsolePrintWithUInt "[PLEXUS_MGR] All services staged: ", serviceCount, " Supervised Services Active\r\n"
         ConsoleWriteLine "[PLEXUS_MGR] Service supervision online. Entering active heartbeat & auto-restart loop..."
@@ -253,16 +259,21 @@ Module PlexusMgrMain
                 Dim exitCode As UInt32 = 0
                 Dim pollStatus As Int32 = ProcessPollExit(services(sIdx).Pid, exitCode)
                 If pollStatus = 0 Then
-                    ' Service exited unexpectedly! Re-summon replacement instance
-                    ConsoleWrite "[PLEXUS_MGR] WARN: Service '"
-                    ConsoleWrite services(sIdx).Name
-                    ConsoleWriteLine "' terminated! Auto-restarting..."
-                    services(sIdx).Status = PLEXUS_STATUS_FAULTED
-                    Dim newPid As UInt64 = SpawnService(ramdiskBase, services(sIdx).Name, services(sIdx).BaxFile)
-                    If newPid <> 0 Then
-                        services(sIdx).Pid = newPid
-                        services(sIdx).Status = PLEXUS_STATUS_RUNNING
-                        services(sIdx).LastHeartbeat = GetUptime()
+                    If services(sIdx).IsDaemon Then
+                        ' Daemon service exited unexpectedly! Re-summon replacement instance
+                        ConsoleWrite "[PLEXUS_MGR] WARN: Daemon service '"
+                        ConsoleWrite services(sIdx).Name
+                        ConsoleWriteLine "' terminated! Auto-restarting..."
+                        services(sIdx).Status = PLEXUS_STATUS_FAULTED
+                        Dim newPid As UInt64 = SpawnProcessInternal(ramdiskBase, services(sIdx).Name, services(sIdx).BaxFile)
+                        If newPid <> 0 Then
+                            services(sIdx).Pid = newPid
+                            services(sIdx).Status = PLEXUS_STATUS_RUNNING
+                            services(sIdx).LastHeartbeat = GetUptime()
+                        End If
+                    Else
+                        ' Non-daemon application exited normally
+                        services(sIdx).Status = PLEXUS_STATUS_STOPPED
                     End If
                 End If
                 sIdx = sIdx + 1

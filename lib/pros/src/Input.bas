@@ -19,11 +19,20 @@ Namespace Pros.Inputs
         Public EventType  As UInt32
         Public DeviceId   As UInt32
         Public Code       As UInt32
+        Public Ascii      As UInt32
         Public Modifiers  As UInt32
         Public PosX       As Int32
         Public PosY       As Int32
         Public DeltaX     As Int32
         Public DeltaY     As Int32
+    End Structure
+
+    <Packed>
+    Public Structure RawKeyEvent
+        Public Scancode  As Byte   ' Base PS/2 scancode 1..127
+        Public State     As Byte   ' 1 = KeyDown, 2 = KeyUp
+        Public Ascii     As Byte   ' Translated ASCII or 0
+        Public Modifiers As Byte   ' Bit 0: Shift, Bit 1: Ctrl, Bit 2: Alt, Bit 3: Extended E0
     End Structure
 
     <Packed>
@@ -50,6 +59,10 @@ Namespace Pros.Inputs
 
         Public Unsafe Function GetMouseState(ByRef state As MouseState) As Boolean
             GetMouseState = (Pros.Sys.RawSyscall.Call1(19, UInt64(@state)) = 0)
+        End Function
+
+        Public Unsafe Function GetKeyEvent(ByRef evt As RawKeyEvent) As Boolean
+            GetKeyEvent = (Pros.Sys.RawSyscall.Call1(21, UInt64(@evt)) = 1)
         End Function
 
     End Module

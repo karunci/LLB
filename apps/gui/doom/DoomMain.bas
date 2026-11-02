@@ -81,86 +81,69 @@ Module DoomMain
         Do
             Dim isFocused As Boolean = WmIsFocused(g_winId)
 
-            ' Poll keystrokes only when window holds input focus
-            If isFocused Then
-                Dim key As Byte = GetKey()
-                While key <> 0
-                    If key = 27 Then
-                        ' Check for ANSI escape sequences (\x1B[...)
-                        Dim b2 As Byte = GetKey()
-                        Dim tries2 As UInt32 = 0
-                        While b2 = 0 And tries2 < 200
-                            b2 = GetKey()
-                            tries2 = tries2 + 1
-                        Wend
+            ' Poll keystrokes exclusively from the Window Manager event queue
+            Dim inEvt As InputEvent
+            While WmPollEvent(g_winId, inEvt)
+                If inEvt.EventType = EVENT_KEY_DOWN Or inEvt.EventType = EVENT_KEY_UP Then
+                    Dim isPress As Int32 = 0
+                    If inEvt.EventType = EVENT_KEY_DOWN Then isPress = 1
 
-                        If b2 = 91 Then
-                            Dim b3 As Byte = GetKey()
-                            Dim tries3 As UInt32 = 0
-                            While b3 = 0 And tries3 < 200
-                                b3 = GetKey()
-                                tries3 = tries3 + 1
-                            Wend
+                    Dim scancode As UInt32 = inEvt.Code
+                    Dim isExt As Boolean = ((inEvt.Modifiers And 8) <> 0)
+                    Dim doomKey As Byte = 0
 
-                            If b3 = 65 Then     ' Up Arrow (\x1B[A)
-                                DoomPushKey 1, &HAD
-                            ElseIf b3 = 66 Then ' Down Arrow (\x1B[B)
-                                DoomPushKey 1, &HAF
-                            ElseIf b3 = 67 Then ' Right Arrow (\x1B[C)
-                                DoomPushKey 1, &HAE
-                            ElseIf b3 = 68 Then ' Left Arrow (\x1B[D)
-                                DoomPushKey 1, &HAC
-                            End If
-                        Else
-                            ' Escape key
-                            DoomPushKey 1, 27
-                        End If
-                    ElseIf key = 10 Or key = 13 Then
-                        ' Enter key -> KEY_ENTER (13)
-                        DoomPushKey 1, 13
-                    ElseIf key = 32 Then
-                        ' Space bar -> ASCII 32 (menu) and KEY_USE (0xA2, open doors)
-                        DoomPushKey 1, 32
-                        DoomPushKey 1, &HA2
-                    ElseIf key = &H1D Then
-                        ' Left / Right Ctrl -> KEY_FIRE (0xA3)
-                        DoomPushKey 1, &HA3
-                    ElseIf key = 8 Or key = 127 Then
-                        ' Backspace / Delete -> KEY_BACKSPACE (0x7F)
-                        DoomPushKey 1, &H7F
-                    ElseIf key = 9 Then
-                        ' Tab -> Automap (KEY_TAB = 9)
-                        DoomPushKey 1, 9
+                If isExt Then
+                    ' Extended Navigation & Cursor Keys
+                    If scancode = &H48 Then doomKey = &HAD     ' Up Arrow (KEY_UPARROW)
+                    If scancode = &H50 Then doomKey = &HAF     ' Down Arrow (KEY_DOWNARROW)
+                    If scancode = &H4B Then doomKey = &HAC     ' Left Arrow (KEY_LEFTARROW)
+                    If scancode = &H4D Then doomKey = &HAE     ' Right Arrow (KEY_RIGHTARROW)
+                    If scancode = &H1D Then doomKey = &HA3     ' Right Ctrl (KEY_FIRE)
+                    If scancode = &H38 Then doomKey = &HA0     ' Right Alt (KEY_STRAFE_L)
+                Else
+                    If scancode = &H01 Then
+                        doomKey = 27                           ' Escape (KEY_ESCAPE)
+                    ElseIf scancode = &H1C Then
+                        doomKey = 13                           ' Enter (KEY_ENTER)
+                    ElseIf scancode = &H39 Then
+                        doomKey = 32                           ' Space bar
+                        DoomPushKey isPress, &HA2              ' Space bar also activates KEY_USE
+                    ElseIf scancode = &H0E Then
+                        doomKey = &H7F                         ' Backspace (KEY_BACKSPACE)
+                    ElseIf scancode = &H0F Then
+                        doomKey = 9                            ' Tab (KEY_TAB, automap)
+                    ElseIf scancode = &H1D Then
+                        doomKey = &HA3                         ' Left Ctrl (KEY_FIRE)
+                    ElseIf scancode = &H2A Or scancode = &H36 Then
+                        doomKey = &HB6                         ' Shift (KEY_RSHIFT, run)
+                    ElseIf scancode = &H38 Then
+                        doomKey = &HA0                         ' Left Alt (KEY_STRAFE_L)
+                    ' WASD Movement
+                    ElseIf scancode = &H11 Then
+                        doomKey = &HAD                         ' 'W' -> Forward (KEY_UPARROW)
+                    ElseIf scancode = &H1F Then
+                        doomKey = &HAF                         ' 'S' -> Backward (KEY_DOWNARROW)
+                    ElseIf scancode = &H1E Then
+                        doomKey = &HAC                         ' 'A' -> Turn Left (KEY_LEFTARROW)
+                    ElseIf scancode = &H20 Then
+                        doomKey = &HAE                         ' 'D' -> Turn Right (KEY_RIGHTARROW)
+                    ElseIf scancode = &H12 Then
+                        doomKey = &HA2                         ' 'E' -> Use (KEY_USE)
+                    ' Weapon selection numbers '1'..'7'
+                    ElseIf scancode >= &H02 And scancode <= &H08 Then
+                        doomKey = CType(Byte, 49 + (scancode - &H02))
                     Else
-                        ' Standard alphanumeric keys, WASD movement, and weapon selection
-                        Dim doomKey As Byte = key
-                        If doomKey >= 97 And doomKey <= 122 Then
-                            doomKey = doomKey - 32 ' Uppercase for DOOM keycodes
-                        End If
-
-                        If doomKey = 87 Then        ' 'W' -> Up Arrow
-                            DoomPushKey 1, &HAD
-                        ElseIf doomKey = 83 Then    ' 'S' -> Down Arrow
-                            DoomPushKey 1, &HAF
-                        ElseIf doomKey = 65 Then    ' 'A' -> Left Arrow
-                            DoomPushKey 1, &HAC
-                        ElseIf doomKey = 68 Then    ' 'D' -> Right Arrow
-                            DoomPushKey 1, &HAE
-                        ElseIf doomKey = 69 Then    ' 'E' -> Use (Open doors)
-                            DoomPushKey 1, &HA2
-                        ElseIf doomKey = 70 Or doomKey = 88 Then ' 'F' or 'X' -> Fire
-                            DoomPushKey 1, &HA3
-                        Else
-                            DoomPushKey 1, doomKey
+                        If inEvt.Ascii <> 0 Then
+                            doomKey = CType(Byte, inEvt.Ascii)
                         End If
                     End If
-                    key = GetKey()
-                Wend
-            Else
-                ' Drain stale keys when unfocused
-                While GetKey() <> 0
-                Wend
-            End If
+                End If
+
+                If doomKey <> 0 Then
+                    DoomPushKey isPress, doomKey
+                End If
+                End If
+            Wend
 
             ' 6. Step game logic & render frame
             DoomTick

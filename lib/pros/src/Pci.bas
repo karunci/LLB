@@ -73,8 +73,8 @@ Namespace Pros.Driver
             Dim wcFlag As UInt64 = 0
             If writeCombining Then wcFlag = 1
             Dim res As UInt64 = Pros.Sys.RawSyscall.Call4(SYS_PCI_MAP_BAR, UInt64(devIdx), UInt64(barIdx), targetVaddr, wcFlag)
-            If res = 1 Then
-                MapBar = *UInt32(targetVaddr)
+            If res <> 0 Then
+                MapBar = Pointer To UInt32(targetVaddr)
             Else
                 MapBar = Nothing
             End If

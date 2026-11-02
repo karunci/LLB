@@ -171,6 +171,36 @@ Module ProsApi
         Error = 401
     End Enum
 
+    ' Audio Subsystem Enums
+    Public Enum AudioCommand
+        GetCaps     = 60
+        PlaySample  = 61
+        StopSample  = 62
+        StreamPcm   = 63
+        SetVolume   = 64
+        GetPosition = 65
+    End Enum
+
+    Public Enum AudioResponse
+        Ok    = 600
+        Error = 601
+    End Enum
+
+    Public Const AUDIO_CMD_GET_CAPS     As UInt32 = 60
+    Public Const AUDIO_CMD_PLAY_SAMPLE  As UInt32 = 61
+    Public Const AUDIO_CMD_STOP_SAMPLE  As UInt32 = 62
+    Public Const AUDIO_CMD_STREAM_PCM   As UInt32 = 63
+    Public Const AUDIO_CMD_SET_VOLUME   As UInt32 = 64
+    Public Const AUDIO_CMD_GET_POSITION As UInt32 = 65
+
+    Public Const AUDIO_RESP_OK          As UInt32 = 600
+    Public Const AUDIO_RESP_ERROR       As UInt32 = 601
+
+    Public Const AUDIO_FMT_U8_11K_MONO    As UInt32 = 1
+    Public Const AUDIO_FMT_S16_22K_STEREO As UInt32 = 2
+    Public Const AUDIO_FMT_S16_44K_STEREO As UInt32 = 3
+    Public Const AUDIO_FMT_S16_48K_STEREO As UInt32 = 4
+
     ' System Call Numbers
     Public Enum SyscallNumber
         ConsoleWrite   = 1
@@ -180,6 +210,7 @@ Module ProsApi
         ProcessExit    = 16
         GetMouse       = 19
         MemAllocPages  = 26
+        MemVirtToPhys  = 27
         TimeUptime     = 28
         TimeGetRtc     = 29
         TimeGetTicks   = 30
@@ -240,6 +271,21 @@ Module ProsApi
         Public SourceNode    As NodeId
         Public TargetNode    As NodeId
         Public Payload(255)  As Byte
+    End Structure
+
+    <Packed>
+    Public Structure AudioSamplePacket
+        Public SampleRate As UInt32
+        Public Channels   As UInt16
+        Public Bits       As UInt16
+        Public Length     As UInt32
+        Public Volume     As Byte
+        Public Separation As Byte
+        Public Pitch      As UInt16
+        Public ChannelId  As Int32
+        Public ShmId      As UInt64
+        Public ShmOffset  As UInt32
+        Public Reserved   As UInt32
     End Structure
 
     <Packed>
@@ -430,6 +476,9 @@ Module ProsApi
     Public Declare Function ReadAllText Lib "libpros" Alias "Pros_IO_FileSystem_ReadAllText" (ByVal path As String, ByVal outBuf As Pointer To Byte, ByVal maxLen As UInt32) As UInt32
     Public Declare Function DirectoryList Lib "libpros" Alias "Pros_IO_FileSystem_DirectoryList" (ByVal dirPath As String, ByVal outBuf As Pointer To Byte, ByVal maxLen As UInt32) As UInt32
 
+    ' Memory Primitives
+    Public Declare Function MemVirtToPhys Lib "libpros" Alias "Pros_Memory_MemUtil_VirtToPhys" (ByVal vaddr As UInt64) As PhysicalAddress
+
     ' Neural Nodes & Synapses
     Public Declare Function NodeRegister Lib "libpros" Alias "Pros_Nodes_NodeRegistry_Register" (ByVal kind As UInt32, ByVal name As String, ByVal caps As UInt32) As NodeId
     Public Declare Function NodeLookup Lib "libpros" Alias "Pros_Nodes_NodeRegistry_Lookup" (ByVal name As String) As NodeId
@@ -468,6 +517,12 @@ Module ProsApi
     ' Hardware Input APIs
     Public Declare Function GetMouseState Lib "libpros" Alias "Pros_Inputs_DeviceInput_GetMouseState" (ByRef state As MouseState) As Boolean
     Public Declare Function GetKeyEvent Lib "libpros" Alias "Pros_Inputs_DeviceInput_GetKeyEvent" (ByRef evt As RawKeyEvent) As Boolean
+
+    ' Audio Subsystem APIs
+    Public Declare Function AudioInit Lib "libpros" Alias "Pros_Audio_Audio_Initialize" () As Boolean
+    Public Declare Function AudioPlaySample Lib "libpros" Alias "Pros_Audio_Audio_PlaySample" (ByVal sampleRate As UInt32, ByVal channels As UInt16, ByVal bits As UInt16, ByVal pData As Pointer To Byte, ByVal length As UInt32, ByVal volume As Byte, ByVal separation As Byte) As Int32
+    Public Declare Sub AudioStopChannel Lib "libpros" Alias "Pros_Audio_Audio_StopChannel" (ByVal channel As Int32)
+    Public Declare Sub AudioSetMasterVolume Lib "libpros" Alias "Pros_Audio_Audio_SetMasterVolume" (ByVal volume As Byte)
 
     ' Virtual File System (VFS) APIs
     <Packed>

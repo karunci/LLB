@@ -1,0 +1,30 @@
+' Project Name: Personal Research Operating System / Low-Level Basic
+' Filename: services/audio_srv/AudioService.llbproj
+' Summary: 32-Channel Audio Mixer Daemon with linear resampling and stereo panning.
+
+[Project]
+Name    = "AudioService"
+Type    = "Executable"
+Version = "1.0.0"
+
+[Target]
+Arch = "x86_64-unknown-none-elf"
+
+[Output]
+OutDir  = "build"
+OutFile = "audio_srv.elf"
+
+[Entry]
+EntryPoint = "_start"
+
+[Linker]
+LinkerScript = "user_linker.ld"
+Libraries    = [
+    "../../lib/pros/build/libpros.a"
+]
+
+[Sources]
+Assembly = "../../lib/runtime/brt0.S"
+Assembly = "../../lib/runtime/mem.S"
+Module   = "AudioMain.bas"
+

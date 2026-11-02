@@ -1,0 +1,30 @@
+' Project Name: Personal Research Operating System / Low-Level Basic
+' Filename: drivers/snd/hda/HdaDriver.llbproj
+' Summary: Intel High Definition Audio (ICH6 HDA) hardware sound driver daemon.
+
+[Project]
+Name    = "HdaDriver"
+Type    = "Executable"
+Version = "1.0.0"
+
+[Target]
+Arch = "x86_64-unknown-none-elf"
+
+[Output]
+OutDir  = "build"
+OutFile = "hda_drv.elf"
+
+[Entry]
+EntryPoint = "_start"
+
+[Linker]
+LinkerScript = "user_linker.ld"
+Libraries    = [
+    "../../../lib/pros/build/libpros.a"
+]
+
+[Sources]
+Assembly = "../../../lib/runtime/brt0.S"
+Assembly = "../../../lib/runtime/mem.S"
+Module   = "HdaDriverMain.bas"
+

@@ -11,7 +11,9 @@ echo "=== 1. Building Libraries ==="
 echo "=== 2. Building Drivers & Services ==="
 (cd drivers/disp/lfb && "${LLBC}" LfbDriver.llbproj)
 (cd drivers/disp/svga && "${LLBC}" SvgaDriver.llbproj)
+(cd drivers/snd/hda && "${LLBC}" HdaDriver.llbproj)
 (cd services/genesis && "${LLBC}" Genesis.llbproj)
+(cd services/audio_srv && "${LLBC}" AudioService.llbproj)
 (cd services/disp_srv && "${LLBC}" DispService.llbproj)
 (cd services/input_srv && "${LLBC}" InputService.llbproj)
 (cd services/compositor && "${LLBC}" Compositor.llbproj)

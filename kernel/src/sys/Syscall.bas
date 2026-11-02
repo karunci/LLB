@@ -117,6 +117,7 @@ Namespace Sys
         Public Const SYS_GET_KEY         As UInt64 = 20
         Public Const SYS_GET_KEY_EVENT   As UInt64 = 21
         Public Const SYS_MEM_ALLOC_PAGES As UInt64 = 26
+        Public Const SYS_MEM_VIRT_TO_PHYS As UInt64 = 27
         Public Const SYS_TIME_UPTIME     As UInt64 = 28
         Public Const SYS_TIME_GET_RTC    As UInt64 = 29
         Public Const SYS_TIME_GET_TICKS  As UInt64 = 30
@@ -686,6 +687,11 @@ Namespace Sys
                     Else
                         Dispatch = 0
                     End If
+
+                Case SYS_MEM_VIRT_TO_PHYS
+                    ' arg1 = virtAddr (UInt64)
+                    Dim curPml4Phys As UInt64 = SchedEngine.GetCurrentCr3()
+                    Dispatch = VmmEngine.VirtToPhys(curPml4Phys, arg1)
 
                 Case SYS_TIME_UPTIME
                     Dispatch = SchedEngine.GetUptime()

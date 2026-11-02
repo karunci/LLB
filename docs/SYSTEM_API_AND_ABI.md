@@ -89,6 +89,9 @@ System calls in PROS use the AMD64 `syscall` / `sysretq` hardware instructions:
   - `%rdi`: Number of 4 KB pages to allocate (up to 8,192 pages = 32 MB).
   - `%rsi`: Target virtual memory address (must be 4 KB page-aligned, e.g. `0x88000000`).
   - Returns: Mapped base virtual address or `0` on allocation/validation failure.
+- `SYS_MEM_VIRT_TO_PHYS (27)`: Resolve calling process virtual memory address to underlying hardware physical frame address (essential for DMA ring buffers and BDL descriptors).
+  - `%rdi`: Virtual address to resolve.
+  - Returns: Physical address (`UInt64`) or `0` if unmapped.
 - `SYS_SHMEM_CREATE (60)`: Allocate zero-copy physical pages and map to calling task.
   - `%rdi`: Size in bytes (rounded up to 4 KB page alignment).
   - `%rsi`: Preferred virtual target address.
@@ -160,6 +163,8 @@ PROS public ABI uses semantic type aliases and strongly-typed enums to enforce t
 - `VfsResponse`: VFS status codes (`Success = 0`, `Error = 1`, `NotFound = 2`, `PermissionDenied = 3`).
 - `DevCommand`: Device manager protocol commands (`Register = 1`, `Unregister = 2`, `Query = 31`).
 - `DevResponse`: Device manager status codes (`Success = 0`, `Error = 1`, `DeviceNotFound = 2`).
+- `AudioCommand`: Audio mixer daemon protocol commands (`GetCaps = 60`, `PlaySample = 61`, `StopSample = 62`, `StreamPcm = 63`, `SetVolume = 64`, `GetPosition = 65`).
+- `AudioResponse`: Audio mixer protocol responses (`Ok = 600`, `Error = 601`).
 
 ### String Parameter Modernization
 All public library functions accept `ByVal ... As String` directly, supporting both variable strings and literal string constants seamlessly with freestanding null-check safety.

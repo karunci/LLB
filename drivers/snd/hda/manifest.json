@@ -1,0 +1,21 @@
+{
+  "app_id": "sys.driver.sound.hda",
+  "name": "Intel High Definition Audio Driver",
+  "version": "1.0.0",
+  "vendor": "PROS Architecture Group",
+  "subsystem": "Driver",
+  "permissions": [
+    "synapse.connect",
+    "synapse.register",
+    "shmem.create",
+    "shmem.attach",
+    "pci.map",
+    "port.io"
+  ],
+  "node": {
+    "name": "drv.snd.hda",
+    "kind": "device",
+    "capabilities": 7
+  }
+}
+

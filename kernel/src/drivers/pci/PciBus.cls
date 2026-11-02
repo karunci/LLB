@@ -256,6 +256,13 @@ Public Class PciBus
                                 ElseIf vId = PCI_VENDOR_INTEL Then
                                     Serial.PrintF "[PCI]   >>> Intel HD/UHD Integrated Graphics Controller Active!\r\n"
                                 End If
+                            ElseIf classCode = PCI_CLASS_MULTIMEDIA Then
+                                EnableDevice UInt8(b), UInt8(s), UInt8(f)
+                                Serial.PrintF "[PCI]   >>> Multimedia/Audio Controller Detected! BAR0: 0x%lx (Size: %u KB, IO: %d)\r\n", _
+                                              devPtr.Bar0.PhysBase, CType(UInt32, devPtr.Bar0.SizeBytes / 1024), devPtr.Bar0.IsIo
+                                If vId = PCI_VENDOR_INTEL And dId = PCI_DEVICE_INTEL_HDA Then
+                                    Serial.PrintF "[PCI]   >>> Intel High Definition Audio (ICH6 HDA) Controller Active!\r\n"
+                                End If
                             End If
 
                             deviceCount = deviceCount + 1

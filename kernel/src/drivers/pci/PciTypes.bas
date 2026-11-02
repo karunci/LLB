@@ -40,11 +40,19 @@ Namespace Drivers.Pci
     Public Const PCI_CLASS_STORAGE     As UInt8 = &H01
     Public Const PCI_CLASS_NETWORK     As UInt8 = &H02
     Public Const PCI_CLASS_DISPLAY     As UInt8 = &H03
+    Public Const PCI_CLASS_MULTIMEDIA  As UInt8 = &H04
     Public Const PCI_CLASS_BRIDGE      As UInt8 = &H06
+
+    ' Multimedia Subclass Codes
+    Public Const PCI_SUBCLASS_AUDIO_OTHER As UInt8 = &H01
+    Public Const PCI_SUBCLASS_AUDIO_HDA   As UInt8 = &H03
 
     ' Display Subclass Codes
     Public Const PCI_SUBCLASS_VGA      As UInt8 = &H00
     Public Const PCI_SUBCLASS_OTHER    As UInt8 = &H80
+
+    ' Known Audio Device IDs
+    Public Const PCI_DEVICE_INTEL_HDA    As UInt16 = &H2668
 
     ' Known Display Vendor / Device IDs
     Public Const PCI_VENDOR_VMWARE       As UInt16 = &H15AD

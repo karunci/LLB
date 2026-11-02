@@ -4,6 +4,9 @@
 
 Namespace Pros.Memory
 
+    Import Pros.Sys
+    Import Pros.Sys.RawSyscall
+
     Public Module MemUtil
 
         ' Freestanding runtime assembly primitives from lib/runtime/mem.S
@@ -67,6 +70,15 @@ Namespace Pros.Memory
                 Exit Function
             End If
             Compare = memcmp(s1, s2, count)
+        End Function
+
+        ''
+        ' @brief Translate a virtual memory address to its underlying physical frame address.
+        ' @param vaddr Virtual address in calling process's address space.
+        ' @return Physical frame address, or 0 if unmapped.
+        ''
+        Public Unsafe Function VirtToPhys(ByVal vaddr As UInt64) As UInt64
+            VirtToPhys = Pros.Sys.RawSyscall.Call1(27, vaddr) ' SYS_MEM_VIRT_TO_PHYS
         End Function
 
     End Module

@@ -9,7 +9,7 @@ DOOM_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${DOOM_DIR}"
 mkdir -p build/objs
 
-CFLAGS="-target x86_64-unknown-none-elf -ffreestanding -nostdlibinc -fno-pie -fno-stack-protector -fcf-protection=none -mno-red-zone -O2 -Wno-everything -I c_src/include -I c_src/doomgeneric"
+CFLAGS="-target x86_64-unknown-none-elf -ffreestanding -nostdlibinc -fno-pie -fno-stack-protector -fcf-protection=none -mno-red-zone -O2 -Wno-everything -DFEATURE_SOUND -D__PROS__ -I c_src/include -I c_src/doomgeneric"
 
 echo "=== 1. Compiling Minimal PROS LibC & Bridge ==="
 clang ${CFLAGS} -c c_src/pros_libc.c -o build/objs/pros_libc.o

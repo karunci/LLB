@@ -26,7 +26,9 @@ pack_bax() {
 echo "[+] Packaging ELF binaries into Neural BAX containers..."
 pack_bax drivers/disp/lfb/build/lfb_drv.elf drivers/disp/lfb/build/lfb_drv.bax drivers/disp/lfb/manifest.json
 pack_bax drivers/disp/svga/build/svga_drv.elf drivers/disp/svga/build/svga_drv.bax drivers/disp/svga/manifest.json
+pack_bax drivers/snd/hda/build/hda_drv.elf drivers/snd/hda/build/hda_drv.bax drivers/snd/hda/manifest.json
 pack_bax services/genesis/build/genesis.elf services/genesis/build/genesis.bax services/genesis/manifest.json
+pack_bax services/audio_srv/build/audio_srv.elf services/audio_srv/build/audio_srv.bax services/audio_srv/manifest.json
 pack_bax services/disp_srv/build/disp_srv.elf services/disp_srv/build/disp_srv.bax services/disp_srv/manifest.json
 pack_bax services/input_srv/build/input_srv.elf services/input_srv/build/input_srv.bax services/input_srv/manifest.json
 pack_bax services/compositor/build/compositor.elf services/compositor/build/compositor.bax services/compositor/manifest.json
@@ -52,6 +54,7 @@ pack_bax apps/gui/doom/build/doom.elf apps/gui/doom/build/doom.bax apps/gui/doom
 mkdir -p "${STAGING_DIR}/System/Services/Genesis"
 mkdir -p "${STAGING_DIR}/System/Services/Compositor"
 mkdir -p "${STAGING_DIR}/System/Services/DevMgr"
+mkdir -p "${STAGING_DIR}/System/Services/AudioSrv"
 mkdir -p "${STAGING_DIR}/System/Services/PlexusMgr"
 mkdir -p "${STAGING_DIR}/System/Services/Wm"
 mkdir -p "${STAGING_DIR}/System/Services/VfsSrv"
@@ -59,6 +62,7 @@ mkdir -p "${STAGING_DIR}/System/Services/RamfsSrv"
 
 mkdir -p "${STAGING_DIR}/System/Drivers/Nodes"
 mkdir -p "${STAGING_DIR}/System/Drivers/Display"
+mkdir -p "${STAGING_DIR}/System/Drivers/Sound"
 mkdir -p "${STAGING_DIR}/System/Drivers/Input"
 
 mkdir -p "${STAGING_DIR}/System/Apps/CoreUtils"
@@ -85,6 +89,7 @@ cp configs/drives/ramdisk0.cfg "${STAGING_DIR}/System/Configurations/Drives/"
 cp services/genesis/build/genesis.bax "${STAGING_DIR}/System/Services/Genesis/"
 cp services/compositor/build/compositor.bax "${STAGING_DIR}/System/Services/Compositor/"
 cp services/dev_mgr/build/dev_mgr.bax "${STAGING_DIR}/System/Services/DevMgr/"
+cp services/audio_srv/build/audio_srv.bax "${STAGING_DIR}/System/Services/AudioSrv/"
 cp services/plexus_mgr/build/plexus_mgr.bax "${STAGING_DIR}/System/Services/PlexusMgr/"
 cp services/wm/build/wm.bax "${STAGING_DIR}/System/Services/Wm/"
 cp services/vfs_srv/build/vfs_srv.bax "${STAGING_DIR}/System/Services/VfsSrv/"
@@ -95,6 +100,7 @@ fi
 # 4. Stage Hardware Driver Daemons
 cp drivers/disp/lfb/build/lfb_drv.bax "${STAGING_DIR}/System/Drivers/Display/"
 cp drivers/disp/svga/build/svga_drv.bax "${STAGING_DIR}/System/Drivers/Display/"
+cp drivers/snd/hda/build/hda_drv.bax "${STAGING_DIR}/System/Drivers/Sound/"
 cp services/disp_srv/build/disp_srv.bax "${STAGING_DIR}/System/Drivers/Display/"
 cp services/input_srv/build/input_srv.bax "${STAGING_DIR}/System/Drivers/Input/"
 

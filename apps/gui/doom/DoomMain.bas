@@ -22,6 +22,24 @@ Module DoomMain
     Private g_winId As UInt32 = 0
 
     ''
+    ' @brief Exported callback invoked from C DOOM sound module to play digital PCM sound effects.
+    ''
+    Public Unsafe Sub doom_platform_play_sound_cb(ByVal sampleRate As UInt32, ByVal numSamples As UInt32, _
+                                                  ByVal pcmPtr As Pointer To Byte, ByVal channel As Int32, _
+                                                  ByVal vol As Int32, ByVal sep As Int32)
+        Dim volByte As Byte = Byte(vol And &H7F)
+        Dim sepByte As Byte = Byte(sep And &HFF)
+        AudioPlaySample sampleRate, 1, 8, pcmPtr, numSamples, volByte, sepByte
+    End Sub
+
+    ''
+    ' @brief Exported callback invoked from C DOOM sound module to stop a sound channel.
+    ''
+    Public Unsafe Sub doom_platform_stop_sound_cb(ByVal channel As Int32)
+        AudioStopChannel channel
+    End Sub
+
+    ''
     ' @brief Main entry point for standalone Ring 3 DOOM application.
     ' @param argc Number of command line arguments.
     ' @param argv Vector of argument string pointers.

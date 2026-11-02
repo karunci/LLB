@@ -1,0 +1,19 @@
+{
+  "app_id": "sys.service.audio",
+  "name": "PROS Audio Mixer Service",
+  "version": "1.0.0",
+  "vendor": "PROS Architecture Group",
+  "subsystem": "Service",
+  "permissions": [
+    "synapse.connect",
+    "synapse.register",
+    "shmem.create",
+    "shmem.attach"
+  ],
+  "node": {
+    "name": "srv.audio",
+    "kind": "device",
+    "capabilities": 7
+  }
+}
+

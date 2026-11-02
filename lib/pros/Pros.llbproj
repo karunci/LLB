@@ -47,5 +47,6 @@ Files = [
     "src/DevMgr.bas",
     "src/Plexus.bas",
     "src/GL.bas",
+    "src/Audio.bas",
     "../metal/src/Format.bas"
 ]

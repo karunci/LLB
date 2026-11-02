@@ -131,3 +131,124 @@ int doom_platform_is_dirty(void) {
 void doom_platform_clear_dirty(void) {
     g_frame_dirty = 0;
 }
+
+/* ========================================================================= */
+/* 4. DOOM Sound & Music Subsystem Integration                              */
+/* ========================================================================= */
+
+#include "doomgeneric/i_sound.h"
+#include "doomgeneric/w_wad.h"
+#include "doomgeneric/z_zone.h"
+
+extern void doom_platform_play_sound_cb(uint32_t sample_rate, uint32_t num_samples, const uint8_t *samples, int channel, int vol, int sep);
+extern void doom_platform_stop_sound_cb(int channel);
+
+int use_libsamplerate = 0;
+float libsamplerate_scale = 1.0f;
+
+static snddevice_t dg_sound_devices[] = {
+    SNDDEVICE_SB,
+    SNDDEVICE_PAS,
+    SNDDEVICE_GUS,
+    SNDDEVICE_WAVEBLASTER,
+    SNDDEVICE_SOUNDCANVAS,
+    SNDDEVICE_GENMIDI,
+    SNDDEVICE_AWE32
+};
+
+static boolean DG_Sound_Init(boolean use_sfx_prefix) {
+    (void)use_sfx_prefix;
+    return true;
+}
+
+static void DG_Sound_Shutdown(void) {}
+
+static int DG_Sound_GetSfxLumpNum(sfxinfo_t *sfxinfo) {
+    char namebuf[9];
+    if (sfxinfo->name[0] == 'd' && sfxinfo->name[1] == 's') {
+        strncpy(namebuf, sfxinfo->name, 8);
+    } else {
+        snprintf(namebuf, sizeof(namebuf), "ds%s", sfxinfo->name);
+    }
+    namebuf[8] = '\0';
+    return W_CheckNumForName(namebuf);
+}
+
+static void DG_Sound_Update(void) {}
+
+static void DG_Sound_UpdateSoundParams(int channel, int vol, int sep) {
+    (void)channel; (void)vol; (void)sep;
+}
+
+static int DG_Sound_StartSound(sfxinfo_t *sfxinfo, int channel, int vol, int sep) {
+    if (!sfxinfo || sfxinfo->lumpnum < 0) return -1;
+
+    uint8_t *lump_data = (uint8_t *)W_CacheLumpNum(sfxinfo->lumpnum, PU_STATIC);
+    if (!lump_data) return -1;
+
+    uint16_t fmt = *(uint16_t *)&lump_data[0];
+    uint16_t srate = *(uint16_t *)&lump_data[2];
+    uint32_t count = *(uint32_t *)&lump_data[4];
+
+    if (fmt != 3 || count == 0) return -1;
+
+    const uint8_t *pcm = &lump_data[8];
+    doom_platform_play_sound_cb((uint32_t)srate, count, pcm, channel, vol, sep);
+    return channel;
+}
+
+static void DG_Sound_StopSound(int channel) {
+    doom_platform_stop_sound_cb(channel);
+}
+
+static boolean DG_Sound_SoundIsPlaying(int channel) {
+    (void)channel;
+    return false;
+}
+
+static void DG_Sound_CacheSounds(sfxinfo_t *sounds, int num_sounds) {
+    (void)sounds; (void)num_sounds;
+}
+
+sound_module_t DG_sound_module = {
+    dg_sound_devices,
+    sizeof(dg_sound_devices) / sizeof(snddevice_t),
+    DG_Sound_Init,
+    DG_Sound_Shutdown,
+    DG_Sound_GetSfxLumpNum,
+    DG_Sound_Update,
+    DG_Sound_UpdateSoundParams,
+    DG_Sound_StartSound,
+    DG_Sound_StopSound,
+    DG_Sound_SoundIsPlaying,
+    DG_Sound_CacheSounds
+};
+
+/* Music Module */
+static boolean DG_Music_Init(void) { return true; }
+static void DG_Music_Shutdown(void) {}
+static void DG_Music_SetMusicVolume(int vol) { (void)vol; }
+static void DG_Music_PauseMusic(void) {}
+static void DG_Music_ResumeMusic(void) {}
+static void *DG_Music_RegisterSong(void *data, int len) { (void)len; return data; }
+static void DG_Music_UnRegisterSong(void *handle) { (void)handle; }
+static void DG_Music_PlaySong(void *handle, boolean looping) { (void)handle; (void)looping; }
+static void DG_Music_StopSong(void) {}
+static boolean DG_Music_MusicIsPlaying(void) { return false; }
+static void DG_Music_Poll(void) {}
+
+music_module_t DG_music_module = {
+    dg_sound_devices,
+    sizeof(dg_sound_devices) / sizeof(snddevice_t),
+    DG_Music_Init,
+    DG_Music_Shutdown,
+    DG_Music_SetMusicVolume,
+    DG_Music_PauseMusic,
+    DG_Music_ResumeMusic,
+    DG_Music_RegisterSong,
+    DG_Music_UnRegisterSong,
+    DG_Music_PlaySong,
+    DG_Music_StopSong,
+    DG_Music_MusicIsPlaying,
+    DG_Music_Poll
+};

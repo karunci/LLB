@@ -167,6 +167,7 @@ Module AudioMain
     ' @brief Audio mixer service daemon entry point.
     ''
     Public Unsafe Function user_main(ByVal argc As UInt64, ByVal argv As Pointer To Pointer To Byte) As UInt64
+        ConsoleSetTtyChannel 0
         ConsoleWriteLine "[SRV_AUDIO] ======================================================="
         ConsoleWriteLine "[SRV_AUDIO] PROS 32-Channel Audio Mixer Daemon Online (CPL=3)"
 
@@ -206,20 +207,28 @@ Module AudioMain
                 SynapsePush synHda, queryPkt
 
                 Dim respPkt As AxonPacket
-                If SynapsePop(audioNodeId, respPkt) Then
-                    If respPkt.PacketType = 600 Then
-                        Dim pShmIn As Pointer To UInt64 = Pointer To UInt64(AddressOf respPkt.Payload(0))
-                        dmaShmId = pShmIn(0)
-                        ConsolePrintWithUInt "[SRV_AUDIO] Received HDA DMA SHMID: ", dmaShmId, "\r\n"
+                Dim waitLoops As UInt32 = 100
+                Dim gotCaps As Boolean = False
+                While waitLoops > 0 And Not gotCaps
+                    If SynapsePop(audioNodeId, respPkt) Then
+                        If respPkt.PacketType = 600 Then
+                            Dim pShmIn As Pointer To UInt64 = Pointer To UInt64(AddressOf respPkt.Payload(0))
+                            dmaShmId = pShmIn(0)
+                            ConsolePrintWithUInt "[SRV_AUDIO] Received HDA DMA SHMID: ", dmaShmId, "\r\n"
 
-                        ' Attach DMA buffer at 0x68400000
-                        Dim attachAddr As UInt64 = ShmemAttach(dmaShmId, &H68400000)
-                        If attachAddr <> 0 Then
-                            pDmaRing = Pointer To Int16(attachAddr)
-                            ConsoleWriteLine "[SRV_AUDIO] DMA Audio Ring attached at 0x68400000 (32 KB)."
+                            ' Attach DMA buffer at 0x68400000
+                            Dim attachAddr As UInt64 = ShmemAttach(dmaShmId, &H68400000)
+                            If attachAddr <> 0 Then
+                                pDmaRing = Pointer To Int16(attachAddr)
+                                ConsoleWriteLine "[SRV_AUDIO] DMA Audio Ring attached at 0x68400000 (32 KB)."
+                            End If
+                            gotCaps = True
                         End If
+                    Else
+                        ProcessSleep 10
+                        waitLoops = waitLoops - 1
                     End If
-                End If
+                Wend
             End If
         Else
             ConsoleWriteLine "[SRV_AUDIO] WARN: drv.snd.hda not found. Running in software loopback mode."

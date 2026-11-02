@@ -120,8 +120,11 @@ Module HdaDriverMain
             timeout = timeout - 1
         Wend
 
+        ' Clear IRV (bit 1) by writing 1 to bit 1
+        WriteMmio16 HDA_REG_ICS, 2
+
         WriteMmio32 HDA_REG_IC, verb
-        WriteMmio16 HDA_REG_ICS, ReadMmio16(HDA_REG_ICS) Or 1 ' Set ICB to initiate command
+        WriteMmio16 HDA_REG_ICS, 1 ' Set ICB to initiate command
 
         timeout = 100000
         While timeout > 0 And (ReadMmio16(HDA_REG_ICS) And 1) <> 0
@@ -135,6 +138,7 @@ Module HdaDriverMain
     ' @brief Main driver daemon entry point.
     ''
     Public Unsafe Function user_main(ByVal argc As UInt64, ByVal argv As Pointer To Pointer To Byte) As UInt64
+        ConsoleSetTtyChannel 0
         ConsoleWriteLine "[DRV_HDA] ======================================================="
         ConsoleWriteLine "[DRV_HDA] Intel High Definition Audio (ICH6 HDA) Driver Online (CPL=3)"
 
@@ -226,21 +230,28 @@ Module HdaDriverMain
 
         ' 7. Configure Codec 0 Widgets via Immediate Verbs
         ConsoleWriteLine "[DRV_HDA] Configuring Codec 0 Output Widgets..."
-        ' Node 2 (Audio Output Converter / DAC): Stream 1, Channel 0
-        SendCodecVerb &H00270610
-        ' Node 2: Format 44.1 kHz, 16-bit, Stereo (0x4011)
+        ' Node 1 (Audio Function Group): Set Power State D0 (0x705 = 0x00)
+        SendCodecVerb &H00170500
+
+        ' Node 2 (Audio Output Converter / DAC):
+        ' Power State D0
+        SendCodecVerb &H00270500
+        ' Format 44.1 kHz, 16-bit, Stereo (0x4011)
         SendCodecVerb &H00224011
-        ' Node 3 (Output Amplifier): Unmute, Volume 100% (0x7F)
+        ' Stream 1, Channel 0
+        SendCodecVerb &H00270610
+        ' Unmute Converter Amp (Gain 0 dB = 0x7F)
+        SendCodecVerb &H0023B07F
+
+        ' Node 3 (Pin Widget - Line Out):
+        ' Power State D0
+        SendCodecVerb &H00370500
+        ' Enable Output Pin (PIN_OUT = 0x40)
+        SendCodecVerb &H00370740
+        ' Unmute Pin Amp (Output Amp Gain / Unmute = 0x7F)
         SendCodecVerb &H0033B07F
-        ' Node 4 (Pin Widget - Headphone / Line Out): Enable PIN_OUT (0x40)
-        SendCodecVerb &H00470740
-        ' Node 4: Unmute Pin Amp
-        SendCodecVerb &H0043B07F
-        ' Node 5 (Pin Widget - Speaker): Enable PIN_OUT (0x40)
-        SendCodecVerb &H00570740
-        ' Node 5: Unmute Pin Amp
-        SendCodecVerb &H0053B07F
-        ConsoleWriteLine "[DRV_HDA] Codec 0 DAC & Output Pins unmuted and configured."
+
+        ConsoleWriteLine "[DRV_HDA] Codec 0 DAC & Output Pin unmuted and configured."
 
         ' 8. Allocate Cyclic DMA Ring Buffer (32 KB = 8 Pages) at 0x68000000
         dmaShmId = ShmemCreate(32768, &H68000000)

@@ -119,16 +119,75 @@ Module Arch.Idt
                 Dim cr2Val As UInt64 = 0
                 Asm "mov %%cr2, %0" : "=r"(cr2Val) : : "memory"
 
-                ' 1. Demand Paging: Stack auto-expansion down to 0x6C000000
-                If cr2Val >= &H6C000000 And cr2Val < &H70000000 Then
-                    Dim pageVaddr As UInt64 = cr2Val And &HFFFFFFFFFFFFF000
-                    Dim physFrame As UInt64 = Buddy.AllocPages(0)
-                    If physFrame <> 0 Then
+                ' 1. Demand Paging Subsystem: Look up active task VMA
+                Dim currTask As Pointer To Sched.TaskControlBlock = SchedEngine.GetCurrentTask()
+                If currTask <> 0 Then
+                    Dim pVma As Pointer To Sched.VmaEntry = Sched.VmaOperations.FindVma(currTask, cr2Val)
+                    If pVma <> 0 Then
+                        ' Check if write fault occurred on read-only VMA (ErrorCode bit 1 = 1 for write)
+                        If ((frame.ErrorCode And 2) <> 0) And ((pVma.Flags And Sched.VmaOperations.VMA_WRITE) = 0) Then
+                            Serial.PrintF "\r\n[VMA FAULT] PID %u: Write violation on Read-Only VMA @ CR2: 0x%lx | RIP: 0x%lx\r\n", _
+                                          UInt32(currTask.Id), cr2Val, frame.Rip
+                            SchedEngine.ExitCurrentTask 1
+                            Exit Sub
+                        End If
+
+                        ' Allocate order-0 physical frame (4 KB) from BuddyAllocator
+                        Dim physFrame As UInt64 = Buddy.AllocPages(0)
+                        If physFrame = 0 Then
+                            Serial.PrintF "\r\n[VMA OOM] PID %u: Out of memory during demand paging @ CR2: 0x%lx\r\n", _
+                                          UInt32(currTask.Id), cr2Val
+                            SchedEngine.ExitCurrentTask 1
+                            Exit Sub
+                        End If
+
+                        ' Zero-fill the newly committed physical frame
+                        Dim pFrame As Volatile Pointer To UInt64 = CPtr(Volatile Pointer To UInt64, physFrame)
+                        Dim zi As UInt32 = 0
+                        While zi < 512
+                            pFrame(zi) = 0
+                            zi = zi + 1
+                        Wend
+
+                        ' Map the 4KB page into the task's address space
+                        Dim pageVaddr As UInt64 = cr2Val And &HFFFFFFFFFFFFF000
                         Dim curCr3 As UInt64 = 0
                         Asm "mov %%cr3, %0" : "=r"(curCr3) : : "memory"
-                        VmmEngine.MapPage curCr3, pageVaddr, physFrame, &H07
+                        Dim targetCr3 As UInt64 = currTask.Cr3Root
+                        If targetCr3 = 0 Then targetCr3 = curCr3
+
+                        Dim pteFlags As UInt64 = &H05 ' PTE_PRESENT | PTE_USER
+                        If (pVma.Flags And Sched.VmaOperations.VMA_WRITE) <> 0 Then
+                            pteFlags = pteFlags Or &H02 ' PTE_WRITABLE
+                        End If
+
+                        VmmEngine.MapPage targetCr3, pageVaddr, physFrame, pteFlags
+                        If targetCr3 <> curCr3 Then
+                            VmmEngine.MapPage curCr3, pageVaddr, physFrame, pteFlags
+                        End If
                         Asm "invlpg (%0)" : : "r"(pageVaddr) : "memory"
-                        Exit Sub ' Return cleanly and resume faulting instruction
+
+                        ' Resume faulting instruction transparently
+                        Exit Sub
+                    End If
+                End If
+
+                ' Fallback: Stack auto-expansion check (for legacy/unregistered stack regions)
+                If cr2Val >= &H6C000000 And cr2Val < &H78000000 Then
+                    Dim stackPageVaddr As UInt64 = cr2Val And &HFFFFFFFFFFFFF000
+                    Dim stackPhysFrame As UInt64 = Buddy.AllocPages(0)
+                    If stackPhysFrame <> 0 Then
+                        Dim pStackFrame As Volatile Pointer To UInt64 = CPtr(Volatile Pointer To UInt64, stackPhysFrame)
+                        Dim szi As UInt32 = 0
+                        While szi < 512
+                            pStackFrame(szi) = 0
+                            szi = szi + 1
+                        Wend
+                        Dim fallbackCr3 As UInt64 = 0
+                        Asm "mov %%cr3, %0" : "=r"(fallbackCr3) : : "memory"
+                        VmmEngine.MapPage fallbackCr3, stackPageVaddr, stackPhysFrame, &H07
+                        Asm "invlpg (%0)" : : "r"(stackPageVaddr) : "memory"
+                        Exit Sub
                     End If
                 End If
 

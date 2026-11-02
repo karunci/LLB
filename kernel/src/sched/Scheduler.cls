@@ -252,6 +252,7 @@ Public Class Scheduler
         idleTask.Cr3Root = masterKernelCr3
         idleTask.KStackBase = KHeap.KMalloc(KERNEL_STACK_SIZE)
         idleTask.NextTask = idleTcbMem
+        idleTask.VmaCount = 0
 
         SetupSyntheticStack idleTask, @Sched.TaskRoutines.CpuIdleLoop
 
@@ -324,6 +325,7 @@ Public Class Scheduler
         bootTask.ContextRsp = 0
         bootTask.Rsp = 0
         bootTask.NextTask = bootTcbMem
+        bootTask.VmaCount = 0
 
         currentTaskAddrs(0) = bootTcbMem
         gposQueueHeads(0) = bootTcbMem
@@ -432,6 +434,7 @@ Public Class Scheduler
         thread.PendingSignals = 0
         thread.Cr3Root = masterKernelCr3
         thread.KStackBase = KHeap.KMalloc(KERNEL_STACK_SIZE)
+        thread.VmaCount = 0
 
         If thread.KStackBase = 0 Then
             Serial.PrintF "[SCHED] Error: Failed to allocate stack for kernel thread PID %u!\r\n", CType(UInt32, assignedPid)
@@ -504,6 +507,17 @@ Public Class Scheduler
         thread.PendingSignals = 0
         thread.Cr3Root = userPml4
         thread.KStackBase = KHeap.KMalloc(KERNEL_STACK_SIZE)
+        thread.ExitCode = 0
+        thread.VmaCount = 0
+        Dim vi As UInt32 = 0
+        While vi < 32
+            thread.Vmas(vi).StartVaddr = 0
+            thread.Vmas(vi).EndVaddr = 0
+            thread.Vmas(vi).Flags = 0
+            thread.Vmas(vi).PageCount = 0
+            vi = vi + 1
+        Wend
+        Sched.VmaOperations.AddVma thread, &H6C000000, (&H78000000 - &H6C000000), Sched.VmaOperations.VMA_READ Or Sched.VmaOperations.VMA_WRITE Or Sched.VmaOperations.VMA_ANON Or Sched.VmaOperations.VMA_LAZY
 
         If thread.KStackBase = 0 Then
             KHeap.KFree tcbMem
@@ -641,6 +655,16 @@ Public Class Scheduler
         thread.Cr3Root = userPml4
         thread.KStackBase = KHeap.KMalloc(KERNEL_STACK_SIZE)
         thread.ExitCode = 0
+        thread.VmaCount = 0
+        Dim vi As UInt32 = 0
+        While vi < 32
+            thread.Vmas(vi).StartVaddr = 0
+            thread.Vmas(vi).EndVaddr = 0
+            thread.Vmas(vi).Flags = 0
+            thread.Vmas(vi).PageCount = 0
+            vi = vi + 1
+        Wend
+        Sched.VmaOperations.AddVma thread, &H6C000000, (&H78000000 - &H6C000000), Sched.VmaOperations.VMA_READ Or Sched.VmaOperations.VMA_WRITE Or Sched.VmaOperations.VMA_ANON Or Sched.VmaOperations.VMA_LAZY
 
         If thread.KStackBase = 0 Then
             KHeap.KFree tcbMem
@@ -990,6 +1014,21 @@ Public Class Scheduler
         End If
         Dim curr As Pointer To TaskControlBlock = CPtr(Pointer To TaskControlBlock, currentTaskAddrs(coreId))
         GetCurrentPid = curr.Id
+    End Function
+
+    ''
+    ' @brief Get the currently active TaskControlBlock pointer on the calling core.
+    ' @return Pointer to current TaskControlBlock or 0.
+    ''
+    Public Unsafe Function GetCurrentTask() As Pointer To TaskControlBlock
+        Dim coreId As UInt32 = Arch.X86_64.Gdt.GetCpuId()
+        If coreId >= MAX_SCHED_CPUS Then coreId = 0
+
+        If currentTaskAddrs(coreId) = 0 Then
+            GetCurrentTask = 0
+            Exit Function
+        End If
+        GetCurrentTask = CPtr(Pointer To TaskControlBlock, currentTaskAddrs(coreId))
     End Function
 
     ''

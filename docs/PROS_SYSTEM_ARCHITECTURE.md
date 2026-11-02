@@ -544,6 +544,45 @@ Client GUI applications poll for incoming events from the shared memory table vi
 - **Constant-Time Direct Indexing:** Queues are indexed via `winId Mod 16`, eliminating table scanning loops and shielding the queue from window Z-order shifts or reordering.
 - **Continuous Momentum in DOOM:** DOOM maintains continuous player momentum by receiving paired KeyDown and KeyUp events, keeping `gamekeydown[key_forward]` asserted throughout the movement period and eliminating stuttering or frame-to-frame velocity drops.
 
+---
+
+## 14. Demand Paging & Virtual Memory Area (#PF VMA Subsystem)
+
+### 14.1 Microkernel Virtual Memory Area (VMA) Architecture
+To support large memory consumers (such as DOOM's 6 MB zone allocator, software 3D rasterizers, and dynamic user applications) without depleting physical frames upfront or introducing process startup latency, the Personal Research Operating System (PROS / PRK-OS) implements a lightweight Virtual Memory Area (VMA) subsystem embedded directly into the microkernel `TaskControlBlock`:
+- **Per-Process VMA Table:** Every task maintains an active table of up to 32 discrete `VmaEntry` descriptors:
+  ```vb
+  <Packed>
+  Public Structure VmaEntry
+      Public StartVaddr As UInt64          ' Page-aligned start virtual address
+      Public EndVaddr   As UInt64          ' Page-aligned end virtual address (exclusive)
+      Public Flags      As UInt32          ' Permissions (READ, WRITE, EXEC, ANON, LAZY)
+      Public PageCount  As UInt32          ' Number of 4 KB pages in region
+  End Structure
+  ```
+- **Contiguous VMA Coalescing:** When subsequent allocations are adjacent to an existing VMA with identical permission flags, `AddVma` merges them dynamically, keeping the VMA list compact and within $O(1)$ lookup thresholds.
+
+### 14.2 O(1) Fast Lazy Page Allocation (Syscall 26: `SYS_MEM_ALLOC_PAGES`)
+When a user process requests dynamic memory pages via Syscall 26:
+- The microkernel validates the address bounds against `USER_SPACE_MAX` (`0x78000000`).
+- Rather than synchronously committing physical frames from the `BuddyAllocator` and building page directory structures upfront, the microkernel registers a `VMA_LAZY` range in the calling task's VMA table in $O(1)$ time and immediately returns `reqVaddr`.
+- Reduces process memory footprint to zero committed pages until memory is actually accessed.
+
+### 14.3 Vector 14 (`#PF`) Page Fault Resolution & Physical Frame Commit
+When a task accesses an uncommitted page in a `VMA_LAZY` region:
+1. **Interrupt Vector 14 (`#PF`):** CPU triggers a page fault exception. The hardware pushes the error code and traps into `kernel/src/arch/x86_64/Idt.bas`.
+2. **Fault Address Inspection:** The handler reads the faulting virtual address from processor register `CR2`.
+3. **VMA Range Lookup:** `VmaOperations.FindVma` searches the active task's VMA table. If `CR2` falls within a registered `VMA_LAZY` area:
+   - Verifies permissions (e.g. write fault on read-only VMA triggers clean task exit).
+   - Dynamically allocates an order-0 (4 KB) physical frame from `BuddyAllocator`.
+   - Zero-fills the newly allocated frame directly via identity-mapped kernel memory.
+   - Maps the physical frame into the task's PML4 page tables (`VmmEngine.MapPage`) with user permissions (`PTE_PRESENT | PTE_USER` and optional `PTE_WRITABLE`).
+   - Executes `invlpg` to flush the active CPU's TLB.
+   - Transparently exits the ISR stub via `iretq`, which immediately re-executes the faulting instruction with zero application interruption.
+4. **Fallback Guard for Stack Auto-Expansion:** Retains transparent auto-expansion for the downward-growing user execution stack region (`0x6C000000 .. 0x78000000`).
+5. **Clean Process Teardown:** When a process exits, `VirtualMemoryManager.DestroyUserPml4` inspects page table entries and releases only frames with `PTE_PRESENT`, preventing physical frame leaks and ensuring uncommitted lazy pages consume zero physical memory.
+
+
 
 
 

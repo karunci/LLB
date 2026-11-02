@@ -662,52 +662,18 @@ Namespace Sys
                     Dim reqPages As UInt64 = arg1
                     Dim reqVaddr As UInt64 = arg2
                     Dim totalBytes As UInt64 = reqPages * 4096
-                    If reqPages > 0 And reqPages <= 8192 And (reqVaddr And &HFFF) = 0 And ValidateUserBuffer(reqVaddr, totalBytes) And reqVaddr >= &H40000000 And (reqVaddr + totalBytes) <= &H78000000 Then
-                        Dim memCr3 As UInt64 = SchedEngine.GetCurrentCr3()
-                        Dim allocFail As Boolean = False
-                        Dim physFrame0 As UInt64 = 0
-                        Dim physFrameLast As UInt64 = 0
-                        Dim memPidx As UInt64 = 0
-                        While memPidx < reqPages
-                            Dim physFrame As UInt64 = Buddy.AllocPages(0)
-                            If physFrame = 0 Then
-                                allocFail = True
-                                Exit While
+                    If reqPages > 0 And reqPages <= 65536 And (reqVaddr And &HFFF) = 0 And ValidateUserBuffer(reqVaddr, totalBytes) And reqVaddr >= &H40000000 And (reqVaddr + totalBytes) <= &H78000000 Then
+                        Dim currTask As Pointer To Sched.TaskControlBlock = SchedEngine.GetCurrentTask()
+                        If currTask <> 0 Then
+                            If Sched.VmaOperations.AddVma(currTask, reqVaddr, totalBytes, Sched.VmaOperations.VMA_READ Or Sched.VmaOperations.VMA_WRITE Or Sched.VmaOperations.VMA_ANON Or Sched.VmaOperations.VMA_LAZY) Then
+                                Serial.PrintF "[VMA_LAZY] PID %u: %u pages reserved @ 0x%lx..0x%lx (Demand Paging Active)\r\n", _
+                                              UInt32(currTask.Id), UInt32(reqPages), reqVaddr, reqVaddr + totalBytes
+                                Dispatch = reqVaddr
+                            Else
+                                Dispatch = 0
                             End If
-                            If memPidx = 0 Then physFrame0 = physFrame
-                            physFrameLast = physFrame
-
-                            ' Zero initialize allocated physical frame
-                            Dim framePtr As Volatile Pointer To UInt64 = Volatile Pointer To UInt64(physFrame)
-                            Dim zIdx As UInt32 = 0
-                            While zIdx < 512
-                                framePtr(zIdx) = 0
-                                zIdx = zIdx + 1
-                            Wend
-
-                            ' Map frame into caller's page directory (PTE: Present | Writable | User = 7)
-                            VmmEngine.MapPage memCr3, reqVaddr + (memPidx * 4096), physFrame, &H07
-                            memPidx = memPidx + 1
-                        Wend
-
-                        If Not allocFail Then
-                            Serial.PrintF "[MEM_ALLOC_PAGES] PID %u: %u pages @ 0x%lx (Phys: 0x%lx .. 0x%lx)\r\n", _
-                                          UInt32(SchedEngine.GetCurrentPid()), UInt32(reqPages), reqVaddr, _
-                                          physFrame0, physFrameLast
-                        End If
-
-                        If allocFail Then
-                            ' Roll back already mapped pages
-                            Dim memRollIdx As UInt64 = 0
-                            While memRollIdx < memPidx
-                                Dim resolved As UInt64 = VmmEngine.VirtToPhys(memCr3, reqVaddr + (memRollIdx * 4096))
-                                VmmEngine.UnmapPage memCr3, reqVaddr + (memRollIdx * 4096)
-                                If resolved <> 0 Then Buddy.FreePages resolved, 0
-                                memRollIdx = memRollIdx + 1
-                            Wend
-                            Dispatch = 0
                         Else
-                            Dispatch = reqVaddr
+                            Dispatch = 0
                         End If
                     Else
                         Dispatch = 0

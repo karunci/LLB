@@ -159,11 +159,11 @@ Namespace Pros.Sys
             End If
 
             ' 3. Invoke microkernel Syscall 10 (SYS_PROCESS_SPAWN)
-            ' %rdi=path, %rsi=shmId, %rdx=argc(0), %r10=argv(args), %r8=priority(1)
+            ' %rdi=path, %rsi=shmId, %rdx=binarySize(bytesRead), %r10=argv(args), %r8=priority(1)
             Dim childPid As UInt64 = Pros.Sys.RawSyscall.Call5(SYS_PROCESS_SPAWN, _
                                                               UInt64(Pointer To Byte(path)), _
                                                               shmId, _
-                                                              0, _
+                                                              UInt64(bytesRead), _
                                                               argPtr, _
                                                               1)
 

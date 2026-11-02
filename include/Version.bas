@@ -5,7 +5,7 @@
 Namespace Sys
 
 Module Version
-    Public Const SYSTEM_VERSION_TAG As Pointer To Byte = "REV: 2026.11.02-r53-re47"
+    Public Const SYSTEM_VERSION_TAG As Pointer To Byte = "REV: 2026.11.02-r54-re48"
     Public Const SYSTEM_NAME        As Pointer To Byte = "Personal Research Operating System"
     Public Const SYSTEM_SHORT_NAME  As Pointer To Byte = "PRK-OS"
     Public Const SYSTEM_IDENTIFIER  As Pointer To Byte = "PROS"

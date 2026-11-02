@@ -624,9 +624,15 @@ Module WmMain
                     Dim newY As Int32 = 36
 
                     If w > 500 Then
-                        ' Large window (Terminal Console) -> Left Workstation Column
-                        newX = 16
-                        newY = 36
+                        ' Large window (Terminal Console, DOOM) -> Left Workstation Column with cascade
+                        Dim largeCount As Int32 = 0
+                        Dim lk As Int32 = 0
+                        While lk < windowCount
+                            If windows(lk).Width > 500 Then largeCount = largeCount + 1
+                            lk = lk + 1
+                        Wend
+                        newX = 16 + (largeCount * 28)
+                        newY = 36 + (largeCount * 24)
                     Else
                         ' Compact window (SysMon, NodeViewer, ResMon) -> Right Telemetry Column / Bottom Left Slot
                         Dim slot0Taken As Boolean = False

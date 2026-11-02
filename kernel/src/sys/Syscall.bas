@@ -351,13 +351,21 @@ Namespace Sys
                     End If
                     procName(pnIdx) = 0
 
-                    ' 1. Resolve shmId physical frames from SharedMemoryManager (up to 512KB)
+                    ' 1. Resolve shmId physical frames from SharedMemoryManager (up to 1MB / 256 pages)
                     Dim numPages As UInt32 = 0
-                    Dim shmFrames(128) As UInt64
-                    If Not Shmem.GetShmemFrames(shmId, numPages, @shmFrames(0), 128) Or numPages = 0 Then
+                    Dim shmFrames(256) As UInt64
+                    If Not Shmem.GetShmemFrames(shmId, numPages, @shmFrames(0), 256) Or numPages = 0 Then
                         Serial.PrintF "[SYSCALL] Error: SYS_PROCESS_SPAWN failed to resolve SHMID %u\r\n", UInt32(shmId)
                         Dispatch = 0
                         Exit Function
+                    End If
+
+                    If numPages > 256 Then numPages = 256
+                    If argc > 0 Then
+                        Dim spawnReqPages As UInt32 = UInt32((argc + 4095) / 4096)
+                        If spawnReqPages > 0 And spawnReqPages < numPages Then
+                            numPages = spawnReqPages
+                        End If
                     End If
 
                     Dim totalShmBytes As UInt64 = UInt64(numPages) * 4096

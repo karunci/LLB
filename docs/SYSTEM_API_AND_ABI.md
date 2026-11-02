@@ -46,6 +46,13 @@ System calls in PROS use the AMD64 `syscall` / `sysretq` hardware instructions:
   - `%rdi`: Sleep duration in milliseconds.
 - `SYS_PROCESS_GETPID (6)`: Query active process ID.
   - Returns: Current PID (`UInt64`).
+- `SYS_PROCESS_SPAWN (10)`: Dynamically load and execute an executable binary image (BAX) in a new userland address space.
+  - `%rdi`: Virtual memory address of null-terminated executable path string.
+  - `%rsi`: Shared memory handle (`shmId`) containing raw binary data.
+  - `%rdx`: Binary byte size (`bytesRead`), enabling the kernel to transfer only active physical frames (up to 1 MB / 256 pages).
+  - `%r10`: Argument vector pointer (`argv`).
+  - `%r8`: Scheduling priority (`1` = Normal).
+  - Returns: Child PID (`UInt64`) on success or `0` on error.
 - `SYS_PROCESS_EXIT (16)`: Terminate the calling process and notify parent / supervisor.
   - `%rdi`: Process exit status code (`UInt64`).
 - `SYS_TIME_UPTIME (28)`: Read system uptime counter.
